@@ -33,7 +33,7 @@ AstrBot 目前存在若干长期问题（详见 `01-需求与根因.md`），XBN
 | R2 | 引用空白附件 | 引用回复时 bot 误以为有一张空白图片/附件，导致回复出错 | ✅ 已实现 |
 | R3 | QQ 表情不识别 | QQ 自带 emoji（face/mface）发给 bot，bot 看不懂 | ✅ 已实现（**AstrNa 未做，属空白区**） |
 | R4 | 认人差 → 用户档案 | 用户自定义对自己的设定，bot 读取档案库了解用户，而非自行臆测 | ✅ 已实现 |
-| R5 | WebUI | 前端 UI 完全仿照 xbdoc / xbimg / xbbot_beta 的风格与工程结构 | 基准已调研，待实现 |
+| R5 | WebUI | 前端 UI 完全仿照 xbdoc / xbimg / xbbot_beta 的风格与工程结构 | ✅ 已实现 |
 
 **不做**：xbdoc / xbimg / xbbot_beta 的原有功能（文档记忆、消息转图、游戏系统等）一概不要，
 只保留它们的**UI 设计语言与工程骨架**，功能位填 XBNEXT 自己的。
@@ -89,7 +89,7 @@ astrbot_plugin_xbnext/
 │  ├─ runtime.py              调度中心
 │  ├─ context.py              RequestContext
 │  ├─ injector.py             唯一注入出口
-│  ├─ switches.py             开关对账 + AstrNa 让路
+│  ├─ switches.py             开关对账 + WebUI 配置写入
 │  ├─ storage.py              插件 KV 封装
 │  ├─ config.py               配置读取（schema 默认值回退）
 │  ├─ features/               ★ 功能模块 —— 一功能一目录，新增功能只改这里
@@ -120,7 +120,7 @@ astrbot_plugin_xbnext/
 | P4 | R1 回复指向注入文案（落库 + 三方说明） | ✅ 完成（**未做真机回归**） |
 | P5 | R4 档案指令入口 + 注入落地 | ✅ 完成（**未做真机回归**） |
 | P6 | R5 WebUI 页面功能填充（骨架已就位） | ✅ 完成（**未做真机回归**） |
-| P7 | 集成自检 + 首次提交 | ⬜ 待开始 |
+| P7 | 集成自检 + 文档同步 + 首次提交 | ✅ 完成（**未做真机回归**） |
 
 > **P1 交付内容**：结构、注册表、配置 schema、WebUI 骨架、114 条单测全绿。
 > 四个功能目前都只完成"存储 + 纯逻辑 + 接线"，**真正改写请求的注入文案
@@ -174,6 +174,19 @@ astrbot_plugin_xbnext/
 > 排序理由（**实际执行时调整过**）：原计划 WebUI 放最后，但用户反馈
 > "前端一点也不像之前的项目"，于是提前重做 —— 先把壳对齐母版，
 > 后续功能页签只往里加内容，不再动结构。功能侧仍按 R3 → R2 → R1 → R4 推进。
+
+> **P7 交付内容**：① 全量自检通过（`compileall` 0 / `unittest` **252 OK** /
+> `node --check` 全过 / `_conf_schema.json` 合法）；② 补根 `__init__.py`；
+> ③ 文档同步 —— `01` 新增「实现落点速查」、`02` 目录树与 §6、`03` §3 自检命令、
+> `04` §5 决策记录、根 `README`（指令表 / 自检命令 / 致谢链接）与 `CHANGELOG`。
+> **④ 「AstrNa 共存」整套移除（用户指令）**：删掉 `switches.detect_astrna()` /
+> `switches.conflict_for()` / `runtime.conflict_for()` / `status().astrna` /
+> `RequestContext.enabled()` 里的让路分支 / 状态面板的「AstrNa 共存」卡片 /
+> `app.js` 对应渲染 / `state.astrna` 载荷字段，`_conf_schema.json` 的 hint 与
+> `status_lines()` 的 AstrNa 行一并去掉；`test_main_smoke` 改为
+> `assertNotIn("astrna", status)` 反向看护。**保留**：README 与 `04` §5 的
+> 致谢行（AstrNa 仍是路线参考）、`aidoc/research/astrna.md`（调研证据）。
+> 移除理由写在 `02-架构设计.md §6`。
 
 ---
 
