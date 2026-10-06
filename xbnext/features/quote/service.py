@@ -13,8 +13,10 @@
 
 from __future__ import annotations
 
+import os
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import unquote, urlparse
 
 # ---------------------------------------------------------------------------
 # 占位符识别
@@ -70,12 +72,18 @@ def has_placeholders(text: str) -> bool:
 # ---------------------------------------------------------------------------
 # 改写
 # ---------------------------------------------------------------------------
-def clean_prompt(text: str, action: str = "label") -> Tuple[str, Dict[str, int]]:
+def clean_prompt(
+    text: str, action: str = "label", degrade_bare: bool = False
+) -> Tuple[str, Dict[str, int]]:
     """按 ``action`` 改写提示词。
 
     - ``label``：噪声删除，可证实失败替换成中文说明（推荐）；
     - ``strip``：三类全部删除；
     - ``keep``：不动文本，只返回统计（用于调试）。
+
+    :param degrade_bare: 为 ``True`` 时把裸 ``[Image]`` 也降级成失效说明。
+        只在**已确认 ``req.image_urls`` 里存在死路径**时才传 ``True`` ——
+        否则裸 ``[Image]`` 至少说明"这里曾有一张图"，删掉反而误导。
 
     返回 ``(新文本, 各类命中计数)``。任何异常都原样返回。
     """
@@ -101,7 +109,10 @@ def clean_prompt(text: str, action: str = "label") -> Tuple[str, Dict[str, int]]
         else:  # label（默认）
             out = DEGRADED_RE.sub(DEGRADED_LABEL, text)
             out = NOISE_RE.sub("", out)
-            # 裸 [Image] 保留：它至少说明"这里曾有一张图"，删掉反而误导
+            # 裸 [Image] 默认保留：它至少说明"这里曾有一张图"，删掉反而误导；
+            # 只有上层证实图片路径确实已失效时才降级
+            if degrade_bare:
+                out = BARE_IMAGE_RE.sub(DEGRADED_LABEL, out)
         return _tidy(out), stats
     except Exception:  # noqa: BLE001
         return text, stats
@@ -133,23 +144,87 @@ def report(stats: Dict[str, int]) -> str:
     return "、".join(f"{k}×{v}" for k, v in stats.items() if v)
 
 
-def dead_image_urls(image_urls: Any) -> List[str]:
-    """筛出 ``req.image_urls`` 里明显无效的项（非 http/https/data 的路径）。
+#: 任何 ``scheme://`` 形态的引用（http/https/data/file/其他）
+_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*)://")
 
-    core 的死路径残留在这里会让模型以为还有一张图。
+
+def _file_url_path(value: str) -> str:
+    """把 ``file:///C:/x.png`` / ``file:///data/x.png`` 还原成本地路径。"""
+    try:
+        path = unquote(urlparse(value).path or "")
+    except Exception:  # noqa: BLE001
+        path = value[7:]
+    # Windows 的 ``file:///C:/...`` 会带一个多余前导斜杠
+    if re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    return path
+
+
+def is_dead_image_url(value: Any, exists: Optional[Callable[[str], bool]] = None) -> bool:
+    """判断 ``req.image_urls`` 的一项是否**可证实已失效**。
+
+    判定规则（保守，宁可漏判也不误删）：
+
+    ============================= ===== ==================================
+    取值                          结果  理由
+    ============================= ===== ==================================
+    非字符串 / 空白               否    不是我们能理解的类型，不碰
+    ``http://`` / ``https://``    否    需要联网验证，离线一律保留
+    ``data:``                     否    内联数据本身就在
+    其他 ``scheme://``            否    离线无法验证，保留
+    ``file://``                   看存在性  还原成路径后 ``os.path.exists``
+    普通本地路径                  看存在性  同上
+    ============================= ===== ==================================
+
+    :param exists: 注入判定函数（单测用），默认 ``os.path.exists``。
     """
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    if text.startswith(("http://", "https://", "data:")):
+        return False
+    m = _SCHEME_RE.match(text)
+    if m:
+        if m.group(1).lower() == "file":
+            path = _file_url_path(text)
+        else:
+            return False
+    else:
+        path = text
+    checker = exists if exists is not None else os.path.exists
+    try:
+        return not bool(checker(path))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def split_image_urls(
+    image_urls: Any, exists: Optional[Callable[[str], bool]] = None
+) -> Tuple[List[str], List[str]]:
+    """把 ``req.image_urls`` 拆成 ``(保留, 已失效)``，顺序不变。"""
     if not isinstance(image_urls, (list, tuple)):
-        return []
-    bad: List[str] = []
+        return [], []
+    alive: List[str] = []
+    dead: List[str] = []
     for item in image_urls:
-        if not isinstance(item, str) or not item.strip():
-            continue
-        value = item.strip()
-        if value.startswith(("http://", "https://", "data:")):
-            continue
-        # 本地文件路径：交给上层判断是否存在，这里只标出"非 URL"
-        bad.append(value)
-    return bad
+        if is_dead_image_url(item, exists=exists):
+            dead.append(item)
+        else:
+            alive.append(item)
+    return alive, dead
+
+
+def dead_image_urls(
+    image_urls: Any, exists: Optional[Callable[[str], bool]] = None
+) -> List[str]:
+    """筛出 ``req.image_urls`` 里**可证实已失效**的项。
+
+    core 的死路径残留在这里会让模型以为还有一张图 —— 见
+    :func:`is_dead_image_url` 的判定表。
+    """
+    return split_image_urls(image_urls, exists=exists)[1]
 
 
 __all__ = [
@@ -161,5 +236,7 @@ __all__ = [
     "has_placeholders",
     "clean_prompt",
     "report",
+    "is_dead_image_url",
+    "split_image_urls",
     "dead_image_urls",
 ]

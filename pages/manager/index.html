@@ -143,6 +143,19 @@
         </div>
 
         <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">移除失效图片路径</h2>
+              <p class="card-desc">只删「能证实已失效」的本地路径，http/https/data 与无法离线判断的一律保留；移除后会把正文里的裸 <code>[Image]</code> 一并标注为已失效，杜绝模型臆想出一张空白图。仅在「引用占位清洗」开启时生效。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_quote_drop_dead_images" data-key="quote_drop_dead_images" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
           <h2 class="card-title">表情翻译格式</h2>
           <p class="card-desc"><code>{name}</code> 会被替换成表情中文名，取不到名字时替换成表情 ID。仅在「QQ 表情翻译」开启时生效。</p>
           <div class="form-group">

@@ -13,6 +13,14 @@
     "collapsed": true,
     "condition": { "enable_quote_clean": true }
   },
+  "quote_drop_dead_images": {
+    "type": "bool",
+    "description": "移除失效的图片路径",
+    "hint": "开启后会把引用消息里已失效的本地图片路径从待发图片列表中移除，并把正文中的 [Image] 占位一并标注为已失效。只删能证实不存在的路径，http/https/data 与无法离线判断的一律保留。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": { "enable_quote_clean": true }
+  },
   "enable_face_translate": {
     "type": "bool",
     "description": "QQ 表情翻译（R3）",
