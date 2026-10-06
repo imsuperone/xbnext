@@ -141,11 +141,14 @@ class TestMainSmoke(unittest.TestCase):
             "enable_reply_attribution",
             "enable_user_profile",
         })
-        self.assertFalse(status["astrna"]["installed"])
+        # AstrNa 共存整套已移除，状态里不该再出现这个键
+        self.assertNotIn("astrna", status)
+        self.assertNotIn("conflict", status["features"]["enable_quote_clean"])
 
         lines = plugin.runtime.status_lines()
         self.assertTrue(any("XBNEXT" in x for x in lines))
-        self.assertEqual(len(lines), 7)  # 标题 + 4 个功能 + AstrNa + KV
+        self.assertEqual(len(lines), 6)  # 标题 + 4 个功能 + KV
+        self.assertFalse(any("AstrNa" in x for x in lines))
 
         asyncio.run(plugin.terminate())
         self.assertFalse(plugin.runtime._loaded)

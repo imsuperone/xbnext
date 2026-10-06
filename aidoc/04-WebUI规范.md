@@ -188,9 +188,10 @@ register(f"{base}/setting",setting,["POST"], "写入配置项")
   **键白名单（= SCHEMA 全键）→ 按 schema type 转型 → 写内存 → `save_config*()` 落盘
   → 失败回滚内存**（`xbnext/switches.py::apply_conf`）。前端失败同样回滚，
   保证"页面上看到的 = 实际存下来的"。
-- `GET state` 一次性回填全部：`version/loaded/features/astrna/kv_usable`
+- `GET state` 一次性回填全部：`version/loaded/features/kv_usable`
   + `config`（全 schema 键当前值）+ `schema`（type/condition/default）
   + `hook_priority` + `writable_keys`。**唯一真相源在服务端，页面不留本地副本。**
+  （早期载荷里的 `astrna` 字段已随「AstrNa 共存」整套移除。）
 
 ## 5. 页签规划（首版实际落地 4 个）
 
@@ -198,7 +199,7 @@ register(f"{base}/setting",setting,["POST"], "写入配置项")
 | :--- | :--- | :--- | :--- |
 | 功能开关 | `tab-switches` | 4 张卡：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入，每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
-| 运行状态 | `tab-runtime` | 版本/加载/priority、AstrNa 共存（含冲突开关）、KV 可用性、接口通道 | `state` |
+| 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道 | `state` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
 > **§5 决策记录（P5 落地后修订，与原计划的差异）**：
@@ -262,7 +263,7 @@ pointer-events:none`（如关掉 `enable_face_translate` 后 `face_format` 变�
 
 **链路验证**：
 - 加载：前缀探测命中 `/api/plugins/astrbot_plugin_xbnext/`，`channel=http`，
-  版本/AstrNa/KV/开关/分段/输入全部正确回填；
+  版本/KV/开关/分段/输入全部正确回填；
 - 前缀探空：静态站上 5 个前缀逐个 404 → 最终报"所有接口前缀均未命中"（日志可证）；
 - 写入：开关 → `config.debug_log=true`；分段 → `quote_placeholder_action="strip"`；
 - **失败回滚**：把 `setting` 改成 reject 后再点开关 → 前端回滚到原值 +

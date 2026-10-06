@@ -5,7 +5,7 @@
 
 ``on_llm_request`` 内的固定执行顺序（见 aidoc/02-架构设计.md §2）::
 
-    1. switches 对账         读配置，确定本轮哪些功能该跑
+    1. 开关判定              每个功能进门前先 ctx.enabled(key)，关着就直接跳过
     2. quote_clean           先清垃圾（后面的注入不再看见脏内容）
     3. face_translate        表情翻译
     4. reply_attribution     回复指向三方说明
@@ -20,9 +20,9 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from . import commands, features, switches
+from . import commands, features
 from .config import Config
 from .context import RequestContext
 from .storage import KV
@@ -42,17 +42,13 @@ class XbnextRuntime:
         self.kv = KV(owner=kv_store, logger=logger)
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()
-        self._astrna: Dict[str, Any] = {"installed": False, "switches": {}}
         self._loaded = False
 
     # ==================================================================
     # 生命周期
     # ==================================================================
     async def on_loaded(self) -> None:
-        """AstrBot 加载完成后：探测 AstrNa、初始化各功能。"""
-        self._astrna = switches.detect_astrna()
-        if self._astrna.get("installed"):
-            self._info(f"检测到 AstrNa（{self._astrna.get('package')}），已加载共存策略")
+        """AstrBot 加载完成后：初始化各功能。"""
         for feat in self.features:
             await self._call(feat, "on_load", self)
         self._loaded = True
@@ -116,11 +112,6 @@ class XbnextRuntime:
                 except Exception as exc:  # noqa: BLE001
                     self._warn(f"{feat.key} 绑定失败：{exc!r}")
 
-    def conflict_for(self, key: str) -> str:
-        """返回该功能因 AstrNa 而需要让路的原因；无冲突返回 ``""``。"""
-        reason = switches.conflict_for(self.conf, key, self._astrna)
-        return reason or ""
-
     async def handle_command(self, name: str, event: Any) -> str:
         """把 ``/xbnext <name> ...`` 的剩余参数交给对应功能处理。
 
@@ -154,7 +145,7 @@ class XbnextRuntime:
     # 状态（/xbnext status 与 WebUI 共用）
     # ==================================================================
     def status(self) -> Dict[str, Any]:
-        """导出运行状态：版本、功能开关、AstrNa 探测结果、KV 可用性。"""
+        """导出运行状态：版本、功能开关、KV 可用性。"""
         return {
             "version": self._version(),
             "loaded": self._loaded,
@@ -163,11 +154,9 @@ class XbnextRuntime:
                     "name": f.name,
                     "description": f.description,
                     "enabled": self.conf.enabled(f.key),
-                    "conflict": self.conflict_for(f.key) if self.conf.enabled(f.key) else "",
                 }
                 for f in self.features
             },
-            "astrna": self._astrna,
             "kv_usable": self.kv.usable,
         }
 
@@ -177,14 +166,7 @@ class XbnextRuntime:
         lines = [f"XBNEXT v{st['version']}" + ("（已加载）" if st["loaded"] else "（未加载）")]
         for key, item in st["features"].items():
             mark = "✅" if item["enabled"] else "❌"
-            line = f"{mark} {item['name']}"
-            if item["conflict"]:
-                line += f"（让路：{item['conflict']}）"
-            lines.append(line)
-        astrna = st["astrna"]
-        lines.append(
-            "AstrNa：" + ("已检测到" if astrna.get("installed") else "未安装")
-        )
+            lines.append(f"{mark} {item['name']}")
         lines.append("KV：" + ("可用" if st["kv_usable"] else "不可用"))
         return lines
 

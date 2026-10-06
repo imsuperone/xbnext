@@ -316,26 +316,6 @@
     }
     if ($("st_priority")) $("st_priority").textContent = String(st.hook_priority == null ? "—" : st.hook_priority);
 
-    var astrna = st.astrna || {};
-    if ($("st_astrna")) {
-      $("st_astrna").textContent = astrna.installed
-        ? ("已安装（" + (astrna.package || "未知包") + "）")
-        : "未安装";
-      $("st_astrna").style.color = astrna.installed ? "var(--m3-status-amber)" : "";
-    }
-    if ($("st_astrna_switches")) {
-      var sw = astrna.switches || {};
-      var keys = Object.keys(sw);
-      if (!astrna.installed) {
-        $("st_astrna_switches").textContent = "—";
-      } else if (!keys.length) {
-        $("st_astrna_switches").textContent = astrna.error ? ("读取失败：" + astrna.error) : "开关状态未知";
-      } else {
-        $("st_astrna_switches").textContent = keys.map(function (k) {
-          return k + " = " + (sw[k] ? "开" : "关");
-        }).join("，");
-      }
-    }
     if ($("st_kv")) {
       $("st_kv").textContent = st.kv_usable ? "可用（前缀 xbnext:）" : "不可用（档案与索引将只在内存）";
       $("st_kv").style.color = st.kv_usable ? "var(--m3-status-green)" : "var(--m3-status-amber)";

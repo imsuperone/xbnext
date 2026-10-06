@@ -103,7 +103,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">回复指向索引</h2>
-              <p class="card-desc">记录 bot 每条回复"回给谁"，下一轮给出三方区分说明，避免把 A 问过的话套到 B 头上。新增行为，默认关闭；与 AstrNa 的 reply target history 同开时本插件自动让路。</p>
+              <p class="card-desc">记录 bot 每条回复"回给谁"，下一轮给出三方区分说明，避免把 A 问过的话套到 B 头上。新增行为，默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_reply_attribution" data-key="enable_reply_attribution" />
@@ -217,15 +217,6 @@
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">AstrNa 共存</h2>
-          <p class="card-desc">检测同装的 AstrNa 及其开关，决定本插件是否让路（避免重复注入）。</p>
-          <div class="kv-list">
-            <div class="kv-row"><span class="kv-k">检测结果</span><span class="kv-v" id="st_astrna">—</span></div>
-            <div class="kv-row"><span class="kv-k">开关状态</span><span class="kv-v" id="st_astrna_switches">—</span></div>
-          </div>
-        </div>
-
-        <div class="m3-card">
           <h2 class="card-title">插件存储</h2>
           <p class="card-desc">回复指向索引与用户档案都存在插件 KV 里（统一前缀 <code>xbnext:</code>）。</p>
           <div class="kv-list">
@@ -241,7 +232,7 @@
           <h2 class="card-title">指令</h2>
           <p class="card-desc">指令只做转发，逻辑在 <code>xbnext/features/</code> 里。</p>
           <div class="kv-list">
-            <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 AstrNa 共存状态</span></div>
+            <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 KV 可用性</span></div>
             <div class="kv-row"><span class="kv-k">/xbnext profile</span><span class="kv-v">查看自己的档案</span></div>
             <div class="kv-row"><span class="kv-k">… 称呼 小明</span><span class="kv-v">改称呼（别名：名字 / 昵称）</span></div>
             <div class="kv-row"><span class="kv-k">… 自述 &lt;内容&gt;</span><span class="kv-v">改自述（别名：信息 / 描述）</span></div>
@@ -269,8 +260,8 @@
           <p class="card-desc">本插件的设计与实现借鉴了以下项目：</p>
           <div class="kv-list">
             <div class="kv-row"><span class="kv-k">AstrBot</span><span class="kv-v">宿主框架与官方插件规范</span></div>
-            <div class="kv-row"><span class="kv-k">AstrNa</span><span class="kv-v">回复指向索引路线参考与共存策略</span></div>
-            <div class="kv-row"><span class="kv-k">xbdoc / xbimg / xbbot</span><span class="kv-v">本控制台的设计语言与工程骨架</span></div>
+            <div class="kv-row"><span class="kv-k">AstrNa</span><span class="kv-v">回复指向索引的路线参考</span></div>
+            <div class="kv-row"><span class="kv-k">xbdoc / xbimg / xbbot_beta</span><span class="kv-v">本控制台的设计语言与工程骨架</span></div>
           </div>
           <span class="field-hint">⚠️ 当前版本未做真机回归：AstrBot 本体在云端，本机仅完成静态检查与单测。</span>
         </div>

@@ -9,7 +9,7 @@
          ├─ context.py    RequestContext：单次请求上下文
          ├─ features/     功能模块 —— 一功能一目录，新增功能只改这里
          ├─ injector.py   唯一注入出口（temp part + sanitize）
-         ├─ switches.py   开关对账 + AstrNa 共存检测
+         ├─ switches.py   开关对账 + WebUI 配置写入
          ├─ storage.py    插件 KV 封装（懒加载 / 写穿 / 降级）
          ├─ config.py     配置读取（含 _conf_schema.json 默认值回退）
          └─ web/          WebUI 后端 API
@@ -50,8 +50,8 @@ def _read_version() -> str:
 #: CHANGELOG.md 首条 / README.md 版本行，``tests/test_structure.py`` 机械校验。
 __version__ = _read_version()
 
-#: 所有钩子统一使用的 priority。与 AstrNa 的 1000 取同值，
-#: 具体先后方向待真机实测后在 aidoc/02-架构设计.md 记录。
+#: 所有钩子统一使用的 priority（数值越大越靠后，方向待真机实测）；
+#: 取值理由与可能的相互作用见 aidoc/02-架构设计.md §2。
 HOOK_PRIORITY = 1000
 
 __all__ = [

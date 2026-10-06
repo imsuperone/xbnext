@@ -41,16 +41,10 @@ class RequestContext:
 
     # -- 开关 ---------------------------------------------------------
     def enabled(self, key: str) -> bool:
-        """某功能当前是否该跑（配置开关 + AstrNa 让路判断）。"""
+        """某功能当前是否该跑（只看配置开关；功能自身不必再判）。"""
         if not self.conf.enabled(key):
+            self.note(f"{key} 已关闭")
             return False
-        if self.runtime is not None:
-            blocker = getattr(self.runtime, "conflict_for", None)
-            if callable(blocker):
-                conflict = blocker(key)
-                if conflict:
-                    self.note(f"{key} 让路：{conflict}")
-                    return False
         return True
 
     # -- 注入 ---------------------------------------------------------

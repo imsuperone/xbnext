@@ -38,7 +38,7 @@
   "enable_reply_attribution": {
     "type": "bool",
     "description": "回复指向索引（R1）",
-    "hint": "开启后，XBNEXT 会记录 bot 每条回复'回给谁'，并在下一轮请求里给出三方区分说明，避免把 A 问过的话套到 B 头上。属于新增行为，默认关闭；开启后每轮会多注入一小段说明。与 AstrNa 的 reply target history 同时开启时，本插件自动让路不重复注入。",
+    "hint": "开启后，XBNEXT 会记录 bot 每条回复'回给谁'，并在下一轮请求里给出三方区分说明，避免把 A 问过的话套到 B 头上。属于新增行为，默认关闭；开启后每轮会多注入一小段说明。",
     "default": false
   },
   "reply_history_limit": {

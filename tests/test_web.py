@@ -70,7 +70,6 @@ class FakeRuntime:
             "version": "9.9.9",
             "loaded": True,
             "features": {},
-            "astrna": {"installed": False, "switches": {}},
             "kv_usable": True,
         }
 

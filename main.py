@@ -69,7 +69,7 @@ class XbnextPlugin(Star):
 
     @xbnext.command("status")
     async def xbnext_status(self, event: AstrMessageEvent) -> None:
-        """查看 XBNEXT 各功能开关与 AstrNa 共存状态。"""
+        """查看 XBNEXT 各功能开关与 KV 可用性。"""
         await event.send(
             event.plain_result("\n".join(self.runtime.status_lines()))
         )
