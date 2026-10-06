@@ -4,8 +4,9 @@
 **薄壳原则**：本文件只负责把 AstrBot 钩子转发给 ``xbnext.runtime.XbnextRuntime``，
 不写任何业务逻辑。新增功能请改 ``xbnext/features/``，不要往这里堆代码。
 
-指令（``@filter.command*``）目前保留在这里，因为 AstrBot 的钩子扫描发生在类
-加载阶段，动态挂载子命令不可靠；新增指令组时也写在这里。
+指令（``@filter.command*``）保留在这里，因为 AstrBot 的钩子扫描发生在类加载阶段，
+动态挂载子命令不可靠。**指令只做转发**，真正的逻辑在 ``xbnext/features/`` 或
+``xbnext/runtime.py``。
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     @filter.command_group("xbnext")
     def xbnext(self) -> None:
-        """XBNEXT 指令组根节点（子命令在 P5 由档案功能扩展）。"""
+        """XBNEXT 指令组根节点（新增子指令写在这里，逻辑放功能里）。"""
 
     @xbnext.command("status")
     async def xbnext_status(self, event: AstrMessageEvent) -> None:
@@ -72,6 +73,17 @@ class XbnextPlugin(Star):
         await event.send(
             event.plain_result("\n".join(self.runtime.status_lines()))
         )
+
+    @xbnext.command("profile")
+    async def xbnext_profile(self, event: AstrMessageEvent) -> None:
+        """维护自己的自助档案：``/xbnext profile [查看|清空|字段 内容]``。
+
+        与「用户档案」开关**无关** —— 开关只决定是否喂给模型，
+        档案的查看与维护入口始终可用。
+        """
+        reply = await self.runtime.handle_command("profile", event)
+        if reply:
+            await event.send(event.plain_result(reply))
 
     def __repr__(self) -> str:  # pragma: no cover - 仅调试用
         return f"<XbnextPlugin v{__version__} plugin={PLUGIN_NAME}>"

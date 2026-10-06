@@ -22,7 +22,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Dict, List, Optional
 
-from . import features, switches
+from . import commands, features, switches
 from .config import Config
 from .context import RequestContext
 from .storage import KV
@@ -120,6 +120,35 @@ class XbnextRuntime:
         """返回该功能因 AstrNa 而需要让路的原因；无冲突返回 ``""``。"""
         reason = switches.conflict_for(self.conf, key, self._astrna)
         return reason or ""
+
+    async def handle_command(self, name: str, event: Any) -> str:
+        """把 ``/xbnext <name> ...`` 的剩余参数交给对应功能处理。
+
+        **不经过 ``ctx.enabled``** —— 子指令是维护入口，不能因为功能开关
+        关着就用不了（见 ``_conf_schema.json`` 里 ``enable_user_profile`` 的 hint）。
+
+        返回要发给用户的文本；异常返回带原因的兜底文案，**不裸抛**。
+        """
+        try:
+            sub, args = commands.split(str(getattr(event, "message_str", "") or ""))
+        except Exception as exc:  # noqa: BLE001
+            return f"指令解析失败：{exc!r}"
+        # AstrBot 可能已把 "xbnext profile" 一并剥掉 → 把 sub 当第一个参数回填
+        if sub != name:
+            args = ([sub] if sub else []) + args
+
+        feat = features.get_feature_by_command(name)
+        if feat is None:
+            return f"没有 /xbnext {name} 这个子指令。"
+        handler = getattr(feat, "handle_command", None)
+        if not callable(handler):
+            return f"/xbnext {name} 没有实现处理逻辑。"
+        try:
+            result = await handler(event, args, self.conf)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"/xbnext {name} 执行失败：{exc!r}")
+            return f"指令执行失败：{exc!r}"
+        return str(result or "")
 
     # ==================================================================
     # 状态（/xbnext status 与 WebUI 共用）

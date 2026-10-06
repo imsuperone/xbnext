@@ -11,6 +11,14 @@
 4. 在 ``features/__init__.py`` 的 ``FEATURES`` 里加一行实例化；
 5. 在 ``tests/`` 加一个 ``test_my_thing.py``。
 
+**可选 · 暴露子指令**（像 ``/xbnext profile`` 那样）：
+
+- 功能里填 ``command = "mything"`` 并实现
+  ``async def handle_command(self, event, args, conf) -> str``；
+- 在 ``main.py`` 加一个 ``@xbnext.command("mything")`` 转发到
+  ``runtime.handle_command(...)`` —— AstrBot 的指令扫描发生在类加载期，
+  子命令必须静态写在那里。
+
 约定：
 
 - **顺序即 ``order``**，小的先跑（清洗类 10~30，注入类 40~90）；
@@ -38,6 +46,8 @@ class Feature:
     order: int = 100
     #: 是否关心 ``after_message_sent``（只有 R1 需要）
     uses_sent_hook: bool = False
+    #: 可选：对外暴露的子指令名（``/xbnext <command>``）；空串表示没有指令
+    command: str = ""
 
     # ------------------------------------------------------------------
     # 生命周期（全部可选）

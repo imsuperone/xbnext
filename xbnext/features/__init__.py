@@ -48,6 +48,16 @@ def get_feature(key: str) -> Optional[Feature]:
     return None
 
 
+def get_feature_by_command(name: str) -> Optional[Feature]:
+    """按子指令名取功能实例（``/xbnext <name>``）；找不到返回 ``None``。"""
+    if not name:
+        return None
+    for feat in FEATURES:
+        if feat.command and feat.command == name:
+            return feat
+    return None
+
+
 def feature_meta() -> List[Dict[str, Any]]:
     """导出全部功能的元信息（WebUI 卡片用）。"""
     return [f.describe() for f in all_features()]
@@ -58,5 +68,6 @@ __all__ = [
     "FEATURES",
     "all_features",
     "get_feature",
+    "get_feature_by_command",
     "feature_meta",
 ]

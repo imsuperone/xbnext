@@ -239,10 +239,16 @@
       <section class="settings-section" data-section="tab-guide">
         <div class="m3-card">
           <h2 class="card-title">指令</h2>
-          <p class="card-desc">当前只有一个查询指令，档案类指令随 R4 落地。</p>
+          <p class="card-desc">指令只做转发，逻辑在 <code>xbnext/features/</code> 里。</p>
           <div class="kv-list">
             <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 AstrNa 共存状态</span></div>
+            <div class="kv-row"><span class="kv-k">/xbnext profile</span><span class="kv-v">查看自己的档案</span></div>
+            <div class="kv-row"><span class="kv-k">… 称呼 小明</span><span class="kv-v">改称呼（别名：名字 / 昵称）</span></div>
+            <div class="kv-row"><span class="kv-k">… 自述 &lt;内容&gt;</span><span class="kv-v">改自述（别名：信息 / 描述）</span></div>
+            <div class="kv-row"><span class="kv-k">… 口吻 &lt;内容&gt;</span><span class="kv-v">改相处方式（别名：风格 / 语气）</span></div>
+            <div class="kv-row"><span class="kv-k">… 清空</span><span class="kv-v">删除自己的全部档案</span></div>
           </div>
+          <span class="field-hint">档案与「用户档案」开关<strong>解耦</strong>：开关只决定喂不喂给模型，查看/设置/清空始终可用。字段只认上面三个，其余一律报错。</span>
         </div>
 
         <div class="m3-card">
@@ -255,7 +261,7 @@
             <div class="kv-row"><span class="kv-k">④</span><span class="kv-v">在 <code>features/__init__.py</code> 的 FEATURES 加一行</span></div>
             <div class="kv-row"><span class="kv-k">⑤</span><span class="kv-v">在 <code>tests/</code> 加测试</span></div>
           </div>
-          <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。</span>
+          <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。要暴露子指令（像 <code>/xbnext profile</code>）就再填 <code>command</code> 并在 <code>main.py</code> 加一行静态转发。</span>
         </div>
 
         <div class="m3-card">

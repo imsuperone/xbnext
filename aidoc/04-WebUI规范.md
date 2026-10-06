@@ -23,7 +23,7 @@ pages/manager/
 ├─ style.css     M3 Expressive 令牌 + 组件（移植 xbimg/xbdoc style.css）
 ├─ api.js        网络层 —— **文件分工沿用 xbdoc（独立 api.js），
 │                 内部契约照 xbimg/xbbot_beta**（四级 getBridge + 前缀探测）
-└─ app.js        业务（页签切换、开关、档案管理、主题）
+└─ app.js        业务（页签切换、开关写入与回滚、条件显隐、主题）
 ```
 
 > 若后续 JS > 1500 行或页签 > 8，再升级 beta 的 `js/NN_域.js` 拆分模式。
@@ -197,12 +197,20 @@ register(f"{base}/setting",setting,["POST"], "写入配置项")
 | 页签 | `data-tab` | 内容 | 后端 |
 | :--- | :--- | :--- | :--- |
 | 功能开关 | `tab-switches` | 4 张卡：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入，每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
-| 行为微调 | `tab-tuning` | 占位处理方式（分段）、表情格式（输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
+| 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
 | 运行状态 | `tab-runtime` | 版本/加载/priority、AstrNa 共存（含冲突开关）、KV 可用性、接口通道 | `state` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
-> 首版**不放**档案列表（P5 未落地）、不放表情映射表编辑器（P2 未落地）——
-> 宁可页签少，不做假功能位。功能落地后再按本表追加页签。
+> **§5 决策记录（P5 落地后修订，与原计划的差异）**：
+>
+> - **档案页签：不做**。原计划在这里放一个"档案列表/编辑"页签，但 WebUI
+>   母版**没有"当前用户"上下文** —— 浏览器里的人既没有身份也没有鉴权，
+>   读写的会是"某个人的档案"，做不到"我改我自己的"。所以档案入口**只走
+>   `/xbnext profile` 指令**（谁发指令就改谁的），WebUI 不出现任何档案数据。
+> - **表情映射表编辑器：不做**。`face/data.py` 的表由
+>   `aidoc/tools/gen_face_table.py` 从上游抓取生成，**禁止手改**（红线：
+>   凭记忆改表比不改更糟），提供编辑器等于提供一个编错的入口。
+> - 宁可页签少，不做假功能位。后续要加页签，先补本表再写代码。
 
 **条件显隐**：`schema[key].condition` 未满足时，控件 `disabled + opacity .45 +
 pointer-events:none`（如关掉 `enable_face_translate` 后 `face_format` 变灰）。
