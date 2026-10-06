@@ -68,5 +68,19 @@
     "description": "输出调试日志",
     "hint": "在 AstrBot 日志里打印每个功能的执行结果与跳过原因，排查'为什么没生效'时打开。默认关闭。",
     "default": false
+  },
+  "ui_theme_mode": {
+    "type": "string",
+    "description": "控制台深浅色",
+    "hint": "WebUI 控制台界面的深浅色。这是界面偏好，由控制台右上角按钮自动维护，一般不用手动改。",
+    "default": "light",
+    "collapsed": true
+  },
+  "ui_accent_color": {
+    "type": "string",
+    "description": "控制台主题色",
+    "hint": "WebUI 控制台的强调色（6 位十六进制，如 #4A90D9）。留空表示使用默认蓝。由控制台取色器自动维护。",
+    "default": "",
+    "collapsed": true
   }
 }

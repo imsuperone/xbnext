@@ -1,78 +1,268 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="auto">
+<html lang="zh-CN" data-theme="light">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=0.1.0" />
+  <!-- 深浅色与主题色存在服务端配置里（唯一真相源，无本地副本），需等 state 回来才套用；
+       首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
   <style>
-    /* 启动样式：内容加载完成前压暗，避免白屏/闪屏（骨架样式必须内联） */
-    #app { opacity: 0; transition: opacity .22s ease; }
-    #app.ready { opacity: 1; }
-    .boot-loading { display: grid; place-items: center; min-height: 60vh;
-      color: var(--on-surface-variant, #9aa3b2); letter-spacing: .08em; }
-    .boot-error { display: none; margin: 24px auto; max-width: 560px;
-      padding: 16px 18px; border: 1px solid var(--outline-variant, #394252);
-      border-radius: var(--radius-md, 14px); background: var(--surface-2, #171b23);
-      color: var(--danger, #ff8a8a); }
-    .boot-error.show { display: block; }
-    @media (max-width: 760px) {
-      .top-bar { flex-direction: column; align-items: flex-start; gap: 12px; }
-      .cat-tabs { overflow-x: auto; }
-    }
+    html[data-boot] { visibility: hidden; background: #f4f6f8; }
+    @media (prefers-color-scheme: dark) { html[data-boot] { background: #0f1115; } }
   </style>
+  <script>
+    (function () {
+      var d = document.documentElement;
+      d.setAttribute("data-boot", "");
+      setTimeout(function () { d.removeAttribute("data-boot"); }, 3000);
+    })();
+  </script>
 </head>
 <body>
-  <div id="app">
-    <!-- 顶栏 -->
+  <div class="app-layout">
+    <!-- Top Bar (Android 16 Expressive System Header) -->
     <header class="top-bar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">🧭</span>
-        <span class="brand-text">
-          <strong>XBNEXT</strong>
-          <small>对话质量修正控制台</small>
-        </span>
+      <div class="top-bar-brand">
+        <div class="brand-text">
+          <h1>XBNEXT <span class="version-tag" data-ver="0.1.0">0.1.0</span></h1>
+        </div>
       </div>
-      <div class="top-right">
-        <span id="conn" class="status-chip" data-state="checking">连接中…</span>
-        <span class="ver-chip">v<span id="version">—</span></span>
+      <div class="top-bar-actions">
+        <span class="accent-picker-wrap"><button type="button" id="accentPickerBtn" class="m3-accent-picker" title="调整主题颜色" aria-label="调整主题颜色"><svg class="m3-accent-picker-ic" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2C6.57 2 2 6.57 2 12s4.57 10 10 10c.48 0 .87-.39.87-.87 0-.23-.09-.44-.23-.6-.14-.16-.22-.36-.22-.58 0-.48.39-.87.87-.87H16c3.31 0 6-2.69 6-6 0-4.96-4.47-9-10-9zM6.5 13c-.83 0-1.5-.67-1.5-1.5S5.67 10 6.5 10s1.5.67 1.5 1.5S7.33 13 6.5 13zm3.5-3c-.83 0-1.5-.67-1.5-1.5S9.17 7 10 7s1.5.67 1.5 1.5S10.83 10 10 10zm5 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm3 3c-.83 0-1.5-.67-1.5-1.5S17.67 10 18.5 10s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></button><input type="color" id="accentPicker" value="#4A90D9" hidden /><div class="accent-popover" id="accentPopover" hidden><div class="accent-sv" id="accentSv"><div class="accent-sv-dot" id="accentSvDot"></div></div><div class="accent-hue" id="accentHue"><div class="accent-hue-dot" id="accentHueDot"></div></div><div class="accent-pop-row"><input type="text" class="accent-hex" id="accentHex" value="#4A90D9" maxlength="7" spellcheck="false" autocomplete="off" /><span class="accent-current" id="accentCurrent"></span></div><div class="accent-presets" id="accentPresets"><button type="button" data-color="#4A90D9" style="background:#4A90D9"></button><button type="button" data-color="#1A73E8" style="background:#1A73E8"></button><button type="button" data-color="#7B1FA2" style="background:#7B1FA2"></button><button type="button" data-color="#C2185B" style="background:#C2185B"></button><button type="button" data-color="#E53935" style="background:#E53935"></button><button type="button" data-color="#F9A825" style="background:#F9A825"></button><button type="button" data-color="#388E3C" style="background:#388E3C"></button><button type="button" data-color="#00796B" style="background:#00796B"></button><button type="button" data-color="#546E7A" style="background:#546E7A"></button></div></div></span>
+        <button id="accentResetBtn" class="m3-icon-btn" title="恢复默认主题色" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+          </svg>
+        </button>
+        <button id="themeToggleBtn" class="m3-icon-btn" title="切换深色/浅色主题" type="button">
+          <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+          </svg>
+        </button>
+        <button id="refreshAllBtn" class="m3-icon-btn" title="刷新全部数据" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+          </svg>
+        </button>
       </div>
     </header>
 
-    <!-- 主内容 -->
-    <main class="page">
-      <div class="boot-loading" id="loading">正在加载…</div>
-      <div class="boot-error" id="error"></div>
+    <!-- Category Navigation Bar -->
+    <nav class="category-tabs-bar">
+      <button type="button" class="cat-tab active" data-tab="tab-switches">
+        <span class="cat-icon">🎛️</span>
+        <span class="cat-title">功能开关</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-tuning">
+        <span class="cat-icon">⚙️</span>
+        <span class="cat-title">行为微调</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-runtime">
+        <span class="cat-icon">🧩</span>
+        <span class="cat-title">运行状态</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-guide">
+        <span class="cat-icon">📖</span>
+        <span class="cat-title">使用指南</span>
+      </button>
+    </nav>
 
-      <section class="view" id="view-status" hidden>
-        <div class="cat-tabs" role="tablist">
-          <button class="cat-tab active" data-cat="features" type="button">功能开关</button>
-          <button class="cat-tab" data-cat="runtime" type="button">运行状态</button>
-        </div>
+    <!-- Main Workspace (Single Column, Tab-Driven Architecture) -->
+    <main class="main-content-wrap" id="mainWorkspace">
 
-        <div id="cat-features" class="panel">
-          <div id="feature-list" class="card-grid"></div>
-        </div>
-
-        <div id="cat-runtime" class="panel" hidden>
-          <div class="card">
-            <div class="card-title">AstrNa 共存</div>
-            <div id="astrna-line" class="kv-line">—</div>
+      <!-- ==================== Tab 1: 功能开关 ==================== -->
+      <section class="settings-section active" data-section="tab-switches">
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">引用占位清洗</h2>
+              <p class="card-desc">清理引用链里 core 塞入的 <code>[Empty Text]</code> / <code>[Image unavailable]</code> 占位噪声，并把失效的引用图片明确标注给模型，杜绝"凭空出现的空白图片"。修正类功能，开启会改写本轮请求。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_quote_clean" data-key="enable_quote_clean" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
-          <div class="card">
-            <div class="card-title">插件存储</div>
-            <div id="kv-line" class="kv-line">—</div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">QQ 表情翻译</h2>
+              <p class="card-desc">把消息链里的 face / mface 翻译成文字描述追加进本轮请求。aiocqhttp 默认会把表情丢在 message_str 之外，不开启等于表情全部丢失。修正类功能。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_face_translate" data-key="enable_face_translate" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">回复指向索引</h2>
+              <p class="card-desc">记录 bot 每条回复"回给谁"，下一轮给出三方区分说明，避免把 A 问过的话套到 B 头上。新增行为，默认关闭；与 AstrNa 的 reply target history 同开时本插件自动让路。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_reply_attribution" data-key="enable_reply_attribution" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">用户档案注入</h2>
+              <p class="card-desc">每轮按当前发言人注入其自助档案，让 bot 按档案理解用户而不是乱猜。档案按不可信输入清洗后注入，且不写入会话历史。新增行为，默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_user_profile" data-key="enable_user_profile" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
         </div>
       </section>
-    </main>
 
-    <footer class="footer-note">
-      <span id="hint">功能开关可在 AstrBot 插件配置页修改</span>
-    </footer>
+      <!-- ==================== Tab 2: 行为微调 ==================== -->
+      <section class="settings-section" data-section="tab-tuning">
+        <div class="m3-card">
+          <h2 class="card-title">引用占位处理方式</h2>
+          <p class="card-desc">决定识别到引用占位符后怎么处理。仅在「引用占位清洗」开启时生效。</p>
+          <div class="form-group">
+            <label class="form-label">处理策略</label>
+            <div class="m3-segmented-control" id="seg_quote_action" data-key="quote_placeholder_action">
+              <button type="button" class="seg-item" data-val="label">标注失效</button>
+              <button type="button" class="seg-item" data-val="strip">直接删除</button>
+              <button type="button" class="seg-item" data-val="keep">仅记录</button>
+            </div>
+            <span class="field-hint">标注失效会把 <code>[Image unavailable]</code> 改写成中文说明（推荐）；直接删除会连同图片存在性一起抹掉；仅记录不改写请求。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">表情翻译格式</h2>
+          <p class="card-desc"><code>{name}</code> 会被替换成表情中文名，取不到名字时替换成表情 ID。仅在「QQ 表情翻译」开启时生效。</p>
+          <div class="form-group">
+            <label class="form-label">格式串</label>
+            <input type="text" class="m3-input" id="inp_face_format" data-key="face_format" placeholder="[表情:{name}]" />
+            <span class="field-hint">例如 <code>[表情:得意]</code>、<code>[表情:ID12345]</code>。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">回复指向（R1）</h2>
+          <p class="card-desc">仅在「回复指向索引」开启时生效。</p>
+          <div class="form-group">
+            <label class="form-label">每会话保留的记录数</label>
+            <input type="number" class="m3-input" id="inp_reply_history_limit" data-key="reply_history_limit" min="10" max="5000" />
+            <span class="field-hint">单个会话最多保留多少条「回给谁」记录，超出按先进先出淘汰。默认 200。</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">说明注入的回溯轮数</label>
+            <input type="number" class="m3-input" id="inp_reply_scope_depth" data-key="reply_scope_depth" min="1" max="10" />
+            <span class="field-hint">注入说明时最多回溯多少轮对话。越大说明越长、上下文占用越多。默认 3。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">用户档案（R4）</h2>
+          <p class="card-desc">仅在「用户档案注入」开启时生效。</p>
+          <div class="form-group">
+            <label class="form-label">单人档案最大字数</label>
+            <input type="number" class="m3-input" id="inp_user_profile_max_chars" data-key="user_profile_max_chars" min="50" max="5000" />
+            <span class="field-hint">超过这个字数的档案会被截断后再注入，防止个别超长档案挤占上下文。默认 600。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">调试日志</h2>
+              <p class="card-desc">在 AstrBot 日志里打印每个功能的执行结果与跳过原因，排查「为什么没生效」时打开。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_debug_log" data-key="debug_log" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Tab 3: 运行状态 ==================== -->
+      <section class="settings-section" data-section="tab-runtime">
+        <div class="m3-card">
+          <h2 class="card-title">插件信息</h2>
+          <p class="card-desc">版本号与钩子优先级。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">版本</span><span class="kv-v" id="st_version">—</span></div>
+            <div class="kv-row"><span class="kv-k">加载状态</span><span class="kv-v" id="st_loaded">—</span></div>
+            <div class="kv-row"><span class="kv-k">钩子 priority</span><span class="kv-v" id="st_priority">—</span></div>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">AstrNa 共存</h2>
+          <p class="card-desc">检测同装的 AstrNa 及其开关，决定本插件是否让路（避免重复注入）。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">检测结果</span><span class="kv-v" id="st_astrna">—</span></div>
+            <div class="kv-row"><span class="kv-k">开关状态</span><span class="kv-v" id="st_astrna_switches">—</span></div>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">插件存储</h2>
+          <p class="card-desc">回复指向索引与用户档案都存在插件 KV 里（统一前缀 <code>xbnext:</code>）。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">KV 后端</span><span class="kv-v" id="st_kv">—</span></div>
+            <div class="kv-row"><span class="kv-k">接口通道</span><span class="kv-v" id="st_channel">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Tab 4: 使用指南 ==================== -->
+      <section class="settings-section" data-section="tab-guide">
+        <div class="m3-card">
+          <h2 class="card-title">指令</h2>
+          <p class="card-desc">当前只有一个查询指令，档案类指令随 R4 落地。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 AstrNa 共存状态</span></div>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">新增一个功能</h2>
+          <p class="card-desc">扩展点只有一处，详见 <code>xbnext/features/base.py</code> 顶部注释。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">①</span><span class="kv-v">建 <code>features/my_thing/</code>，写 Feature 子类</span></div>
+            <div class="kv-row"><span class="kv-k">②</span><span class="kv-v">填 key / name / description / order，实现 on_llm_request</span></div>
+            <div class="kv-row"><span class="kv-k">③</span><span class="kv-v">在 <code>_conf_schema.json</code> 加 <code>enable_my_thing</code></span></div>
+            <div class="kv-row"><span class="kv-k">④</span><span class="kv-v">在 <code>features/__init__.py</code> 的 FEATURES 加一行</span></div>
+            <div class="kv-row"><span class="kv-k">⑤</span><span class="kv-v">在 <code>tests/</code> 加测试</span></div>
+          </div>
+          <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。</span>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">致谢与借鉴</h2>
+          <p class="card-desc">本插件的设计与实现借鉴了以下项目：</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">AstrBot</span><span class="kv-v">宿主框架与官方插件规范</span></div>
+            <div class="kv-row"><span class="kv-k">AstrNa</span><span class="kv-v">回复指向索引路线参考与共存策略</span></div>
+            <div class="kv-row"><span class="kv-k">xbdoc / xbimg / xbbot</span><span class="kv-v">本控制台的设计语言与工程骨架</span></div>
+          </div>
+          <span class="field-hint">⚠️ 当前版本未做真机回归：AstrBot 本体在云端，本机仅完成静态检查与单测。</span>
+        </div>
+      </section>
+
+    </main>
   </div>
 
-  <script src="./api.js"></script>
-  <script src="./app.js"></script>
+  <div class="toast-container" id="toastBox"></div>
+
+  <script src="./api.js?v=0.1.0"></script>
+  <script src="./app.js?v=0.1.0"></script>
 </body>
 </html>
