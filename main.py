@@ -1,0 +1,77 @@
+# -*- coding: utf-8 -*-
+"""XBNEXT 插件入口。
+
+**薄壳原则**：本文件只负责把 AstrBot 钩子转发给 ``xbnext.runtime.XbnextRuntime``，
+不写任何业务逻辑。新增功能请改 ``xbnext/features/``，不要往这里堆代码。
+
+指令（``@filter.command*``）目前保留在这里，因为 AstrBot 的钩子扫描发生在类
+加载阶段，动态挂载子命令不可靠；新增指令组时也写在这里。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
+from astrbot.api.star import Context, Star
+
+from .xbnext import HOOK_PRIORITY, PLUGIN_NAME, __version__
+from .xbnext.runtime import XbnextRuntime
+from .xbnext.web import register_web_api
+
+
+class XbnextPlugin(Star):
+    """XBNEXT 插件入口（薄壳）。"""
+
+    def __init__(self, context: Context, config: Optional[Dict[str, Any]] = None):
+        super().__init__(context)
+        # Star 自身就是插件维度 KV 代理（put_kv_data / get_kv_data）
+        self.runtime = XbnextRuntime(config=config, kv_store=self, logger=logger)
+        self.runtime.register_commands(self)
+        register_web_api(context, self.runtime)
+
+    # ------------------------------------------------------------------
+    # 生命周期
+    # ------------------------------------------------------------------
+    @filter.on_astrbot_loaded(priority=HOOK_PRIORITY)
+    async def on_astrbot_loaded(self) -> None:
+        """AstrBot 启动完成后初始化存储与各功能。"""
+        await self.runtime.on_loaded()
+
+    async def terminate(self) -> None:
+        """插件卸载时释放资源。"""
+        await self.runtime.terminate()
+
+    # ------------------------------------------------------------------
+    # 主战场
+    # ------------------------------------------------------------------
+    @filter.on_llm_request(priority=HOOK_PRIORITY)
+    async def on_llm_request(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ) -> None:
+        """按固定顺序调用各功能：清洗在前、注入在后。"""
+        await self.runtime.handle_llm_request(event, req)
+
+    @filter.after_message_sent(priority=HOOK_PRIORITY)
+    async def after_message_sent(self, event: AstrMessageEvent) -> None:
+        """记录 bot 本轮回复 → 供回复指向功能落库。"""
+        await self.runtime.handle_message_sent(event)
+
+    # ------------------------------------------------------------------
+    # 指令
+    # ------------------------------------------------------------------
+    @filter.command_group("xbnext")
+    def xbnext(self) -> None:
+        """XBNEXT 指令组根节点（子命令在 P5 由档案功能扩展）。"""
+
+    @xbnext.command("status")
+    async def xbnext_status(self, event: AstrMessageEvent) -> None:
+        """查看 XBNEXT 各功能开关与 AstrNa 共存状态。"""
+        await event.send(
+            event.plain_result("\n".join(self.runtime.status_lines()))
+        )
+
+    def __repr__(self) -> str:  # pragma: no cover - 仅调试用
+        return f"<XbnextPlugin v{__version__} plugin={PLUGIN_NAME}>"

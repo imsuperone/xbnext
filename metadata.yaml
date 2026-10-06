@@ -1,0 +1,20 @@
+name: astrbot_plugin_xbnext
+display_name: XBNEXT
+short_desc: 修复身份串台、引用误判、QQ 表情不识别；内置用户档案库与控制台。
+desc: |
+  🧭 XBNEXT —— AstrBot 对话质量修正插件：
+  - 🧷 身份归属：给 bot 的回复建立"回给谁"索引，避免把 A 的话套到 B 头上
+  - 🖼️ 引用清洗：清理引用链里失效的占位内容与死路径，杜绝"凭空出现的空白图片"
+  - 😊 表情翻译：把 QQ 自带表情（face / mface）翻译成文字描述，模型真正读得懂
+  - 🗂️ 用户档案：用户自助维护对自己的设定，bot 按档案理解人而不是乱猜
+  - 🎛️ 控制台：仿 xbdoc / xbimg / xbbot_beta 风格的 WebUI，开关与档案统一管理
+version: 0.1.0
+author: Light
+repo: https://github.com/imsuperone/xbnext
+support_platforms:
+  - aiocqhttp
+pages:
+  - name: manager
+    title: XBNEXT 控制台
+    path: pages/manager/index.html
+astrbot_version: ">=3.4.0"

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>XBNEXT 控制台</title>
+  <link rel="stylesheet" href="./style.css">
+  <style>
+    /* 启动样式：内容加载完成前压暗，避免白屏/闪屏（骨架样式必须内联） */
+    #app { opacity: 0; transition: opacity .22s ease; }
+    #app.ready { opacity: 1; }
+    .boot-loading { display: grid; place-items: center; min-height: 60vh;
+      color: var(--on-surface-variant, #9aa3b2); letter-spacing: .08em; }
+    .boot-error { display: none; margin: 24px auto; max-width: 560px;
+      padding: 16px 18px; border: 1px solid var(--outline-variant, #394252);
+      border-radius: var(--radius-md, 14px); background: var(--surface-2, #171b23);
+      color: var(--danger, #ff8a8a); }
+    .boot-error.show { display: block; }
+    @media (max-width: 760px) {
+      .top-bar { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .cat-tabs { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶栏 -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🧭</span>
+        <span class="brand-text">
+          <strong>XBNEXT</strong>
+          <small>对话质量修正控制台</small>
+        </span>
+      </div>
+      <div class="top-right">
+        <span id="conn" class="status-chip" data-state="checking">连接中…</span>
+        <span class="ver-chip">v<span id="version">—</span></span>
+      </div>
+    </header>
+
+    <!-- 主内容 -->
+    <main class="page">
+      <div class="boot-loading" id="loading">正在加载…</div>
+      <div class="boot-error" id="error"></div>
+
+      <section class="view" id="view-status" hidden>
+        <div class="cat-tabs" role="tablist">
+          <button class="cat-tab active" data-cat="features" type="button">功能开关</button>
+          <button class="cat-tab" data-cat="runtime" type="button">运行状态</button>
+        </div>
+
+        <div id="cat-features" class="panel">
+          <div id="feature-list" class="card-grid"></div>
+        </div>
+
+        <div id="cat-runtime" class="panel" hidden>
+          <div class="card">
+            <div class="card-title">AstrNa 共存</div>
+            <div id="astrna-line" class="kv-line">—</div>
+          </div>
+          <div class="card">
+            <div class="card-title">插件存储</div>
+            <div id="kv-line" class="kv-line">—</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer-note">
+      <span id="hint">功能开关可在 AstrBot 插件配置页修改</span>
+    </footer>
+  </div>
+
+  <script src="./api.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

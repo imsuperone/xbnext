@@ -1,0 +1,227 @@
+/* ==========================================================================
+   XBNEXT 控制台 · M3 Expressive 设计令牌与基础样式
+   借鉴本机 xbimg / xbbot_beta 的 admin.css（同一套设计语言）。
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* 缓动与时长 */
+  --ease-emphasized: cubic-bezier(.2, 0, 0, 1);
+  --ease-emphasized-decel: cubic-bezier(.05, .7, .1, 1);
+  --duration-fast: 120ms;
+  --duration-medium: 240ms;
+  --duration-slow: 420ms;
+
+  /* 圆角 */
+  --radius-xs: 5px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  /* 分层背景 */
+  --bg: #101319;
+  --surface-1: #12151c;
+  --surface-2: #171b23;
+  --surface-3: #1c212a;
+  --surface-4: #212732;
+  --surface-5: #272e3a;
+
+  /* 描边 */
+  --outline: #2d3542;
+  --outline-variant: #394252;
+
+  /* 文本 */
+  --on-surface: #e6e9ef;
+  --on-surface-variant: #9aa3b2;
+  --on-surface-muted: #6f7887;
+
+  /* 强调色 */
+  --primary: #79a5ff;
+  --secondary: #b39bff;
+  --success: #78d99a;
+  --warning: #f3c969;
+  --danger: #ff8a8a;
+
+  --shadow-overlay: 0 12px 36px rgba(0, 0, 0, .36);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --surface-1: #ffffff;
+  --surface-2: #f1f3f8;
+  --surface-3: #e9ecf3;
+  --surface-4: #e2e6ef;
+  --surface-5: #d9dee9;
+  --outline: #d7dce6;
+  --outline-variant: #c6ccd9;
+  --on-surface: #171b23;
+  --on-surface-variant: #566072;
+  --on-surface-muted: #828b9b;
+  --primary: #2f6fe0;
+  --secondary: #7a5cf0;
+  --success: #1f9d55;
+  --warning: #b7791f;
+  --danger: #d93025;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--on-surface);
+  font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- 顶栏 */
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--outline);
+}
+
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  font-size: 18px;
+}
+
+.brand-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.brand-text strong { font-size: 15px; letter-spacing: .04em; }
+.brand-text small { color: var(--on-surface-variant); font-size: 12px; }
+
+.top-right { display: flex; align-items: center; gap: 8px; }
+
+.status-chip {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-variant);
+  transition: background var(--duration-fast) var(--ease-emphasized);
+}
+.status-chip[data-state="online"]  { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+.status-chip[data-state="offline"] { color: var(--danger);  border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+.ver-chip {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  background: var(--surface-4);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- 页面 */
+.page { max-width: 1080px; margin: 0 auto; padding: 26px 22px 60px; }
+
+.cat-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+  margin-bottom: 22px;
+  background: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  width: fit-content;
+}
+
+.cat-tab {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  letter-spacing: .02em;
+  transition: background var(--duration-fast) var(--ease-emphasized),
+              color var(--duration-fast) var(--ease-emphasized);
+}
+.cat-tab:hover { color: var(--on-surface); background: var(--surface-4); }
+.cat-tab.active {
+  background: var(--primary);
+  color: #0b0f16;
+  font-weight: 600;
+}
+[data-theme="light"] .cat-tab.active { color: #fff; }
+
+/* ---------------------------------------------------------------- 卡片 */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  transition: border-color var(--duration-medium) var(--ease-emphasized),
+              transform var(--duration-medium) var(--ease-emphasized-decel);
+}
+.card:hover { border-color: var(--outline-variant); transform: translateY(-2px); }
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.card-desc { color: var(--on-surface-variant); font-size: 12.5px; margin: 0 0 14px; }
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.tag {
+  padding: 3px 9px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-4);
+  color: var(--on-surface-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tag.on  { color: var(--success); background: color-mix(in srgb, var(--success) 14%, var(--surface-4)); }
+.tag.off { color: var(--on-surface-muted); }
+.tag.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, var(--surface-4)); }
+
+.kv-line { color: var(--on-surface-variant); font-size: 13px; }
+.kv-line b { color: var(--on-surface); font-weight: 600; }
+
+/* ---------------------------------------------------------------- 页脚 */
+.footer-note {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 22px 40px;
+  color: var(--on-surface-muted);
+  font-size: 12px;
+}
