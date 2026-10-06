@@ -50,8 +50,13 @@ def _read_version() -> str:
 #: CHANGELOG.md 首条 / README.md 版本行，``tests/test_structure.py`` 机械校验。
 __version__ = _read_version()
 
-#: 所有钩子统一使用的 priority（数值越大越靠后，方向待真机实测）；
-#: 取值理由与可能的相互作用见 aidoc/02-架构设计.md §2。
+#: 所有钩子统一使用的 priority。
+#:
+#: **方向已从 core 源码查实**（``astrbot/core/star/star_handler.py`` 的
+#: ``append``：``sort(key=lambda h: -h.extras_configs["priority"])`` ⇒
+#: 按 priority **降序**执行，**数值越大越靠前**）：``1000 > xbdoc 的 100/0``
+#: ，所以本插件的清洗一定排在别人注入之前。内置星标用 ``maxsize`` /
+#: ``maxsize-1`` 仍然最优先。取值理由见 aidoc/02-架构设计.md §2。
 HOOK_PRIORITY = 1000
 
 __all__ = [

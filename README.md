@@ -82,12 +82,21 @@ astrbot_plugin_xbnext/
 
 ## 使用提示
 
-- **纯表情消息不会触发回复**：aiocqhttp 把 `face` 排除在 `message_str` 外，
-  只发表情时 `message_str` 为空，AstrBot 对空消息不进 provider —— 这在本插件
-  作用范围之外。要测「QQ 表情翻译」请把**文字和表情放在同一条消息**里发，
-  例如「我刚发的是什么表情 [表情]」。
-- 排查「为什么没生效」时，先到「行为微调」打开**调试日志**，AstrBot 日志里会
-  出现 `[XBNEXT] …` 开头的行（每个功能的执行结果与跳过原因）。
+- **纯表情消息现在也能触发回复**：aiocqhttp 把 `face` 排除在 `message_str` 外、
+  `mface` 段直接丢弃，只发表情时 `message_str` 是空的，AstrBot core 会
+  `skip llm request: empty message`（**LLM 根本不被调用**）。本插件在
+  `event_message_type(ALL)` 早期钩子里把表情翻译补写回 `message_str`，
+  所以 `@机器人 + 一个表情` 能正常回复。
+  **没被 @ / 没命中唤醒前缀的纯表情仍然不会让 bot 开口** —— 这是正常行为。
+- **日志怎么看**：每轮只在"真有动作"时打一条 INFO 汇总，例如
+  `[XBNEXT] 本轮 引用占位清洗·改写正文、用户档案·注入1段`；
+  纯表情补写会另打一行 `[XBNEXT] 纯表情补写正文：[表情:得意]`。
+  需要逐条明细（跳过原因、注入字数）时到「行为微调」打开**调试日志**，
+  DEBUG 里会出现 `[XBNEXT] …` 开头的行。
+- **与 xbdoc / xbimg 同开**：三者注入通道互相独立（都是 `append`），
+  本插件 `priority=1000` 排在最前 —— 先清洗、后注入，
+  xbdoc 的 `【参考资料】` 不会被改写，`req.system_prompt` / `req.contexts`
+  本插件**从不碰**。
 
 ## 开发
 

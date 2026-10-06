@@ -24,6 +24,13 @@ from pathlib import Path
 from conftest import FakeEvent, FakeReq, _ROOT
 
 
+class Face:
+    """假 QQ 表情段（类名即类型名，与 aiocqhttp 适配器对齐）。"""
+
+    def __init__(self, id=None):
+        self.id = id
+
+
 # ---------------------------------------------------------------------------
 # astrbot stub
 # ---------------------------------------------------------------------------
@@ -68,6 +75,10 @@ def _install_astrbot_stub() -> None:
         on_astrbot_loaded=_decorator,
         on_llm_request=_decorator,
         after_message_sent=_decorator,
+        event_message_type=_decorator,
+        EventMessageType=types.SimpleNamespace(
+            ALL="all", GROUP_MESSAGE="group", PRIVATE_MESSAGE="private"
+        ),
         command=_decorator,
         command_group=_command_group,
     )
@@ -119,8 +130,31 @@ class TestMainSmoke(unittest.TestCase):
 
     def test_hooks_are_decorated(self):
         cls = self.main.XbnextPlugin
-        for name in ("on_llm_request", "on_astrbot_loaded", "after_message_sent", "xbnext"):
+        for name in (
+            "on_adapter_message",
+            "on_llm_request",
+            "on_astrbot_loaded",
+            "after_message_sent",
+            "xbnext",
+        ):
             self.assertTrue(hasattr(cls, name), f"缺少钩子 {name}")
+
+    def test_all_hooks_share_priority(self):
+        """四个钩子必须都用 ``priority=HOOK_PRIORITY``，否则会被别人插队。
+
+        core 按 priority **降序**执行（``sort(key=lambda h: -priority)``）
+        ⇒ 数值越大越靠前；xbdoc 的事件钩子是 100、``on_llm_request`` 是 0。
+        """
+        source = (_ROOT / "main.py").read_text(encoding="utf-8")
+        for deco in (
+            "@filter.event_message_type(",
+            "@filter.on_llm_request(",
+            "@filter.after_message_sent(",
+            "@filter.on_astrbot_loaded(",
+        ):
+            idx = source.index(deco)
+            tail = source[idx : idx + len(deco) + 120]
+            self.assertIn("priority=HOOK_PRIORITY", tail, f"{deco} 未使用统一 priority")
 
     def test_command_group_has_subcommand_api(self):
         """``@filter.command_group`` 返回的句柄必须能挂 ``.command``。"""
@@ -188,10 +222,82 @@ class TestMainSmoke(unittest.TestCase):
     def test_command_entry_also_initialises(self):
         plugin = self.main.XbnextPlugin(context=None, config={})
         self.assertFalse(plugin.runtime._loaded)
-        # FakeEvent 没有 message_str → 指令解析为空，但初始化必须先跑
+        # FakeEvent 的 message_str 是空串 → 指令解析为空，但初始化必须先跑
         asyncio.run(plugin.runtime.handle_command("profile", FakeEvent()))
         self.assertTrue(plugin.runtime._loaded)
         asyncio.run(plugin.terminate())
+
+    # -- 纯表情补写（真机第二轮：「表情是无效的」） --------------------
+    def test_pure_face_message_is_rewritten(self):
+        """``@bot + 纯表情`` 的 message_str 是空的 → 早期钩子必须补上。
+
+        不补的话 core 会 ``skip llm request: empty message``，LLM 根本不被调用。
+        """
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        asyncio.run(plugin.runtime.on_loaded())
+
+        ev = FakeEvent(message_str="", message=[Face(4)])
+        ev.is_at_or_wake_command = True
+        asyncio.run(plugin.on_adapter_message(ev))
+        self.assertEqual(ev.message_str, "[表情:得意]")
+
+        # 补写之后整轮 on_llm_request 不该再重复注入同一段
+        req = FakeReq(prompt=ev.message_str)
+        asyncio.run(plugin.on_llm_request(ev, req))
+        self.assertEqual(req.extra_user_content_parts, [])
+
+        asyncio.run(plugin.terminate())
+
+    def test_pure_face_without_wake_is_untouched(self):
+        """没被 @ / 没命中唤醒前缀的纯表情不能让 bot 开口。"""
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        asyncio.run(plugin.runtime.on_loaded())
+
+        ev = FakeEvent(message_str="", message=[Face(4)])
+        asyncio.run(plugin.on_adapter_message(ev))
+        self.assertEqual(ev.message_str, "")
+
+        # 正文非空的消息绝不改写（那是 on_llm_request 的注入路径）
+        ev2 = FakeEvent(message_str="普通文字", message=[Face(4)])
+        ev2.is_at_or_wake_command = True
+        asyncio.run(plugin.on_adapter_message(ev2))
+        self.assertEqual(ev2.message_str, "普通文字")
+
+        asyncio.run(plugin.terminate())
+
+    def test_adapter_hook_survives_feature_boom(self):
+        """早期钩子单功能炸掉不能冒泡 —— core 会把异常变成发给用户的消息。"""
+        from xbnext.features import FEATURES
+
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        asyncio.run(plugin.runtime.on_loaded())
+
+        class Exploder:
+            key = "enable_face_translate"
+            name = "x"
+            description = "x"
+            order = 30
+            uses_sent_hook = False
+            uses_adapter_hook = True
+
+            def on_adapter_message(self, ctx):
+                raise RuntimeError("boom")
+
+        original = list(FEATURES)
+        try:
+            import xbnext.features as feats
+
+            feats.FEATURES = (Exploder(),)
+            plugin.runtime.features = feats.all_features()
+            ev = FakeEvent(message_str="", message=[Face(4)])
+            ev.is_at_or_wake_command = True
+            asyncio.run(plugin.on_adapter_message(ev))  # 不许抛
+            self.assertEqual(ev.message_str, "")
+        finally:
+            import xbnext.features as feats
+
+            feats.FEATURES = tuple(original)
+            asyncio.run(plugin.terminate())
 
     def test_feature_failure_does_not_break_request(self):
         """单功能炸掉不能拖垮整轮请求（AstrBot 原则 4）。"""

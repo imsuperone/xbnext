@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 
@@ -333,6 +334,170 @@ class TestOnLlmRequest(unittest.TestCase):
         FaceFeature().on_llm_request(ctx)
         self.assertEqual(ctx.injected, 1)
         self.assertIn("[表情:ID999999]", ctx.req.extra_user_content_parts[0].text)
+
+
+class TestOnAdapterMessage(unittest.TestCase):
+    """早期钩子：纯表情补写 ``event.message_str``（真机第二轮「表情是无效的」）。
+
+    core 的 ``internal.py`` 用 ``event.message_str`` 判定 ``has_valid_message``；
+    为空且无媒体内容就 ``skip llm request: empty message`` —— LLM 根本不被调用。
+    """
+
+    @staticmethod
+    def _ctx(message=None, message_str="", wake=True, raw=None, conf=None):
+        event = FakeEvent(message=message or [], message_str=message_str)
+        event.is_at_or_wake_command = wake
+        event.message_obj = SimpleNamespace(
+            message=event.message,
+            message_str=message_str,
+            raw_message=raw,
+        )
+        ctx = RequestContext(
+            event=event,
+            req=FakeReq(prompt=""),
+            conf=conf or Config({}),
+            text_part_cls=FakeTextPart,
+        )
+        return ctx
+
+    def test_pure_face_rewrites_message_str(self):
+        ctx = self._ctx(message=[Face(4), Face(5)], wake=True)
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "[表情:得意] [表情:流泪]")
+        self.assertEqual(ctx.event.message_obj.message_str, "[表情:得意] [表情:流泪]")
+
+    def test_mface_only_rewrites_from_raw(self):
+        """mface 段被适配器直接丢弃，只能从 OneBot 原始载荷捞回来。"""
+        ctx = self._ctx(
+            message=[], wake=True, raw='[CQ:mface,emoji_id=e1,key=k,summary=吃瓜]'
+        )
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "[表情:吃瓜]")
+
+    def test_non_empty_message_never_touched(self):
+        """正文非空 → 那是 ``on_llm_request`` 的注入路径，绝不能改用户正文。"""
+        ctx = self._ctx(message=[Face(4)], message_str="你看看这个", wake=True)
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "你看看这个")
+
+    def test_not_woken_is_untouched(self):
+        """没被 @ / 没命中唤醒前缀的纯表情不能让 bot 开口。"""
+        ctx = self._ctx(message=[Face(4)], wake=False)
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "")
+
+    def test_no_tokens_is_untouched(self):
+        ctx = self._ctx(message=[object()], wake=True)
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "")
+
+    def test_custom_format_used(self):
+        ctx = self._ctx(message=[Face(4)], conf=Config({"face_format": "{name}"}))
+        FaceFeature().on_adapter_message(ctx)
+        self.assertEqual(ctx.event.message_str, "得意")
+
+    def test_no_double_inject_after_rewrite(self):
+        """补写后正文已含片段 → 整轮 ``on_llm_request`` 不该再注入一次。"""
+        ctx = self._ctx(message=[Face(4)])
+        feat = FaceFeature()
+        feat.on_adapter_message(ctx)
+        # 模拟 core：``req.prompt = event.message_str``（astr_main_agent L1491）
+        ctx.req.prompt = ctx.event.message_str
+        feat.on_llm_request(ctx)
+        self.assertEqual(ctx.req.extra_user_content_parts, [])
+
+    def test_none_event_is_safe(self):
+        ctx = RequestContext(
+            event=None,
+            req=FakeReq(),
+            conf=Config({}),
+            text_part_cls=FakeTextPart,
+        )
+        FaceFeature().on_adapter_message(ctx)  # 不许抛
+
+
+class TestAdapterHookFlag(unittest.TestCase):
+    """``uses_adapter_hook`` 只有 R3 打开，且基类默认关闭。"""
+
+    def test_default_off(self):
+        from xbnext.features.base import Feature
+
+        self.assertFalse(Feature.uses_adapter_hook)
+
+    def test_only_face_opts_in(self):
+        from xbnext.features import FEATURES
+
+        opted_in = [f.key for f in FEATURES if getattr(f, "uses_adapter_hook", False)]
+        self.assertEqual(opted_in, ["enable_face_translate"])
+
+
+class _CaptureLog:
+    def __init__(self):
+        self.records = []
+
+    def info(self, msg):
+        self.records.append(("info", msg))
+
+    def warning(self, msg):
+        self.records.append(("warning", msg))
+
+    def debug(self, msg):
+        self.records.append(("debug", msg))
+
+    def of(self, level):
+        return [m for lv, m in self.records if lv == level]
+
+
+class TestRuntimeAdapterHook(unittest.TestCase):
+    """``runtime.handle_adapter_message`` 的接线与日志（真机要看得到）。"""
+
+    @staticmethod
+    def _runtime(**conf):
+        from xbnext.runtime import XbnextRuntime
+
+        log = _CaptureLog()
+        return XbnextRuntime(config=conf, kv_store=None, logger=log), log
+
+    def test_rewrites_and_logs_info(self):
+        rt, log = self._runtime()
+        ev = FakeEvent(message_str="", message=[Face(4)])
+        ev.is_at_or_wake_command = True
+        asyncio.run(rt.handle_adapter_message(ev))
+        asyncio.run(rt.terminate())
+
+        self.assertEqual(ev.message_str, "[表情:得意]")
+        infos = log.of("info")
+        self.assertTrue(any("纯表情补写正文" in m for m in infos), infos)
+        self.assertTrue(any("[表情:得意]" in m for m in infos), infos)
+        self.assertEqual(log.of("warning"), [])
+
+    def test_silent_when_nothing_rewritten(self):
+        rt, log = self._runtime()
+        ev = FakeEvent(message_str="", message=[Face(4)])  # 没被 @
+        asyncio.run(rt.handle_adapter_message(ev))
+        asyncio.run(rt.terminate())
+
+        self.assertEqual(ev.message_str, "")
+        self.assertFalse([m for m in log.of("info") if "补写" in m])
+
+    def test_switch_off_is_noop(self):
+        rt, log = self._runtime(enable_face_translate=False)
+        ev = FakeEvent(message_str="", message=[Face(4)])
+        ev.is_at_or_wake_command = True
+        asyncio.run(rt.handle_adapter_message(ev))
+        asyncio.run(rt.terminate())
+        self.assertEqual(ev.message_str, "")
+        self.assertFalse([m for m in log.of("info") if "补写" in m])
+
+    def test_lazy_init_runs_on_first_adapter_hook(self):
+        """热装插件收不到 ``on_astrbot_loaded`` → 早期钩子必须自己补初始化。"""
+        rt, log = self._runtime()
+        self.assertFalse(rt._loaded)
+        ev = FakeEvent(message_str="", message=[Face(4)])
+        ev.is_at_or_wake_command = True
+        asyncio.run(rt.handle_adapter_message(ev))
+        self.assertTrue(rt._loaded)
+        asyncio.run(rt.terminate())
 
 
 class TestFeatureWiring(unittest.TestCase):

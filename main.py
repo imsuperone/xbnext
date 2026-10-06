@@ -48,6 +48,16 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     # 主战场
     # ------------------------------------------------------------------
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=HOOK_PRIORITY)
+    async def on_adapter_message(self, event: AstrMessageEvent) -> None:
+        """早期钩子：在 core 判定「空消息」之前补写 ``event.message_str``。
+
+        纯表情（``@bot + 一个 QQ 表情`` / mface）的 ``message_str`` 是空的，
+        core 会 ``skip llm request: empty message`` —— LLM 压根不被调用。
+        这里只做转发，业务在 ``runtime.handle_adapter_message``。
+        """
+        await self.runtime.handle_adapter_message(event)
+
     @filter.on_llm_request(priority=HOOK_PRIORITY)
     async def on_llm_request(
         self, event: AstrMessageEvent, req: ProviderRequest

@@ -3,15 +3,24 @@
 
 **所有钩子的实现都在这里**，``main.py`` 只做转发。
 
-``on_llm_request`` 内的固定执行顺序（见 aidoc/02-架构设计.md §2）::
+两个入口，跑在管线的不同阶段：
 
-    1. 开关判定              每个功能进门前先 ctx.enabled(key)，关着就直接跳过
-    2. quote_clean           先清垃圾（后面的注入不再看见脏内容）
-    3. face_translate        表情翻译
-    4. reply_attribution     回复指向三方说明
-    5. user_profile          当前发言人档案（最后注入，不会被本插件自己清洗掉）
+1. :meth:`XbnextRuntime.handle_adapter_message` —— ``event_message_type(ALL)``
+   早期钩子，**在 core 判定「空消息」之前**跑（纯表情补写 ``message_str``）；
+2. :meth:`XbnextRuntime.handle_llm_request` —— ``on_llm_request``，
+   按固定顺序执行（见 aidoc/02-架构设计.md §2）::
+
+       1. 开关判定              每个功能进门前先 ctx.enabled(key)，关着就直接跳过
+       2. quote_clean           先清垃圾（后面的注入不再看见脏内容）
+       3. face_translate        表情翻译
+       4. reply_attribution     回复指向三方说明
+       5. user_profile          当前发言人档案（最后注入，不会被本插件自己清洗掉）
 
 理由：**清洗在前、注入在后**；档案放最后 ⇒ 它绝不会被本插件的清洗删掉。
+
+**日志纪律**：``handle_llm_request`` 只在**本轮真有动作**时打一条 INFO 汇总
+（谁做了什么），没动作就一声不吭 —— 详见 :meth:`XbnextRuntime.handle_llm_request`
+的 docstring。详细备注仍然只在 ``debug_log`` 打开时逐条落 DEBUG。
 
 异常纪律（AstrBot 官方原则 4）：单个功能炸掉只记日志，不影响其他功能，
 更不能让整个请求失败。
@@ -94,20 +103,79 @@ class XbnextRuntime:
     # 主入口
     # ==================================================================
     async def handle_llm_request(self, event: Any, req: Any) -> None:
-        """按固定顺序执行本轮该跑的功能。"""
+        """按固定顺序执行本轮该跑的功能，**有动作时打一条 INFO 汇总**。
+
+        日志纪律（真机第二轮反馈：「档案查询/注入日志没看到 …但是这样有点乱」）：
+
+        - **只在本轮真有动作时**打一条汇总行，形如::
+
+              [XBNEXT] 本轮 引用占位清洗·改写正文、用户档案·注入1段
+
+          每个功能一段，用「·」连接它的动作（注入N段 / 改写正文 / 清图N）；
+          没有任何功能动作 ⇒ 一行不打，日志不被正常请求刷屏；
+        - 详细备注仍然只在 ``debug_log`` 打开时逐条落 DEBUG（不变）；
+        - 单个功能失败仍只打 WARNING，不影响其他功能（AstrBot 原则 4）。
+        """
         await self.ensure_loaded()
         ctx = RequestContext(event=event, req=req, conf=self.conf, runtime=self)
+        actions: List[str] = []
         for feat in self.features:
             try:
                 if not ctx.enabled(feat.key):
                     continue
+                inj_before = ctx.injected
+                prompt_before = ctx.prompt()
+                urls_before = self._image_url_count(req)
                 await self._invoke(feat.on_llm_request, ctx)
             except Exception as exc:  # noqa: BLE001  单功能失败不许拖垮请求
                 self._warn(f"{feat.key} 执行失败：{exc!r}")
+                continue
+            acts = []
+            if ctx.injected > inj_before:
+                acts.append(f"注入{ctx.injected - inj_before}段")
+            if ctx.prompt() != prompt_before:
+                acts.append("改写正文")
+            urls_after = self._image_url_count(req)
+            if urls_after != urls_before:
+                acts.append(f"清图{urls_before}→{urls_after}")
+            if acts:
+                actions.append(f"{feat.name}·{'、'.join(acts)}")
         if self.conf.bool("debug_log"):
             ctx.flush_notes(self.log)
-            if ctx.injected:
-                self._debug(f"本轮注入 {ctx.injected} 段")
+        if actions:
+            self._info("本轮 " + "、".join(actions))
+
+    async def handle_adapter_message(self, event: Any) -> None:
+        """适配器早期钩子（``event_message_type(ALL)``）。
+
+        跑在 core 判定 ``has_valid_message`` **之前** —— 此时 ``req`` 还不存在，
+        所以 :class:`~xbnext.context.RequestContext` 的 ``req`` 是 ``None``
+        （纯补写不走注入）。只有标了 ``uses_adapter_hook`` 的功能会被调用。
+
+        整体异常自吞：AstrBot 的 ``call_handler`` 会把钩子异常变成一条
+        发给用户的错误消息，我们不希望出现这种噪音。
+        """
+        try:
+            await self.ensure_loaded()
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"早期钩子初始化失败：{exc!r}")
+            return
+        before = str(getattr(event, "message_str", "") or "")
+        ctx = RequestContext(event=event, req=None, conf=self.conf, runtime=self)
+        for feat in self.features:
+            try:
+                if not getattr(feat, "uses_adapter_hook", False):
+                    continue
+                if not ctx.enabled(feat.key):
+                    continue
+                await self._invoke(feat.on_adapter_message, ctx)
+            except Exception as exc:  # noqa: BLE001
+                self._warn(f"{feat.key} 早期钩子失败：{exc!r}")
+        after = str(getattr(event, "message_str", "") or "")
+        if after and after != before:
+            self._info(f"纯表情补写正文：{after}")
+        if self.conf.bool("debug_log"):
+            ctx.flush_notes(self.log)
 
     async def handle_message_sent(self, event: Any) -> None:
         """bot 回复已发出 → 通知关心落库的功能（R1）。"""
@@ -222,6 +290,14 @@ class XbnextRuntime:
         from . import __version__
 
         return __version__
+
+    @staticmethod
+    def _image_url_count(req: Any) -> int:
+        """``req.image_urls`` 的条数（拿不到就算 0，只用于日志汇总）。"""
+        try:
+            return len(getattr(req, "image_urls", None) or [])
+        except Exception:  # noqa: BLE001
+            return 0
 
     # -- 日志 ---------------------------------------------------------
     def _emit(self, level: str, message: str) -> None:

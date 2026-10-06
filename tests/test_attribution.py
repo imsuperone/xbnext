@@ -185,6 +185,81 @@ class TestBuildHint(unittest.TestCase):
         self.assertEqual(out, "")
 
 
+class TestSamePersonBranch(unittest.TestCase):
+    """同人 / 异人分支（真机第二轮：同人引用自己仍写「以上是不同的人」）。"""
+
+    def test_key_of(self):
+        self.assertEqual(service.key_of(("1", "A")), "id:1")
+        self.assertEqual(service.key_of(("", "A")), "name:A")
+        self.assertEqual(service.key_of(("", "")), "")
+        self.assertEqual(service.key_of(None), "")
+        # 命名空间隔离：别人的昵称恰好是你的 QQ 号也不能判成同一个人
+        self.assertNotEqual(service.key_of(("10086", "")), service.key_of(("", "10086")))
+
+    def test_history_items_filters_junk_and_depth(self):
+        """深度先切、坏数据后滤 —— 与 ``history_lines`` 原行为一致。"""
+        items = [{"target_id": "1"}, None, "x", {"target_id": "2"}]
+        self.assertEqual(service.history_items(items, 4), [{"target_id": "1"}, {"target_id": "2"}])
+        self.assertEqual(service.history_items(items, 2), [{"target_id": "1"}])
+        self.assertEqual(service.history_items(items, 0), [])
+        self.assertEqual(service.history_items(items, "bad"), [])
+
+    def test_quoting_self_is_same_person(self):
+        out = service.build_hint(current=("1", "A"), quoted=("1", "A"))
+        self.assertIn(service.TAIL_SAME, out)
+        self.assertNotIn(service.TAIL, out)
+        self.assertIn(service.SELF_MARK, out)
+
+    def test_history_all_self_is_same_person(self):
+        history = [{"target_id": "1", "target_name": "A", "ts": 1}]
+        out = service.build_hint(current=("1", "A"), history=history, depth=3, now=100)
+        self.assertTrue(out.endswith(service.TAIL_SAME), out)
+
+    def test_everyone_self_is_same_person(self):
+        history = [{"target_id": "1", "target_name": "A", "ts": 1}]
+        out = service.build_hint(
+            current=("1", "A"),
+            quoted=("1", "A"),
+            ats=[("1", "A")],
+            history=history,
+            depth=3,
+            now=100,
+        )
+        self.assertTrue(out.endswith(service.TAIL_SAME), out)
+
+    def test_self_quoted_but_others_exist(self):
+        """引用自己、但历史里还有别人 → 只能说"引用的是本人"，不能说"都是同一个人"。"""
+        history = [{"target_id": "2", "target_name": "B", "ts": 1}]
+        out = service.build_hint(
+            current=("1", "A"), quoted=("1", "A"), history=history, depth=3, now=100
+        )
+        self.assertTrue(out.endswith(service.TAIL_SELF_QUOTED), out)
+        self.assertIn(service.SELF_MARK, out)
+        self.assertNotIn("都是同一个人", out)
+
+    def test_unknown_identity_falls_back_to_tail(self):
+        """身份未知一律回落「不同的人」（保守，绝不猜）。"""
+        out = service.build_hint(current=("1", "A"), ats=[("", "")])
+        self.assertTrue(out.endswith(service.TAIL), out)
+        self.assertNotIn(service.SELF_MARK, out)
+
+    def test_unknown_current_falls_back_to_tail(self):
+        """当前发言人拿不到 → 不能宣称"都是同一个人"。"""
+        history = [{"target_id": "1", "target_name": "A", "ts": 1}]
+        out = service.build_hint(current=("", ""), history=history, depth=3, now=100)
+        self.assertTrue(out.endswith(service.TAIL), out)
+
+    def test_name_only_match_counts_as_same(self):
+        """只有昵称时两边昵称一致 → 认定同一个人。"""
+        out = service.build_hint(current=("", "A"), quoted=("", "A"))
+        self.assertTrue(out.endswith(service.TAIL_SAME), out)
+
+    def test_mixed_id_and_name_does_not_match(self):
+        """一边只有 ID、一边只有昵称 → 命名空间不同，判不出就不判。"""
+        out = service.build_hint(current=("1", ""), quoted=("", "1"))
+        self.assertTrue(out.endswith(service.TAIL), out)
+
+
 class TestExtraction(unittest.TestCase):
     def test_sender(self):
         ev = FakeEvent(sender_id="42", nickname="阿强")
@@ -292,6 +367,26 @@ class TestFeatureHooks(unittest.TestCase):
         run(feat.on_llm_request(ctx))
         text = ctx.req.extra_user_content_parts[0].text
         self.assertIn("当时的回应对象：小明（ID 10001）", text)
+
+    def test_llm_request_self_quote_says_same_person(self):
+        """真机第二轮 bug：小明引用自己的历史发言，文案仍写「以上是不同的人」。"""
+        feat = make_feature()
+        ev0 = FakeEvent(sender_id="10001", nickname="小明", message_id="9001")
+        run(feat.on_message_sent(make_ctx(event=ev0)))
+
+        ev1 = FakeEvent(
+            sender_id="10001",
+            nickname="小明",
+            message=[Reply(id="9001", sender_id="10001", sender_nickname="小明")],
+        )
+        ctx = make_ctx(event=ev1)
+        run(feat.on_llm_request(ctx))
+        self.assertEqual(ctx.injected, 1)
+        text = ctx.req.extra_user_content_parts[0].text
+        self.assertIn(service.TAIL_SAME, text)
+        self.assertNotIn(service.TAIL, text)
+        self.assertIn(service.SELF_MARK, text)
+        self.assertIn("被引用消息的发送者：小明（ID 10001）", text)
 
     def test_depth_zero_skips(self):
         feat = make_feature()

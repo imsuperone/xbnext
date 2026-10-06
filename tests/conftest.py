@@ -48,11 +48,22 @@ class FakeReq:
 
 
 class FakeEvent:
-    """模拟 ``AstrMessageEvent`` 的最小字段集。"""
+    """模拟 ``AstrMessageEvent`` 的最小字段集。
 
-    def __init__(self, session_id: str = "aiocqhttp:GroupMessage:1", message=None):
+    ``message_str`` / ``is_at_or_wake_command`` / ``call_llm`` 是 core 判定
+    「要不要调 LLM」的三个开关（真机第二轮反馈的纯表情 bug 就出在这里），
+    缺一个都测不到早期钩子的守卫。
+    """
+
+    def __init__(self, session_id: str = "aiocqhttp:GroupMessage:1", message=None,
+                 message_str: str = ""):
         self._session_id = session_id
         self.message = message or []
+        self.message_str = message_str
+        #: core：本轮是否 @到 bot / 命中唤醒前缀
+        self.is_at_or_wake_command = False
+        #: core：``True`` = 禁止默认 LLM 请求
+        self.call_llm = False
 
     def get_session_id(self) -> str:
         return self._session_id

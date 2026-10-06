@@ -12,6 +12,9 @@
    它根本没进消息链，只能从原始载荷拿 ``summary``（表情中文名）；
 3. 结果通过 ``ctx.inject()`` 以 temp part 追加（不写历史）；
 4. ``data.py`` 的权威表由 ``aidoc/tools/gen_face_table.py`` 从上游抓取生成。
+5. **纯表情消息**（正文为空）走 :meth:`FaceFeature.on_adapter_message`
+   早期钩子直接补写 ``event.message_str`` —— 否则 core 会判定
+   ``skip llm request: empty message``，LLM 压根不被调用。
 
 **取名优先级**：段自带 ``summary`` > 内置 ID 表 > ``[表情:ID123]`` /
 ``[表情:key...]`` —— 永远兜底，**绝不静默丢弃**（静默丢弃就是现状 bug）。
@@ -96,6 +99,56 @@ class FaceFeature(Feature):
     name = "QQ 表情翻译"
     description = "把 face / mface 翻译成 [表情:得意] 类文字描述追加进本轮请求。"
     order = 30
+    #: 需要在 core 判定「空消息」之前改写 ``event.message_str``
+    uses_adapter_hook = True
+
+    # -- 早期钩子：纯表情消息的救生索 ------------------------------------
+    def on_adapter_message(self, ctx) -> None:
+        """**纯表情消息**：把翻译结果补写进 ``event.message_str``。
+
+        根因（aidoc/01 §R3 第二版）：aiocqhttp 适配器把 ``face`` 排除在
+        ``message_str`` 外、``mface`` 段直接丢弃、@首个到自己的 ``At``
+        也不进正文 —— 于是 ``@bot + 纯表情`` 的 ``message_str`` 是 ``""``，
+        core 的 ``internal.py`` 判定 ``has_valid_message=False`` 且表情不算
+        媒体内容 ⇒ ``skip llm request: empty message``，**LLM 根本不被调用**。
+
+        因此在 ``event_message_type(ALL)`` 早期钩子里把正文补上，
+        让 core 照常走到 ``req.prompt = event.message_str``。
+
+        守卫（缺一不可）：
+
+        - ``event.message_str`` strip 后**为空** —— 非空走
+          :meth:`on_llm_request` 的 note 注入路径，绝不改用户正文；
+        - ``event.is_at_or_wake_command`` 为真 —— 没被 @/唤醒前缀命中的
+          消息本来就不会走默认 LLM，补了也白补（不能让 bot 回每条消息）；
+        - 确实抽得出表情 token。
+        """
+        event = ctx.event
+        if event is None:
+            return
+        try:
+            raw = getattr(event, "message_str", None)
+            if not isinstance(raw, str) or raw.strip():
+                return
+            if not getattr(event, "is_at_or_wake_command", False):
+                return
+            tokens = self._extract_tokens(ctx)
+            if not tokens:
+                return
+            fmt = ctx.conf.text("face_format", service.DEFAULT_FORMAT)
+            parts = service.translate_all(tokens, fmt=fmt)
+            if not parts:
+                return
+            text = " ".join(parts)
+            event.message_str = text
+            msg_obj = getattr(event, "message_obj", None)
+            if msg_obj is not None and not str(
+                getattr(msg_obj, "message_str", "") or ""
+            ).strip():
+                msg_obj.message_str = text
+            ctx.note(f"face_translate 补写 message_str：{text}")
+        except Exception as exc:  # noqa: BLE001
+            ctx.note(f"face_translate 补写失败：{exc!r}")
 
     def on_llm_request(self, ctx) -> None:
         tokens = self._extract_tokens(ctx)

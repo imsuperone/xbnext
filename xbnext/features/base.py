@@ -6,7 +6,7 @@
 1. 在本目录下建一个子包，例如 ``features/my_thing/``；
 2. 里头写 ``class MyThingFeature(Feature)``，填好 ``key`` / ``name`` /
    ``description`` / ``order``，实现 ``on_llm_request``（可选
-   ``on_message_sent`` / ``on_load`` / ``on_unload``）；
+   ``on_adapter_message`` / ``on_message_sent`` / ``on_load`` / ``on_unload``）；
 3. 在 ``_conf_schema.json`` 里加一个 ``enable_my_thing`` 开关；
 4. 在 ``features/__init__.py`` 的 ``FEATURES`` 里加一行实例化；
 5. 在 ``tests/`` 加一个 ``test_my_thing.py``。
@@ -46,6 +46,10 @@ class Feature:
     order: int = 100
     #: 是否关心 ``after_message_sent``（只有 R1 需要）
     uses_sent_hook: bool = False
+    #: 是否关心**适配器早期钩子** ``event_message_type(ALL)``；
+    #: 只有需要在 core 判定「空消息」之前改写 ``event.message_str`` 的
+    #: 功能才打开（目前只有 R3 纯表情补写）
+    uses_adapter_hook: bool = False
     #: 可选：对外暴露的子指令名（``/xbnext <command>``）；空串表示没有指令
     command: str = ""
 
@@ -72,6 +76,15 @@ class Feature:
         """每轮 LLM 请求调用。可以是普通函数，也可以是 ``async def``。
 
         :param ctx: :class:`~xbnext.context.RequestContext`
+        """
+
+    def on_adapter_message(self, ctx: Any) -> Any:
+        """适配器早期钩子（``event_message_type(ALL)``，仅 ``uses_adapter_hook``）。
+
+        在 core 计算 ``has_valid_message`` 之前运行 —— 此时 ``req`` 还不存在，
+        ``ctx.req`` 为 ``None``（注入会安全地返回 ``False``）。
+        典型用途：把纯表情补写进 ``event.message_str``，否则 core 会以
+        ``skip llm request: empty message`` 直接跳过 LLM。
         """
 
     def on_message_sent(self, ctx: Any) -> Any:

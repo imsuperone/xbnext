@@ -39,16 +39,38 @@
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**273 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**319 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 
+- **纯表情消息（含 `@bot + 表情`）完全不回复** —— 真机第二轮定性「表情是无效的」。
+  第二层根因在 core：`internal.py` L183-199 用 `event.message_str` 判
+  `has_valid_message`，而 aiocqhttp 把 `face` 排除在 `message_str` 外、`mface`
+  段直接 `continue` 丢弃、@首个到自己的 `At` 也不进正文 ⇒ `message_str == ""`
+  且表情不算 `has_media_content` ⇒ **`skip llm request: empty message`，
+  `on_llm_request` 钩子根本不会执行**。
+  改为在 core 判定**之前**加早期钩子 `@filter.event_message_type(ALL,
+  priority=1000)` → `runtime.handle_adapter_message` →
+  `FaceFeature.on_adapter_message` 把翻译补写回 `event.message_str`。
+  三重守卫：正文为空 && `is_at_or_wake_command` && 抽得到表情 token ——
+  没被 @ 的纯表情仍然不开口（不是 bug）
+- **同人引用自己仍被写成「以上是不同的人」**：`service.build_hint` 原来
+  对任何"有引用/有@/有历史"都套同一段 `TAIL`。改为
+  `key_of()`（`id:` / `name:` 双命名空间）判同人，三档文案
+  `TAIL_SAME`（全同）/ `TAIL_SELF_QUOTED`（引用自己但还有别人，被引用者行尾
+  挂 `（即当前发言人本人）`）/ `TAIL`（异人）；**身份未知一律回落 `TAIL`**
+- **注入日志看不到、且一开调试就乱**：`handle_llm_request` 原来只在
+  `debug_log` 下逐条打 notes。改为**有动作才打一条 INFO 汇总**，
+  形如 `[XBNEXT] 本轮 引用占位清洗·改写正文、用户档案·注入1段`
+  （动作标签：`注入N段` / `改写正文` / `清图a→b`），没动作一行不打；
+  纯表情补写另打 `[XBNEXT] 纯表情补写正文：[表情:得意]`；
+  逐条 notes 仍然只在 `debug_log` 打开时落 DEBUG
 - **热装插件拿不到 `on_astrbot_loaded`**：该事件只在 AstrBot 核心启动收尾广播
   一次，启动之后才装上/热更新的插件永远收不到，表现为 WebUI 一直显示「未加载」、
   `/xbnext profile` 回「档案存储还没就绪」、日志里一条 `[XBNEXT]` 都没有。
   现改为 `runtime.on_loaded()` 幂等 + 新增 `ensure_loaded()`，在
-  `handle_llm_request` / `handle_message_sent` / `handle_command` 与
-  `state` / 档案三端点全部兜底调用
+  `handle_llm_request` / `handle_adapter_message` / `handle_message_sent` /
+  `handle_command` 与 `state` / 档案三端点全部兜底调用
 - **主题色要手动点取色器才生效**：`applyTheme()` 里对
   `CONFIG.ui_accent_color` 的非空判断会让默认态下换主题丢掉派生色；改为
   无条件 `applyAccent()`，并在 `writeConfig()` 的写入成功与回滚两条路径都补
@@ -60,12 +82,19 @@
   `runtime.conflict_for()` / WebUI 的「AstrNa 共存」卡片与 `state.astrna`
   字段已**整套移除**（AstrNa 未装时那张卡永远是 `—`，属假功能位）。
   两个插件同装时各自独立工作；AstrNa 仅作为路线参考保留在致谢里。见 `aidoc/02 §6`。
-- **纯表情消息不触发回复**：aiocqhttp 把 `face` 排除在 `message_str` 外，
-  纯表情消息 `message_str` 为空，AstrBot 对空消息不进 provider —— 插件钩子
-  `on_llm_request` 根本不会被执行。测「QQ 表情翻译」请文字与表情同发一条。
+- **与 xbdoc / xbimg 共存**（真机第三轮反馈：「注入记得不要和 xbdoc 搞出冲突」）：
+  core 按 priority **降序**执行（`sort(key=lambda h: -priority)`），
+  本插件 `1000 > xbdoc 100/0 > xbimg 100` ⇒ **先清洗、后注入**；
+  两者都 `append` 进 `extra_user_content_parts`，互相不清除；
+  本插件**从不碰** `req.system_prompt` / `req.contexts`，`strip_xbnext`
+  只剥 `<xbnext>` 标签，改不动 xbdoc 的 `【参考资料】` 块。
+  上述约束由 `tests/test_coexist.py` 机械锁死。
 - **真机回归（首轮）已跑通**：WebUI 打开 / 配置回填 / 改开关刷新保留、
   bridge 通道均正常；深浅色与主题色默认值仍待与 xbdoc / xbimg 再对比一次。
-- **仍未做**：完整功能回归（R1~R4 触发用例 + 三个 WebUI 端点的真机往返）。
+- **真机回归（第二轮）已跑通**：加载与注入正常、主题色 OK、R4 档案三步指令
+  + 问答生效（bot 称呼 "OP"、记得"爱玩原神"）。
+- **仍未做**：完整功能回归（R1~R4 触发用例 + 三个 WebUI 端点的真机往返 +
+  与 xbdoc 同开的实机对照）。
 - 发布包排除 `aidoc/ tests/ .git/ __pycache__/ *.pyc`，但 `aidoc/` 与 `tests/`
   **必须进 git**。
 - 已 push 到 `origin/main`；`v0.1.0` tag **待真机测试通过后再打**。

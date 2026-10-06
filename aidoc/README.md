@@ -47,14 +47,19 @@ AstrBot 目前存在若干长期问题（详见 `01-需求与根因.md`），XBN
 - **R1**：AstrBot 会话历史里 user 消息**不带发言人标记**，群聊上下文块也只按
   `[昵称/时间]` 平铺；bot 回复"回给谁"没有落库索引。解决思路 = ①每轮临时注入
   "当前发言人/被引用人"三方区分说明 ②给 bot 回复建立"回给谁"的 KV 索引。
+  说明必须**分同人 / 异人两套文案**（同人引用自己时不能说"以上是不同的人"）。
   （AstrNa `reply_target_history.py` 已验证此路线，可借鉴但**不照抄**，见 R1 章节的差异点。）
 - **R2**：不是"真的有空白图片"，而是 core 在引用链处理中**注入了占位符文本**
   （`[Image unavailable]` / `[Empty Text]` / `[Image]`），加上失败的图片路径仍留在
   `req.image_urls`，模型据此臆想出一张空白图。解决思路 = 在 `on_llm_request` 清洗
   无效引用占位 + 过滤死路径 + 无法恢复时**明确标注"引用的图片已失效"**而不是留空。
-- **R3**：aiocqhttp 适配器把 `face` 段**排除在 `message_str` 之外**、`mface`（商城表情）
-  **直接 `continue` 丢弃**，而 `req.prompt = event.message_str` —— 所以模型根本收不到
-  表情。解决思路 = 拦截消息链，把 Face/mface 翻译成 `[表情:得意]` 类文本描述再进 prompt。
+- **R3**：两层根因。① aiocqhttp 适配器把 `face` 段**排除在 `message_str` 之外**、
+  `mface`（商城表情）**直接 `continue` 丢弃**，而 `req.prompt = event.message_str`；
+  ② 于是纯表情消息 `message_str == ""`，core 的 `internal.py` 判
+  `has_valid_message=False` 且表情不算媒体内容 ⇒ **`skip llm request:
+  empty message`，LLM 压根不被调用**（`on_llm_request` 根本不执行）。
+  解决思路 = 两条腿：正文非空时把表情翻译成 `[表情:得意]` 注入；
+  正文为空时在 `event_message_type(ALL)` **早期钩子里补写 `message_str`**。
   （AstrNa 全仓 0 处表情处理，此处为 XBNEXT 独有能力。）
 - **R4**：AstrBot 自带 `identifier` 只注入 `User ID/Nickname` 一行；没有"用户自我设定"
   的存储与读取链路。解决思路 = 插件内建**用户档案库**（KV/文件持久化），
@@ -211,13 +216,35 @@ astrbot_plugin_xbnext/
 > `ProfileStore` 里做增删与孤儿自愈。原"不做档案页签"的决策已在 `04` §5 改写。
 > 单测 **252 → 273**。
 >
-> **R3「沉默不回复」的结论**：日志里纯表情消息（`[表情:5]` / `[表情:3]`）后面
-> **没有 `Prepare to send`**，说明 AstrBot 根本没进 provider —— aiocqhttp 把 face
-> 排除在 `message_str` 外，纯表情消息 `message_str` 为空，AstrBot 对空消息不触发
-> LLM。这在本插件的作用范围之外（插件钩子 `on_llm_request` 要等 provider 被调用
-> 才会执行）。**正确测法**：文字和表情**同一条消息**发，例如
-> 「我刚发的是什么表情 [表情]」。要看出表情确实被翻译，在「行为微调」打开
-> **调试日志**，日志里应出现 `[XBNEXT] face_translate 注入 N 个表情片段`。
+> **真机第二轮反馈修复（P9，未打 tag）**：用户回报 3 个问题 + 顺带一个日志发现，
+> 全部修复 ——
+> ① **「表情是无效的」（纯表情完全不回复）**：根因比第一轮判断的更深一层 ——
+> 不是"模型看不懂"，而是 **LLM 压根没被调用**。
+> `core/.../internal.py` L183-199 用 `event.message_str` 判
+> `has_valid_message`，为空且无 `Image/File/Record/Video`/`Reply` 就
+> `skip llm request: empty message`；而 aiocqhttp 把 `face` 排除在
+> `message_str` 外、`mface` 段 `continue` 丢弃、@首个到自己的 `At` 不进正文
+> ⇒ 纯表情的 `message_str == ""` ⇒ **`on_llm_request` 钩子根本不跑**。
+> 修法：在 core 判定**之前**加早期钩子
+> `@filter.event_message_type(ALL, priority=HOOK_PRIORITY)` →
+> `runtime.handle_adapter_message` → `FaceFeature.on_adapter_message`
+> 把翻译补写回 `event.message_str`。守卫三重：正文为空 &&
+> `is_at_or_wake_command` && 抽得到 token（没被 @ 的纯表情仍不开口）。
+> ② **档案注入日志看不到、调试一开又乱**：`handle_llm_request` 改成
+> **有动作才打一条 INFO 汇总**（`本轮 引用占位清洗·改写正文、用户档案·注入1段`），
+> 没动作一行不打；纯表情补写另打 `纯表情补写正文：[表情:得意]`；
+> 逐条 notes 仍只在 `debug_log` 落 DEBUG。
+> ③ **「注入记得不要和 xbdoc 搞出冲突」**：从 core 源码查实优先级方向
+> （`sort(key=lambda h: -priority)` ⇒ **数值越大越靠前**），
+> 本插件 1000 > xbdoc 100/0 ⇒ 先清洗后注入；两者都 `append`、互不清除；
+> `system_prompt` / `contexts` 本插件从不碰。新增
+> `tests/test_coexist.py` 把这 4 条断言锁死。
+> ④ **（日志发现）同人引用自己仍写「以上是不同的人」**：
+> `service.build_hint` 原来对任何"有引用/有@/有历史"都套同一段 `TAIL`。
+> 改为 `key_of()`（`id:` / `name:` 双命名空间）判同人 + 三档文案
+> `TAIL_SAME` / `TAIL_SELF_QUOTED`（行尾挂 `（即当前发言人本人）`）/ `TAIL`；
+> 身份未知一律回落 `TAIL`（保守）。
+> 单测 **273 → 319**。
 
 ---
 
