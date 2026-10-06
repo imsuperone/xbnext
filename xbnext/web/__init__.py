@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """WebUI 后端 API。
 
-三个端点（路由用 **metadata.yaml 里保留大小写的插件名**，因为 Plugin Page
-Bridge 是按 metadata 名请求接口的——AstrBot 会把插件类上的 name 规范成小写，
-两者不一致时 bridge 会打偏）::
+三个配置端点 + 三个档案端点（路由用 **metadata.yaml 里保留大小写的插件名**，
+因为 Plugin Page Bridge 是按 metadata 名请求接口的——AstrBot 会把插件类上的
+name 规范成小写，两者不一致时 bridge 会打偏）::
 
-    GET  /astrbot_plugin_xbnext/ping      —— 前端探测 bridge / HTTP 前缀用
-    GET  /astrbot_plugin_xbnext/state     —— 运行状态 + 全量配置（一次回填）
-    POST /astrbot_plugin_xbnext/setting   —— 写单个配置项（开关 / 表单 / 主题）
+    GET  /astrbot_plugin_xbnext/ping           —— 前端探测 bridge / HTTP 前缀用
+    GET  /astrbot_plugin_xbnext/state          —— 运行状态 + 全量配置（一次回填）
+    POST /astrbot_plugin_xbnext/setting        —— 写单个配置项（开关 / 表单 / 主题）
+    GET  /astrbot_plugin_xbnext/profiles       —— 列出全部用户档案
+    POST /astrbot_plugin_xbnext/profile_save   —— 写一份档案（全空即删除）
+    POST /astrbot_plugin_xbnext/profile_delete —— 删一份档案
 
 注册方式对齐 AstrNa 与本机三个参考插件：``context.register_web_api``；
 旧版 AstrBot 没有该方法时**静默跳过**，不影响插件主体功能。
@@ -86,6 +89,45 @@ async def handle_setting(runtime: Any, payload: Any) -> Dict[str, Any]:
     return {"ok": True, "data": result}
 
 
+#: 档案功能的配置键（WebUI 档案页签经 runtime 找到对应 Feature）
+PROFILE_KEY = "enable_user_profile"
+
+
+def _profile_feature(runtime: Any) -> Any:
+    feat = runtime.get_feature(PROFILE_KEY) if hasattr(runtime, "get_feature") else None
+    if feat is None:
+        raise RuntimeError("用户档案功能未注册")
+    return feat
+
+
+async def _prepare(runtime: Any) -> None:
+    """懒初始化兜底（真 runtime 一定有；测试替身可以没有）。"""
+    ensure = getattr(runtime, "ensure_loaded", None)
+    if callable(ensure):
+        await ensure()
+
+
+async def handle_profiles(runtime: Any) -> Dict[str, Any]:
+    """``GET profiles``：列出全部档案（存储未就绪时返回 ok:false）。"""
+    await _prepare(runtime)
+    rows = await _profile_feature(runtime).web_list()
+    return {"ok": True, "data": rows}
+
+
+async def handle_profile_save(runtime: Any, payload: Any) -> Dict[str, Any]:
+    """``POST profile_save``：写一份档案。"""
+    await _prepare(runtime)
+    data = await _profile_feature(runtime).web_save(payload)
+    return {"ok": True, "data": data}
+
+
+async def handle_profile_delete(runtime: Any, payload: Any) -> Dict[str, Any]:
+    """``POST profile_delete``：删一份档案。"""
+    await _prepare(runtime)
+    data = await _profile_feature(runtime).web_delete(payload)
+    return {"ok": True, "data": data}
+
+
 def register_web_api(context: Any, runtime: Any) -> bool:
     """注册 XBNEXT 的 Web API；不可用时返回 ``False``。"""
     register = getattr(context, "register_web_api", None)
@@ -98,6 +140,28 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     base = f"/{PLUGIN_NAME}"
 
+    async def read_json() -> tuple:
+        """读请求体，返回 ``(payload, err_response)``，两者只会有一个非 ``None``。"""
+        try:
+            value = await astrbot_web.request.json(default={})
+        except Exception:  # noqa: BLE001
+            return None, _err("请求体不是合法 JSON", astrbot_web)
+        if not isinstance(value, dict):
+            return None, _err("请求体必须是 JSON 对象", astrbot_web)
+        return value, None
+
+    async def _profile_post(handler: Any) -> Any:
+        try:
+            payload, err = await read_json()
+            if err is not None:
+                return err
+            result = await handler(runtime, payload)
+            if not result.get("ok"):
+                return _err(result.get("error") or "请求失败", astrbot_web, result.get("data"))
+            return _ok(result.get("data"), astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
     async def ping() -> Any:
         return _ok(
             {"version": __version__, "plugin": PLUGIN_NAME, "priority": HOOK_PRIORITY},
@@ -106,16 +170,18 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def state() -> Any:
         try:
+            # 兜底初始化：热装的插件收不到 on_astrbot_loaded，必须在这里补上，
+            # 否则页面会永远显示"未加载"。
+            await runtime.ensure_loaded()
             return _ok(build_state(runtime), astrbot_web)
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
     async def setting() -> Any:
         try:
-            try:
-                payload = await astrbot_web.request.json(default={})
-            except Exception:  # noqa: BLE001
-                return _err("请求体不是合法 JSON", astrbot_web)
+            payload, err = await read_json()
+            if err is not None:
+                return err
             result = await handle_setting(runtime, payload)
             if not result.get("ok"):
                 return _err(result.get("error") or "写入失败", astrbot_web, result.get("data"))
@@ -123,13 +189,39 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
+    async def profiles() -> Any:
+        try:
+            result = await handle_profiles(runtime)
+            if not result.get("ok"):
+                return _err(result.get("error") or "请求失败", astrbot_web, result.get("data"))
+            return _ok(result.get("data"), astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
+    async def profile_save() -> Any:
+        return await _profile_post(handle_profile_save)
+
+    async def profile_delete() -> Any:
+        return await _profile_post(handle_profile_delete)
+
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
         register(f"{base}/setting", setting, ["POST"], "XBNEXT 写入配置项")
+        register(f"{base}/profiles", profiles, ["GET"], "XBNEXT 用户档案列表")
+        register(f"{base}/profile_save", profile_save, ["POST"], "XBNEXT 写入用户档案")
+        register(f"{base}/profile_delete", profile_delete, ["POST"], "XBNEXT 删除用户档案")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True
 
 
-__all__ = ["register_web_api", "build_state", "handle_setting"]
+__all__ = [
+    "register_web_api",
+    "build_state",
+    "handle_setting",
+    "handle_profiles",
+    "handle_profile_save",
+    "handle_profile_delete",
+    "PROFILE_KEY",
+]

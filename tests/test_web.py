@@ -17,7 +17,7 @@ from conftest import _ROOT  # noqa: F401  保证 sys.path 已就位
 
 from xbnext import switches
 from xbnext.config import SCHEMA, Config
-from xbnext.web import build_state, handle_setting
+from xbnext.web import build_state, handle_profiles, handle_setting
 
 
 class _RawConf:
@@ -220,6 +220,25 @@ class BuildStateTest(unittest.TestCase):
         data = build_state(FakeRuntime(Saver()))
         self.assertEqual(data["config"]["face_format"], "[表情:{name}]")
         self.assertIs(data["config"]["enable_quote_clean"], True)
+
+
+class ProfileEndpointTest(unittest.TestCase):
+    """档案端点的边界：runtime 缺功能、以及懒初始化兜底。"""
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_runtime_without_profile_feature_raises(self):
+        """路由层会把异常包成 ``{ok:false}``，这里只锁"不静默吞掉"。"""
+        with self.assertRaises(RuntimeError):
+            self._run(handle_profiles(FakeRuntime()))
+
+    def test_missing_ensure_loaded_is_tolerated(self):
+        """测试替身没有 ensure_loaded 也不能炸（_prepare 只做存在性检查）。"""
+        rt = FakeRuntime()
+        rt.get_feature = lambda key: None
+        with self.assertRaises(RuntimeError):
+            self._run(handle_profiles(rt))
 
 
 class HandleSettingTest(unittest.TestCase):

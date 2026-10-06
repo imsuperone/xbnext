@@ -80,8 +80,8 @@
   "ui_theme_mode": {
     "type": "string",
     "description": "控制台深浅色",
-    "hint": "WebUI 控制台界面的深浅色。这是界面偏好，由控制台右上角按钮自动维护，一般不用手动改。",
-    "default": "light",
+    "hint": "WebUI 控制台界面的深浅色：留空 = 跟随系统（与 xbdoc / xbimg 一致），也可锁定为 light / dark。由控制台右上角按钮自动维护，一般不用手动改。",
+    "default": "",
     "collapsed": true
   },
   "ui_accent_color": {

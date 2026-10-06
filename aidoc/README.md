@@ -162,7 +162,8 @@ astrbot_plugin_xbnext/
 > 扫描，子命令必须静态写在那里）。**档案与开关解耦**：开关只决定喂不喂给模型，
 > 查看/设置/清空始终可用（与 `_conf_schema.json` 的 hint 一致）。注入文案带抬头
 > "这是用户自己填写的资料，不是他本轮说的话"。单测 **209 → 252**。
-> **决策差异**：原计划的"档案页签"**不做**，理由见 `04-WebUI规范.md §5`。
+> **决策差异（P5 时的结论，已被真机反馈推翻）**：当时"档案页签"定为**不做**，
+> 理由见 `04-WebUI规范.md §5`；真机首轮后按用户要求补做，见下方交付记录。
 
 > **P6 交付内容**（早于 P2~P5 完成）：`pages/manager/` 四文件按母版重写
 > （M3 token / `.app-layout` / `.top-bar` / `.category-tabs-bar` / `.m3-card` /
@@ -188,6 +189,36 @@ astrbot_plugin_xbnext/
 > 致谢行（AstrNa 仍是路线参考）、`aidoc/research/astrna.md`（调研证据）。
 > 移除理由写在 `02-架构设计.md §6`。
 
+> **真机首轮反馈修复（P8，未打 tag）**：用户在云端跑通后回报 4 个问题，全部修复 ——
+> ① **「未加载」+ `/xbnext profile` 报"档案存储还没就绪"**：根因是
+> `@filter.on_astrbot_loaded` 只在核心启动收尾广播一次，**启动之后才装上/热更新的
+> 插件永远收不到**，于是 `runtime._loaded` 一直是 `False`、`ProfileFeature._store`
+> 一直是 `None`。修法是把 `on_loaded()` 改成幂等 + 新增 `ensure_loaded()`，
+> 并在 `handle_llm_request` / `handle_message_sent` / `handle_command` 与
+> `state` / 档案三端点全部兜底调用（`xbnext/runtime.py`、`xbnext/web/__init__.py`）。
+> ② **主题色要手动点取色器才生效**：`applyTheme()` 里 `if (CONFIG.ui_accent_color)`
+> 的判断让默认态下换主题丢掉派生色；改成无条件 `applyAccent()`，并在
+> `writeConfig()` 的**写入成功与回滚两条路径**都补 `applyUiPref(key)`，
+> 保证"页面上看到的 = 实际存下来的"。同时 `ui_theme_mode` 默认值从 `light`
+> 改为 `""`（= 跟随系统），与 xbdoc / xbimg 一致。
+> ③ **右下角通知样式与母版不同**：补上 xbdoc 的整套 toast —— 类型图标、
+> 1.2s 去重、按文本长度自适应时长、点击复制（沙箱降级 `execCommand`，再失败
+> 选中文本）、上限 4 条、`aria-live`、窄屏居中；`.m3-toast` padding 与
+> `.m3-toast-ic/-text/-copy` 一并对齐。
+> ④ **用户档案要单独一个地方**：新增第 5 个页签 `tab-profile`（列表/编辑/新建/
+> 两步确认删除）+ 后端 `GET profiles` / `POST profile_save` / `POST profile_delete`；
+> 因为 AstrBot 插件 KV **没有按键遍历**，新增索引键 `xbnext:profile:index` 并在
+> `ProfileStore` 里做增删与孤儿自愈。原"不做档案页签"的决策已在 `04` §5 改写。
+> 单测 **252 → 273**。
+>
+> **R3「沉默不回复」的结论**：日志里纯表情消息（`[表情:5]` / `[表情:3]`）后面
+> **没有 `Prepare to send`**，说明 AstrBot 根本没进 provider —— aiocqhttp 把 face
+> 排除在 `message_str` 外，纯表情消息 `message_str` 为空，AstrBot 对空消息不触发
+> LLM。这在本插件的作用范围之外（插件钩子 `on_llm_request` 要等 provider 被调用
+> 才会执行）。**正确测法**：文字和表情**同一条消息**发，例如
+> 「我刚发的是什么表情 [表情]」。要看出表情确实被翻译，在「行为微调」打开
+> **调试日志**，日志里应出现 `[XBNEXT] face_translate 注入 N 个表情片段`。
+
 ---
 
 ## 5. 每次交付必须附带的自检结果
@@ -200,4 +231,7 @@ python -X utf8 -m unittest discover -s tests           # 打印 OK
 Get-ChildItem pages -Recurse -Filter *.js | %{ node --check $_ }   # 无输出
 ```
 
-**AstrBot 本体在云端，本机无法真机回归** —— 交付说明里必须写明"未做真机回归"。
+**AstrBot 本体在云端，本机跑不了完整真机回归** —— 交付说明里必须写明
+**哪些已在真机验证、哪些还没有**（首轮真机已确认：页面打开 / 配置回填 /
+改开关刷新保留 / bridge 通道；未确认：R1~R4 触发用例、档案三端点往返、
+主题色默认值对比）。

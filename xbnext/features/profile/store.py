@@ -31,6 +31,15 @@ from ...injector import sanitize, strip_xbnext
 FIELDS = ("name", "facts", "style")
 DEFAULT_MAX_LEN = {"name": 32, "facts": 480, "style": 120}
 
+#: 索引键：AstrBot 的插件 KV **没有"遍历所有键"的能力**（只有按键 get/put/delete），
+#: WebUI 要列出全部档案就必须自己维护一份成员表。
+INDEX_KEY = "profile:index"
+
+
+def _token(platform: str, uid: Any) -> str:
+    """索引里的成员记号：``<platform>|<uid>``。"""
+    return f"{platform or 'unknown'}|{uid or 'unknown'}"
+
 
 def normalize(raw: Any, max_chars: int = 0) -> Dict[str, Any]:
     """把任意输入压成合法档案；非法输入返回 ``{}``。"""
@@ -114,6 +123,7 @@ class ProfileStore:
             if not profile:
                 return {}
             await self._kv.set(key_of(platform, uid), profile)
+            await self._index_add(platform, uid)
             return profile
         except Exception as exc:  # noqa: BLE001
             self._warn(f"写入档案失败 {platform}/{uid}: {exc}")
@@ -122,9 +132,70 @@ class ProfileStore:
     async def delete(self, platform: str, uid: Any) -> bool:
         """删除一份档案。"""
         try:
-            return await self._kv.delete(key_of(platform, uid))
+            ok = await self._kv.delete(key_of(platform, uid))
+            await self._index_remove(platform, uid)
+            return ok
         except Exception:  # noqa: BLE001
             return False
+
+    async def list_all(self) -> List[Dict[str, Any]]:
+        """列出全部档案（WebUI 档案页签用）。
+
+        返回 ``[{"platform", "uid", "profile", "updated"}, ...]``，按更新时间倒序。
+        读索引 → 逐条回读 → 顺手把已不存在的成员从索引里剔除（自愈）。
+        """
+        try:
+            tokens = await self._kv.get_list(INDEX_KEY)
+        except Exception:  # noqa: BLE001
+            tokens = []
+        rows: List[Dict[str, Any]] = []
+        seen = set()
+        stale: List[str] = []
+        for token in tokens if isinstance(tokens, list) else []:
+            if not isinstance(token, str) or "|" not in token:
+                continue
+            platform, uid = token.split("|", 1)
+            if not uid or token in seen:
+                continue
+            seen.add(token)
+            try:
+                data = await self._kv.get_dict(key_of(platform, uid))
+            except Exception:  # noqa: BLE001
+                continue
+            if is_empty(data):
+                stale.append(token)
+                continue
+            rows.append(
+                {
+                    "platform": platform,
+                    "uid": uid,
+                    "profile": {f: data.get(f, "") for f in FIELDS},
+                    "updated": int(data.get("updated") or 0),
+                }
+            )
+        if stale:
+            await self._index_write([t for t in tokens if t not in stale])
+        rows.sort(key=lambda r: r["updated"], reverse=True)
+        return rows
+
+    # -- 索引维护 -----------------------------------------------------
+    async def _index_add(self, platform: str, uid: Any) -> None:
+        token = _token(platform, uid)
+        tokens = await self._kv.get_list(INDEX_KEY)
+        if token in tokens:
+            return
+        tokens.append(token)
+        await self._kv.set(INDEX_KEY, tokens)
+
+    async def _index_remove(self, platform: str, uid: Any) -> None:
+        token = _token(platform, uid)
+        tokens = await self._kv.get_list(INDEX_KEY)
+        if token not in tokens:
+            return
+        await self._kv.set(INDEX_KEY, [t for t in tokens if t != token])
+
+    async def _index_write(self, tokens: List[str]) -> None:
+        await self._kv.set(INDEX_KEY, [t for t in tokens if isinstance(t, str)])
 
     def _warn(self, message: str) -> None:
         method = getattr(self._log, "warning", None)

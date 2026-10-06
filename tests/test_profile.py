@@ -7,7 +7,7 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 
-from conftest import FakeEvent, FakeKV, FakeTextPart, _ROOT  # noqa: F401
+from conftest import FakeEvent, FakeKV, FakeReq, FakeTextPart, _ROOT  # noqa: F401
 
 from xbnext import commands
 from xbnext.config import Config
@@ -17,6 +17,7 @@ from xbnext.features.profile import ProfileFeature, service
 from xbnext.features.profile.store import DEFAULT_MAX_LEN, ProfileStore, render
 from xbnext.runtime import XbnextRuntime
 from xbnext.storage import KV
+from xbnext.web import handle_profile_delete, handle_profile_save, handle_profiles
 
 
 class CmdEvent(FakeEvent):
@@ -355,6 +356,165 @@ class TestRuntimeHandleCommand(unittest.TestCase):
         self.assertIn("已更新", out)
         view = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
         self.assertIn("称呼：小红", view)
+
+
+class TestProfileStoreIndex(unittest.TestCase):
+    """档案页签要能列出全部档案，而 AstrBot 的 KV 没有"按键遍历"能力。"""
+
+    @staticmethod
+    def _store():
+        return ProfileStore(KV(owner=FakeKV()), logger=None)
+
+    def test_set_registers_index_and_lists_row(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "小明"}))
+        rows = run(st.list_all())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["platform"], "aiocqhttp")
+        self.assertEqual(rows[0]["uid"], "10001")
+        self.assertEqual(rows[0]["profile"]["name"], "小明")
+        self.assertIn("aiocqhttp|10001", run(st._kv.get_list("profile:index")))
+
+    def test_delete_also_updates_index(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "小明"}))
+        self.assertTrue(run(st.delete("aiocqhttp", "10001")))
+        self.assertEqual(run(st.list_all()), [])
+        self.assertEqual(run(st._kv.get_list("profile:index")), [])
+
+    def test_empty_profile_is_never_listed(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {}))  # normalize 后为空 → 不落库
+        self.assertEqual(run(st.list_all()), [])
+
+    def test_two_profiles_coexist(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "小明"}))
+        run(st.set("aiocqhttp", "20002", {"name": "小红"}))
+        rows = run(st.list_all())
+        self.assertEqual({r["uid"] for r in rows}, {"10001", "20002"})
+
+    def test_stale_index_entry_is_pruned(self):
+        """档案键被外部删掉后，索引里的孤儿条目要自愈，不能永远报幽灵档案。"""
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "小明"}))
+        run(st._kv.delete("profile:aiocqhttp:10001"))
+        self.assertEqual(run(st.list_all()), [])
+        self.assertEqual(run(st._kv.get_list("profile:index")), [])
+
+    def test_index_entries_survive_store_recreation(self):
+        """索引落在 KV 里，换一个 Store 实例（重启插件）仍能列出来。"""
+        owner = FakeKV()
+        first = ProfileStore(KV(owner=owner), logger=None)
+        run(first.set("aiocqhttp", "10001", {"name": "小明"}))
+        second = ProfileStore(KV(owner=owner), logger=None)
+        rows = run(second.list_all())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["profile"]["name"], "小明")
+
+
+class TestProfileWebApi(unittest.TestCase):
+    """WebUI 档案页签的后端：列表 / 写入 / 删除。"""
+
+    def test_list_starts_empty(self):
+        self.assertEqual(run(make_feature().web_list()), [])
+
+    def test_save_then_list_then_delete(self):
+        feat = make_feature()
+        out = run(feat.web_save(
+            {"platform": "aiocqhttp", "uid": "30003", "name": "阿三",
+             "facts": "爱睡懒觉", "style": "慵懒"}))
+        self.assertFalse(out["deleted"])
+        self.assertEqual(out["profile"]["name"], "阿三")
+
+        rows = run(feat.web_list())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["profile"]["facts"], "爱睡懒觉")
+
+        # 三个字段全空 = 删掉整份档案（页面上看到空的，存的就是没有）
+        out2 = run(feat.web_save(
+            {"platform": "aiocqhttp", "uid": "30003", "name": "", "facts": "", "style": ""}))
+        self.assertTrue(out2["deleted"])
+        self.assertEqual(run(feat.web_list()), [])
+
+    def test_save_without_identity_is_rejected(self):
+        feat = make_feature()
+        with self.assertRaises(ValueError):
+            run(feat.web_save({"name": "小明"}))
+
+    def test_delete_without_identity_is_rejected(self):
+        feat = make_feature()
+        with self.assertRaises(ValueError):
+            run(feat.web_delete({"platform": "aiocqhttp"}))
+
+    def test_ops_on_unloaded_feature_raise(self):
+        fresh = ProfileFeature()
+        with self.assertRaises(RuntimeError):
+            run(fresh.web_list())
+        with self.assertRaises(RuntimeError):
+            run(fresh.web_save({"platform": "a", "uid": "1"}))
+
+    def test_handlers_lazy_init_runtime(self):
+        """web 端点自己补初始化 —— 没跑过 on_astrbot_loaded 也要能用。"""
+        rt = XbnextRuntime(config={}, kv_store=FakeKV(), logger=None)
+        self.assertFalse(rt._loaded)
+
+        saved = run(handle_profile_save(
+            rt, {"platform": "aiocqhttp", "uid": "7", "name": "阿七"}))
+        self.assertTrue(saved["ok"])
+        self.assertTrue(rt._loaded, "写档案前应先懒初始化")
+
+        listed = run(handle_profiles(rt))
+        self.assertEqual(len(listed["data"]), 1)
+        self.assertEqual(listed["data"][0]["uid"], "7")
+
+        deleted = run(handle_profile_delete(rt, {"platform": "aiocqhttp", "uid": "7"}))
+        self.assertTrue(deleted["ok"])
+        self.assertEqual(run(handle_profiles(rt))["data"], [])
+
+
+class TestLazyInit(unittest.TestCase):
+    """热装的插件收不到 ``on_astrbot_loaded`` —— 入口必须自己补初始化。"""
+
+    @staticmethod
+    def _runtime():
+        return XbnextRuntime(config={}, kv_store=FakeKV(), logger=None)
+
+    def test_on_loaded_is_idempotent(self):
+        rt = self._runtime()
+        run(rt.on_loaded())
+        feat = rt.get_feature("enable_user_profile")
+        store = feat.store
+        run(rt.on_loaded())  # 第二次直接返回，不重建存储
+        self.assertIs(feat.store, store)
+        self.assertTrue(rt._loaded)
+
+    def test_llm_request_triggers_init(self):
+        rt = self._runtime()
+        self.assertFalse(rt._loaded)
+        run(rt.handle_llm_request(FakeEvent(), FakeReq(prompt="你好")))
+        self.assertTrue(rt._loaded)
+
+    def test_command_triggers_init(self):
+        """真机症状：/xbnext profile 回"档案存储还没就绪"。"""
+        rt = self._runtime()
+        self.assertFalse(rt._loaded)
+        run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        self.assertTrue(rt._loaded)
+
+    def test_message_sent_triggers_init(self):
+        rt = self._runtime()
+        self.assertFalse(rt._loaded)
+        run(rt.handle_message_sent(FakeEvent()))
+        self.assertTrue(rt._loaded)
+
+    def test_ensure_loaded_is_a_noop_when_loaded(self):
+        rt = self._runtime()
+        run(rt.on_loaded())
+        feat = rt.get_feature("enable_user_profile")
+        store = feat.store
+        run(rt.ensure_loaded())
+        self.assertIs(feat.store, store)
 
 
 if __name__ == "__main__":

@@ -167,16 +167,23 @@ POST : bridge 失败直接抛；没有 bridge 时**先用 GET ping 探前缀**�
   unwrap(res): res.ok === false → throw res.error
                有 "data" 键     → 返回 res.data
                否则             → 原样返回
-对外暴露 window.XbnextApi = { ping, state, setting, channel, prefix, getBridge }
+对外暴露 window.XbnextApi = {
+  ping, state, setting,
+  profiles, profileSave, profileDelete,
+  channel, prefix, getBridge
+}
 ```
 
 ### 4.1 后端路由（**与母版不同：端点不含 `/xbnext/` 中缀**）
 
 ```python
 base = f"/{PLUGIN_NAME}"          # /astrbot_plugin_xbnext
-register(f"{base}/ping",   ping,   ["GET"],  "存活探测")
-register(f"{base}/state",  state,  ["GET"],  "运行状态")
-register(f"{base}/setting",setting,["POST"], "写入配置项")
+register(f"{base}/ping",           ping,           ["GET"],  "存活探测")
+register(f"{base}/state",          state,          ["GET"],  "运行状态")
+register(f"{base}/setting",        setting,        ["POST"], "写入配置项")
+register(f"{base}/profiles",       profiles,       ["GET"],  "用户档案列表")
+register(f"{base}/profile_save",   profile_save,   ["POST"], "写入用户档案")
+register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案")
 ```
 
 - 路由前缀必须用 **metadata.yaml 里保留大小写的插件名**：Plugin Page Bridge 按
@@ -192,26 +199,48 @@ register(f"{base}/setting",setting,["POST"], "写入配置项")
   + `config`（全 schema 键当前值）+ `schema`（type/condition/default）
   + `hook_priority` + `writable_keys`。**唯一真相源在服务端，页面不留本地副本。**
   （早期载荷里的 `astrna` 字段已随「AstrNa 共存」整套移除。）
+- **`state` / `profiles` / `profile_save` / `profile_delete` 进门都先
+  `await runtime.ensure_loaded()`** —— `on_astrbot_loaded` 只在核心启动收尾广播
+  一次，热装的插件永远收不到；不兜底就会一直显示"未加载"、档案报"还没就绪"
+  （真机首轮发现的根因，见 `aidoc/README` 交付记录）。
+- 档案三端点的载荷：
+  - `GET profiles` → `[{platform, uid, profile:{name,facts,style}, updated}]`
+  - `POST profile_save` → `{platform, uid, name, facts, style}`，**三字段整体替换**，
+    全空即删整份；`platform` / `uid` 缺失直接 `ok:false`
+  - `POST profile_delete` → `{platform, uid}`
 
-## 5. 页签规划（首版实际落地 4 个）
+## 5. 页签规划（首版实际落地 5 个）
 
 | 页签 | `data-tab` | 内容 | 后端 |
 | :--- | :--- | :--- | :--- |
 | 功能开关 | `tab-switches` | 4 张卡：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入，每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
+| 用户档案 | `tab-profile` | 列出全部档案（`platform / uid` + 称呼/自述/口吻摘要）、行内编辑/删除、新建、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
 | 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道 | `state` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
-> **§5 决策记录（P5 落地后修订，与原计划的差异）**：
+> **§5 决策记录（真机首轮反馈后修订）**：
 >
-> - **档案页签：不做**。原计划在这里放一个"档案列表/编辑"页签，但 WebUI
->   母版**没有"当前用户"上下文** —— 浏览器里的人既没有身份也没有鉴权，
->   读写的会是"某个人的档案"，做不到"我改我自己的"。所以档案入口**只走
->   `/xbnext profile` 指令**（谁发指令就改谁的），WebUI 不出现任何档案数据。
+> - **档案页签：从"不做"改为"做"**。原决策理由是 WebUI 母版没有"当前用户"
+>   上下文，做不到"我改我自己的"。真机试用后按用户要求补上了独立页签，
+>   定位改为**管理视角**（列出全部档案、群聊里一眼分清谁是谁），与
+>   `/xbnext profile` 指令（自助视角：谁发指令改谁的）**并存**，两端写同一份
+>   数据。身份校验仍由后端把关：`platform` / `uid` 必填，字段白名单只认
+>   称呼 / 自述 / 口吻，全部经 `store.normalize()` 的 `sanitize` 清洗。
+> - **AstrBot 的插件 KV 没有"按键遍历"**（只有 `get/put/delete_kv_data`），
+>   所以列表能力靠自建索引键 `xbnext:profile:index`（成员记号 `platform|uid`）
+>   维护；每次 `set` 追加、`delete` 移除，`list_all()` 读到孤儿条目会顺手剔除
+>   （自愈），不会永远报幽灵档案。
+> - **删除用两步确认**（按钮变成"确认删除"，3 秒超时还原）：iframe 沙箱里
+>   原生 `confirm()` 恒返回 false，与 xbdoc 的页内确认框是同一类问题，这里
+>   取更轻的实现。
 > - **表情映射表编辑器：不做**。`face/data.py` 的表由
 >   `aidoc/tools/gen_face_table.py` 从上游抓取生成，**禁止手改**（红线：
 >   凭记忆改表比不改更糟），提供编辑器等于提供一个编错的入口。
-> - 宁可页签少，不做假功能位。后续要加页签，先补本表再写代码。
+> - **深浅色默认跟随系统**：`ui_theme_mode` 默认 `""`（= `prefers-color-scheme`），
+>   与 xbdoc / xbimg 一致；手动切换后若结果与系统一致就写回 `""`，
+>   避免留下一个和系统一样的硬锁。
+> - 后续要加页签，先补本表再写代码。
 
 **条件显隐**：`schema[key].condition` 未满足时，控件 `disabled + opacity .45 +
 pointer-events:none`（如关掉 `enable_face_translate` 后 `face_format` 变灰）。
@@ -237,10 +266,14 @@ pointer-events:none`（如关掉 `enable_face_translate` 后 `face_format` 变�
 - [x] 调色盘可改强调色且持久化（走服务端 `ui_accent_color`）
 - [x] 所有开关/分段/输入点立即保存，**失败回滚并 toast 提示**（E2E 实测见 §8）
 - [x] 条件显隐生效（关 `enable_face_translate` → `face_format` 变灰）
-- [x] 窄屏（<640px）卡片单列、页签折行
+- [x] 窄屏（<640px）卡片单列、页签折行（toast 与档案行都居中/竖排）
 - [x] `node --check` 全绿 + `metadata.yaml` `pages:` 已声明
-- [ ] 档案编辑有确认框（页内 modal，非原生 confirm）—— 随 P5 落地
+- [x] 档案删除有页内两步确认（按钮变「确认删除」，3s 超时还原）—— 沙箱里原生
+      `confirm()` 恒返回 false，与 xbdoc 的页内确认框同类问题，取更轻的实现
+- [x] 右下角通知与母版同款（图标 / 去重 / 自适应时长 / 点击复制 / aria-live）
 - [x] 计算样式与母版逐项一致（见 §8 实测值）
+- [ ] 主题色默认值与 xbdoc / xbimg 再对比一次（真机首轮用户反馈「颜色深了一些」，
+      四者的 `--m3-sys-color-primary` 已逐行比对为完全一致，待复核）
 
 ## 8. 本机验证记录（**未做真机回归**，AstrBot 本体在云端）
 

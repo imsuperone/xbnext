@@ -48,7 +48,13 @@ class XbnextRuntime:
     # 生命周期
     # ==================================================================
     async def on_loaded(self) -> None:
-        """AstrBot 加载完成后：初始化各功能。"""
+        """AstrBot 加载完成后：初始化各功能（**幂等**，重复调用直接返回）。
+
+        幂等是必须的 —— ``ensure_loaded`` 会在每个入口兜底调用一次，
+        不能再跑一遍 ``on_load``（会重建各功能的存储句柄）。
+        """
+        if self._loaded:
+            return
         for feat in self.features:
             await self._call(feat, "on_load", self)
         self._loaded = True
@@ -57,6 +63,24 @@ class XbnextRuntime:
             + ", ".join(f"{f.key}={'on' if self.conf.enabled(f.key) else 'off'}"
                         for f in self.features)
         )
+
+    async def ensure_loaded(self) -> None:
+        """懒初始化兜底。
+
+        AstrBot 的 ``on_astrbot_loaded`` **只在核心启动收尾时广播一次**，
+        启动之后才装上/热更新的插件永远收不到 —— 真机上表现为 WebUI 显示
+        「未加载」、``/xbnext profile`` 报「档案存储还没就绪」。
+        因此每个异步入口（LLM 请求 / 回复落库 / 子指令 / Web state）都先过这里。
+        """
+        if not self._loaded:
+            await self.on_loaded()
+
+    def get_feature(self, key: str) -> Any:
+        """按配置键取功能实例（WebUI 端点用）；找不到返回 ``None``。"""
+        for feat in self.features:
+            if feat.key == key:
+                return feat
+        return None
 
     async def terminate(self) -> None:
         """插件卸载：逆序释放各功能。"""
@@ -71,6 +95,7 @@ class XbnextRuntime:
     # ==================================================================
     async def handle_llm_request(self, event: Any, req: Any) -> None:
         """按固定顺序执行本轮该跑的功能。"""
+        await self.ensure_loaded()
         ctx = RequestContext(event=event, req=req, conf=self.conf, runtime=self)
         for feat in self.features:
             try:
@@ -86,6 +111,7 @@ class XbnextRuntime:
 
     async def handle_message_sent(self, event: Any) -> None:
         """bot 回复已发出 → 通知关心落库的功能（R1）。"""
+        await self.ensure_loaded()
         ctx = RequestContext(event=event, req=None, conf=self.conf, runtime=self)
         for feat in self.features:
             try:
@@ -120,6 +146,7 @@ class XbnextRuntime:
 
         返回要发给用户的文本；异常返回带原因的兜底文案，**不裸抛**。
         """
+        await self.ensure_loaded()
         try:
             sub, args = commands.split(str(getattr(event, "message_str", "") or ""))
         except Exception as exc:  # noqa: BLE001

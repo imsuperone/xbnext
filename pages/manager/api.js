@@ -209,6 +209,12 @@
     state: function () { return getJson("state", null); },
     /** 写单个配置项：setting({key, value}) */
     setting: function (payload) { return postJson("setting", payload); },
+    /** 列出全部用户档案：profiles() -> [{platform, uid, profile, updated}] */
+    profiles: function () { return getJson("profiles", null); },
+    /** 写一份档案：profileSave({platform, uid, name, facts, style})，三字段全空即删除 */
+    profileSave: function (payload) { return postJson("profile_save", payload); },
+    /** 删一份档案：profileDelete({platform, uid}) */
+    profileDelete: function (payload) { return postJson("profile_delete", payload); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

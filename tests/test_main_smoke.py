@@ -169,6 +169,30 @@ class TestMainSmoke(unittest.TestCase):
         asyncio.run(plugin.after_message_sent(event))  # 不能抛
         asyncio.run(plugin.terminate())
 
+    def test_lazy_init_without_astrbot_loaded_event(self):
+        """热装的插件收不到 ``on_astrbot_loaded`` → 首个入口必须自己补初始化。
+
+        真机症状（未修复时）：WebUI 显示「未加载」、``/xbnext profile`` 报
+        「档案存储还没就绪」、日志里一条 ``[XBNEXT]`` 都没有。
+        """
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        self.assertFalse(plugin.runtime._loaded)
+
+        asyncio.run(plugin.on_llm_request(FakeEvent(), FakeReq(prompt="你好")))
+        self.assertTrue(plugin.runtime._loaded, "首个 LLM 请求应触发懒初始化")
+
+        status = plugin.runtime.status()
+        self.assertTrue(status["loaded"])
+        asyncio.run(plugin.terminate())
+
+    def test_command_entry_also_initialises(self):
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        self.assertFalse(plugin.runtime._loaded)
+        # FakeEvent 没有 message_str → 指令解析为空，但初始化必须先跑
+        asyncio.run(plugin.runtime.handle_command("profile", FakeEvent()))
+        self.assertTrue(plugin.runtime._loaded)
+        asyncio.run(plugin.terminate())
+
     def test_feature_failure_does_not_break_request(self):
         """单功能炸掉不能拖垮整轮请求（AstrBot 原则 4）。"""
         from xbnext.features import FEATURES

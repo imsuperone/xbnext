@@ -15,16 +15,19 @@
 
 注入永远排在最后（order=50），保证不会被本插件自己的清洗删掉。
 
-**档案页签**：WebUI 母版没有"用户上下文"，做不了档案管理，故**不加档案页签**，
-入口只有指令（见 aidoc/04 §5 的差异记录）。
+**档案页签**：WebUI 有独立的「用户档案」页签（``tab-profile``），按
+``platform|uid`` 列出全部档案、可查可改可删；因为 AstrBot 的插件 KV 没有
+"按键遍历"能力，成员表靠 ``profile:index`` 自己维护（见 ``store.INDEX_KEY``）。
+指令入口与页签**并存**：群里靠 ``/xbnext profile`` 自助维护，控制台做管理。
 """
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..base import Feature
 from . import service
+from . import store as store_mod
 from .store import ProfileStore, render
 
 #: 注入文案的抬头：明确"这不是用户本轮说的话"
@@ -124,6 +127,55 @@ class ProfileFeature(Feature):
             f"已更新你的档案（{changed}）。\n"
             + service.describe(saved, extra=self._status_line(conf))
         )
+
+    # -- WebUI 档案页签 -----------------------------------------------
+    async def web_list(self) -> List[Dict[str, Any]]:
+        """导出全部档案给 WebUI；存储未就绪时抛 ``RuntimeError``。"""
+        if self._store is None:
+            raise RuntimeError("档案存储还没就绪（插件可能正在加载），稍后再试")
+        return await self._store.list_all()
+
+    async def web_save(self, payload: Any) -> Dict[str, Any]:
+        """按 WebUI 表单写一份档案（三个字段**整体替换**，留空即删除该字段）。
+
+        与指令 ``/xbnext profile 字段 内容`` 的合并语义不同 —— 页面上看到的
+        就是完整的档案，所以按"所见即所存"处理；三个字段全空 = 删掉整份档案。
+        """
+        if self._store is None:
+            raise RuntimeError("档案存储还没就绪（插件可能正在加载），稍后再试")
+        if not isinstance(payload, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+        platform = str(payload.get("platform") or "").strip()
+        uid = str(payload.get("uid") or "").strip()
+        if not platform or not uid:
+            raise ValueError("缺少 platform 或 uid")
+        raw = {
+            "name": payload.get("name"),
+            "facts": payload.get("facts"),
+            "style": payload.get("style"),
+        }
+        if not store_mod.normalize(raw):
+            await self._store.delete(platform, uid)
+            return {"platform": platform, "uid": uid, "profile": {}, "deleted": True}
+        saved = await self._store.set(platform, uid, raw)
+        if not saved:
+            raise RuntimeError("写入失败（存储异常）")
+        return {"platform": platform, "uid": uid, "profile": saved, "deleted": False}
+
+    async def web_delete(self, payload: Any) -> Dict[str, Any]:
+        """按 WebUI 操作删一份档案。"""
+        if self._store is None:
+            raise RuntimeError("档案存储还没就绪（插件可能正在加载），稍后再试")
+        if not isinstance(payload, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+        platform = str(payload.get("platform") or "").strip()
+        uid = str(payload.get("uid") or "").strip()
+        if not platform or not uid:
+            raise ValueError("缺少 platform 或 uid")
+        ok = await self._store.delete(platform, uid)
+        if not ok:
+            raise RuntimeError("删除失败（存储异常）")
+        return {"platform": platform, "uid": uid, "deleted": True}
 
     # -- 工具 ---------------------------------------------------------
     def _status_line(self, conf: Any) -> List[str]:
