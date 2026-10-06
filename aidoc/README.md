@@ -132,9 +132,9 @@ astrbot_plugin_xbnext/
 > 要到 P2~P5 才落地** —— 这是刻意的：先把地基和护栏（机械校验）铺好，
 > 再往里填行为，避免后面边写边返工。
 
-> **P2 交付内容**：`face/data.py` 换成**脚本生成的权威全量表**（314 条，
-> 0~255 主表 + 256~9786 扩展 + unicode 码点段；生成器
-> `aidoc/tools/gen_face_table.py` 可重跑，两源冲突已记录进 `CONFLICTS`）；
+> **P2 交付内容**：`face/data.py` 换成**脚本生成的权威全量表**（594 条，
+> 0~255 主表 + 256~9786 扩展 + unicode 码点段，QFace `_index.json` 补缺；
+> 生成器 `aidoc/tools/gen_face_table.py` 可重跑，两源冲突已记录进 `CONFLICTS`）；
 > 抽取链路接通"消息链 + OneBot 原始载荷"两条来源（`mface` 不进消息链，
 > 只能从 `raw_message` 的 `summary` 拿中文名）；新增 `KIND_SUMMARY` 片段种类；
 > 正文里已有的片段不重复注入；单测 **141 → 168**。
@@ -245,6 +245,22 @@ astrbot_plugin_xbnext/
 > `TAIL_SAME` / `TAIL_SELF_QUOTED`（行尾挂 `（即当前发言人本人）`）/ `TAIL`；
 > 身份未知一律回落 `TAIL`（保守）。
 > 单测 **273 → 319**。
+>
+> **真机第三轮反馈修复（P10，未打 tag）**：① **新表情识别不到**（日志
+> `[表情:496]`，496 = 阴晴圆缺）—— 根因是内置表靠发布时抓取，QQ 出新表情
+> 就滞后。修法分两层：**发布层**给 `gen_face_table.py` 加源 C
+> （`koishijs/QFace` 的 `_index.json`，537 条、数字 emojiId 到 507），
+> 重生成 `data.py` **314 → 594 条**（496/507 均已收）；**运行层**新增
+> `face_auto_update`（默认开）+ `face_update_time`（默认 `04:30`）——
+> `face/updater.py` 纯函数层（`parse_index` / `merge_missing` /
+> `next_run_delay` / overlay 原子换入）+ `FaceFeature.on_load` 后台循环
+> （首拉 1 分钟后先试一次，之后每天定点拉"权威源 − 内置表"的缺口进
+> 插件 KV `xbnext:face_overlay`，查表内置优先只补缺）。
+> 红线：任务首动作必是 ≥60s sleep（测试永不触网）、网络只走
+> `asyncio.to_thread(urllib)`、异常一律不上抛；WebUI「行为微调」页签
+> 补自动更新开关与更新时间卡。② `stopped event propagation` 归责查证：
+> xbnext 没有 `stop_event`，是指令回复 CommandResult STOP 的正常归责，
+> 不改代码仅文档化。单测 **319 → 351**。
 
 ---
 

@@ -29,7 +29,8 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .data import face_name, mface_name
+from .data import mface_name
+from .updater import face_name_with_overlay
 
 DEFAULT_FORMAT = "[表情:{name}]"
 
@@ -109,7 +110,7 @@ def translate_token(kind: str, code: object, fmt: str = DEFAULT_FORMAT) -> str:
     """
     try:
         if kind == KIND_FACE:
-            name = face_name(code)
+            name = face_name_with_overlay(code)
             if name:
                 return render(name, fmt)
             return render(f"ID{code}", fmt)

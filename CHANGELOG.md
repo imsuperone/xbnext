@@ -11,8 +11,14 @@
 - **R3 · QQ 表情翻译**（`enable_face_translate`，默认开）：消息链与 `raw_message`
   双来源抽 token，支持 JSON list / 单 dict / JSON 字符串 / CQ 码 / 嵌套 `message` 字段，
   `mface` 走段自带 `summary`，正文已有片段不重复注入；
-  `face/data.py` 由 `aidoc/tools/gen_face_table.py` 从上游抓取生成的 **314 条权威表**
+  `face/data.py` 由 `aidoc/tools/gen_face_table.py` 从上游抓取生成的 **594 条权威表**
   （**禁止手改**）
+- **R3 · 表情表自动更新**（`face_auto_update`，默认开 + `face_update_time`，
+  默认 `04:30`）：启动后约 1 分钟先拉一次（KV 里从未更新过时），之后每天定点从
+  QFace `_index.json` 拉"权威源 − 内置表"的缺口补进插件 KV `xbnext:face_overlay`；
+  查表**内置表优先、overlay 只补缺**，有新增打一条 INFO、无变化 DEBUG、
+  失败 WARNING（不影响表情翻译本身）；纯逻辑在 `face/updater.py`，
+  网络走 `asyncio.to_thread(urllib)` 不阻塞事件循环
 - **R2 · 引用占位清洗**（`enable_quote_clean`，默认开）：只删**可证实不存在**的
   本地路径与 `file://`（`quote_drop_dead_images`，默认开），未知 scheme / data URI
   一律保留；判定函数抛异常时保守保留，不做猜测式删除
@@ -39,7 +45,7 @@
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**319 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**351 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 

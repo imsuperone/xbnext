@@ -170,6 +170,24 @@
         </div>
 
         <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">表情表自动更新</h2>
+              <p class="card-desc">每天从 QQ 表情权威源（QFace）拉取新增表情 ID，只补内置表的缺口（内置表优先、只补缺），QQ 出新表情不用等插件发版。仅在「QQ 表情翻译」开启时生效。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_face_auto_update" data-key="face_auto_update" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">每天更新时间</label>
+            <input type="text" class="m3-input" id="inp_face_update_time" data-key="face_update_time" placeholder="04:30" />
+            <span class="field-hint">24 小时制 <code>HH:MM</code>，例如 <code>04:30</code>（凌晨四点半）；格式非法按 04:30 处理。首次安装启动约 1 分钟后会先拉一次，不用等第一个凌晨。仅在「表情表自动更新」开启时生效。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
           <h2 class="card-title">回复指向（R1）</h2>
           <p class="card-desc">仅在「回复指向索引」开启时生效。</p>
           <div class="form-group">

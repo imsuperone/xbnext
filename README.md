@@ -19,6 +19,8 @@ XBNEXT 解决 AstrBot 使用过程中的四个实际问题，并附带一个控�
 |:---|:---|:---:|
 | `enable_quote_clean` | 引用占位清洗（R2） | ✅ 开 |
 | `enable_face_translate` | QQ 表情翻译（R3） | ✅ 开 |
+| `face_auto_update` | R3 表情表自动更新（每天从权威源补缺，需 `enable_face_translate` 开） | ✅ 开 |
+| `face_update_time` | 表情表每天更新时间（`HH:MM`，默认 `04:30`；首次启动约 1 分钟后先拉一次） | `04:30` |
 | `enable_reply_attribution` | 回复指向索引（R1） | ❌ 关 |
 | `enable_user_profile` | 用户档案注入（R4） | ❌ 关 |
 
@@ -42,7 +44,7 @@ astrbot_plugin_xbnext/
 │  ├─ commands.py          指令文本解析（纯函数，兜住 AstrBot 剥前缀的多种形态）
 │  ├─ features/            ★ 功能模块 —— 一功能一目录
 │  │  ├─ quote/            R2 引用占位清洗（service.py 纯逻辑）
-│  │  ├─ face/             R3 QQ 表情翻译（service.py + data.py 权威表情表）
+│  │  ├─ face/             R3 QQ 表情翻译（service + data.py 权威表情表 + updater.py 自动更新）
 │  │  ├─ attribution/      R1 回复指向索引（service.py 注入文案 + store.py 索引）
 │  │  └─ profile/          R4 用户档案（service.py 指令语法 + store.py 存储）
 │  └─ web/                 WebUI 后端 API

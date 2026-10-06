@@ -15,6 +15,12 @@
 5. **纯表情消息**（正文为空）走 :meth:`FaceFeature.on_adapter_message`
    早期钩子直接补写 ``event.message_str`` —— 否则 core 会判定
    ``skip llm request: empty message``，LLM 压根不被调用。
+6. **权威表运行时自动更新**（``face_auto_update``，默认开）：
+   ``on_load`` 启动后台循环 —— 从未更新过则启动约 1 分钟后先拉一次，
+   之后按 ``face_update_time``（默认 ``04:30``）每天从 QFace
+   ``_index.json`` 拉缺口补进 overlay（存插件 KV，内置表优先、只补缺）；
+   门禁只挡拉取、循环常驻（配置热开即时可生效），失败只打 WARNING，
+   **异常一律不上抛**（AstrBot 官方原则 4）。详见 :mod:`.updater`。
 
 **取名优先级**：段自带 ``summary`` > 内置 ID 表 > ``[表情:ID123]`` /
 ``[表情:key...]`` —— 永远兜底，**绝不静默丢弃**（静默丢弃就是现状 bug）。
@@ -22,10 +28,12 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
 from typing import Any, List, Optional, Tuple
 
 from ..base import Feature
-from . import service
+from . import service, updater
 
 #: 非消息段对象（例如 dict 的类名）走 dict 分支
 _DICT_TYPES = ("dict", "dictproxy", "MappingProxyType", "mappingproxy")
@@ -101,6 +109,135 @@ class FaceFeature(Feature):
     order = 30
     #: 需要在 core 判定「空消息」之前改写 ``event.message_str``
     uses_adapter_hook = True
+
+    def __init__(self) -> None:
+        #: 后台更新任务（FEATURES 是模块级单例，on_load 前先掐旧任务）
+        self._task: Optional[asyncio.Task] = None
+        self._runtime: Optional[Any] = None
+        self._log: Optional[Any] = None
+        #: 上次成功更新时间（ISO 字符串）；``None`` = 从未拉过 → 首拉名额
+        self._updated_at: Optional[str] = None
+
+    # -- 生命周期：权威表自动更新 --------------------------------------
+    async def on_load(self, runtime: Any) -> None:
+        """恢复 KV 里的 overlay，并启动后台更新循环（async：``runtime._call`` 会 await）。"""
+        self._close_task()
+        self._runtime = runtime
+        self._log = getattr(runtime, "log", None)
+        stored: Any = None
+        try:
+            stored = await runtime.kv.get_dict(updater.OVERLAY_KV_KEY)
+        except Exception as exc:  # noqa: BLE001
+            self._emit("warning", f"读取表情 overlay KV 失败：{exc!r}")
+        updater.overlay_from_stored(stored)
+        self._updated_at = updater.updated_at_from_stored(stored)
+        try:
+            self._task = asyncio.create_task(self._update_loop())
+        except Exception as exc:  # noqa: BLE001
+            self._task = None
+            self._emit("warning", f"启动表情更新任务失败：{exc!r}")
+
+    def on_unload(self) -> None:
+        """取消更新任务（sync；保留 ``_updated_at``，热重载不丢首拉名额判断）。"""
+        self._close_task()
+        self._runtime = None
+
+    def _close_task(self) -> None:
+        task, self._task = self._task, None
+        if task is None:
+            return
+        try:
+            if not task.done():
+                task.cancel()
+        except Exception:  # noqa: BLE001  跨 loop / 已关 loop 的任务取消失败不追
+            pass
+        # 绝不 await：任务可能属于另一个已关闭的事件循环
+
+    def _should_pull(self, runtime: Any) -> bool:
+        """门禁：R3 开启且 ``face_auto_update`` 开着才允许拉取。"""
+        if runtime is None:
+            return False
+        try:
+            conf = runtime.conf
+            return conf.enabled("enable_face_translate") and conf.bool(
+                "face_auto_update", True
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def _update_loop(self) -> None:
+        """后台更新循环：首拉 60s 后先试一次，之后每天 ``face_update_time`` 拉一次。
+
+        红线：所有睡眠 ≥ 60s（:data:`~.updater.FIRST_RUN_DELAY` /
+        :data:`~.updater.SLEEP_SEGMENT` / ``max(delay, 60)``），且**首次动作必是
+        sleep** —— 单测里 ``asyncio.run`` 退出时任务被取消，永不触网；
+        异常一律不上抛（AstrBot 原则 4），``CancelledError`` 原样抛出。
+        """
+        runtime = self._runtime
+        if runtime is None:
+            return
+        first = not self._updated_at
+        while True:
+            try:
+                if first:
+                    await asyncio.sleep(float(updater.FIRST_RUN_DELAY))
+                else:
+                    delay = updater.next_run_delay(
+                        datetime.now(),
+                        runtime.conf.text(
+                            "face_update_time", updater.DEFAULT_UPDATE_TIME
+                        ),
+                    )
+                    if delay > updater.SLEEP_SEGMENT:
+                        # 分段睡：醒来重读配置，热改最迟 1 小时生效
+                        await asyncio.sleep(float(updater.SLEEP_SEGMENT))
+                        continue
+                    await asyncio.sleep(max(delay, float(updater.FIRST_RUN_DELAY)))
+                if not self._should_pull(runtime):
+                    # 门禁挡 fetch：first 保留 → 60s 后重查（支持配置热开）
+                    continue
+                first = False  # 首拉名额：成败皆算，失败等下一排程点
+                await self._pull_once(runtime)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self._emit("warning", f"表情更新循环异常：{exc!r}")
+                await asyncio.sleep(60)
+
+    async def _pull_once(self, runtime: Any) -> bool:
+        """拉一次权威源并落 KV；成功 ``True``，失败 WARNING 后 ``False``（不动 ``_updated_at``）。"""
+        if runtime is None:
+            return False
+        prev = set(updater.get_overlay())
+        try:
+            await updater.pull_overlay()
+        except Exception as exc:  # noqa: BLE001
+            self._emit("warning", f"拉取表情权威源失败：{exc!r}")
+            return False
+        try:
+            iso = datetime.now().isoformat(timespec="seconds")
+            stored = {"ids": updater.overlay_to_stored(), "updated_at": iso}
+            if not await runtime.kv.set(updater.OVERLAY_KV_KEY, stored):
+                self._emit("warning", "表情 overlay 写 KV 失败，本次会话有效")
+            self._updated_at = iso
+            added = updater.added_since(prev)
+            if added:
+                self._emit("info", f"表情表更新完成，新增 {added} 个 ID")
+            else:
+                self._emit("debug", "表情表更新完成，无变化")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._emit("warning", f"保存表情 overlay 失败：{exc!r}")
+            return False
+
+    def _emit(self, level: str, message: str) -> None:
+        """带 ``[XBNEXT] `` 前缀写日志；``_log`` 缺失 / 方法缺失 / 写失败都安全跳过。"""
+        method = getattr(self._log, level, None) if self._log is not None else None
+        if callable(method):
+            try:
+                method(f"[XBNEXT] {message}")
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- 早期钩子：纯表情消息的救生索 ------------------------------------
     def on_adapter_message(self, ctx) -> None:

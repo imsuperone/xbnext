@@ -64,11 +64,16 @@ class TestFaceData(unittest.TestCase):
         self.assertEqual(data.face_name(299), "牛啊")
         self.assertEqual(data.face_name(128513), "呲牙")  # unicode 码点段
 
+    def test_qface_new_ids(self):
+        """源 C（QFace 权威索引）补进来的 ID —— 真机第三轮反馈 496 没识别。"""
+        self.assertEqual(data.face_name(496), "阴晴圆缺")
+        self.assertEqual(data.face_name(507), "被发现了")  # 索引里的最大数字 ID
+
     def test_table_is_full_not_a_sample(self):
-        """全量表：不再只是 0-14 样例。"""
-        self.assertGreaterEqual(len(data.QQ_FACE_ALL), 300)
-        self.assertGreaterEqual(len(data.QQ_FACE), 180)
-        self.assertGreaterEqual(len(data.QQ_FACE_EXT), 60)
+        """全量表：不再只是 0-14 样例（三源合并后 500+ 条）。"""
+        self.assertGreaterEqual(len(data.QQ_FACE_ALL), 500)
+        self.assertGreaterEqual(len(data.QQ_FACE), 190)
+        self.assertGreaterEqual(len(data.QQ_FACE_EXT), 180)
 
     def test_conflicts_recorded(self):
         """两源冲突必须落在 CONFLICTS 里且以源 A 定稿，方便回溯。"""

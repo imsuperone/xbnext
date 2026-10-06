@@ -1,20 +1,25 @@
 # -*- coding: utf-8 -*-
-"""从两个上游源抓取 QQ 表情 ID→中文名表，合并生成 xbnext/features/face/data.py。
+"""从三个上游源抓取 QQ 表情 ID→中文名表，合并生成 xbnext/features/face/data.py。
 
 源 A（主）：ehForwarderBot/efb-qq-plugin-go-cqhttp  Utils.py::qq_emoji_text_list
             0-255 全量，注释标注 "original text copied from Tim"
 源 B（扩展）：Mai-with-u/MaiBot-Napcat-Adapter  qq_emoji_list.py::QQ_FACE
             256-395 + unicode codepoint 段
-冲突处理：0-255 以源 A 为准；256+ 取源 B。
+源 C（权威补缺）：koishijs/QFace  public/assets/qq_emoji/_index.json
+            QQ 官方表情资源索引（数字 emojiId + 非数字条目 qcid 码点），
+            覆盖到 507，补 A/B 缺失的 ID（真机反馈的 496=阴晴圆缺 即来自此源）。
+冲突处理：0-255 以源 A 为准；256+ 取源 B；A/B 没有的 ID 由源 C 补缺。
 """
 import ast
 import io
+import json
 import re
 import sys
 import urllib.request
 
 SRC_A = "https://raw.githubusercontent.com/ehForwarderBot/efb-qq-plugin-go-cqhttp/master/efb_qq_plugin_go_cqhttp/Utils.py"
 SRC_B = "https://raw.githubusercontent.com/Mai-with-u/MaiBot-Napcat-Adapter/main/qq_emoji_list.py"
+SRC_C = "https://raw.githubusercontent.com/koishijs/QFace/master/public/assets/qq_emoji/_index.json"
 
 
 def fetch(url):
@@ -63,10 +68,54 @@ def clean(d):
     return out
 
 
+def parse_qface(payload):
+    """解析 QFace ``_index.json`` → ``{id: name}``。
+
+    条目结构（实测 537 条）::
+
+        {"emojiId": "0", "describe": "/惊讶", "qcid": 0, ...}      # 数字 emojiId
+        {"emojiId": "☀", "describe": "/晴天", "qcid": 9728, ...}  # 非数字 → 码点
+
+    规则：
+
+    - ``emojiId`` 为纯数字 → ID 取该数字，``describe`` 剥掉开头的 ``/``；
+    - ``emojiId`` 非数字 → ID 取 ``qcid``（unicode 码点），同剥 ``/``；
+    - ``describe`` 为空 / ``qcid`` 非法（负数、非 int）→ 跳过（宁缺毋滥）。
+    """
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise SystemExit("qface index is not a list")
+    out = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        desc = item.get("describe")
+        if not isinstance(desc, str):
+            continue
+        name = desc.strip()
+        if name.startswith("/"):
+            name = name[1:].strip()
+        if not name:
+            continue
+        emoji_id = item.get("emojiId")
+        if isinstance(emoji_id, str) and emoji_id.strip().isdigit():
+            key = int(emoji_id.strip())
+        else:
+            qcid = item.get("qcid")
+            if not isinstance(qcid, int) or qcid <= 0:
+                continue
+            key = qcid
+        if key < 0:
+            continue
+        out.setdefault(key, name)
+    return out
+
+
 def main():
     a = clean(grab_dict(fetch(SRC_A), "qq_emoji_text_list"))
     b = clean(grab_dict(fetch(SRC_B), "QQ_FACE"))
-    print("A(0-255):", len(a), "B:", len(b))
+    c = parse_qface(fetch(SRC_C))
+    print("A(0-255):", len(a), "B:", len(b), "C(qface):", len(c))
 
     merged = dict(a)
     conflicts = []
@@ -78,7 +127,14 @@ def main():
     for k in sorted(b):
         if k not in merged:
             merged[k] = b[k]
+    # 源 C 只补 A/B 的缺口，不覆盖已有条目（A 为准 > B > C）
+    added_by_c = 0
+    for k in sorted(c):
+        if k not in merged:
+            merged[k] = c[k]
+            added_by_c += 1
     print("conflicts(A wins):", conflicts)
+    print("C filled:", added_by_c)
     print("merged total:", len(merged), "max id:", max(merged))
 
     # 分组：0-255 / 256-999 / >=10000(codepoint)
@@ -101,7 +157,7 @@ def main():
     _hdr = '''# -*- coding: utf-8 -*-
 """R3 · QQ 表情数据表（**权威全量，非手写**）。
 
-本文件的几张表由 ``aidoc/tools/gen_face_table.py`` 从两个上游仓库**脚本抓取生成**，
+本文件的几张表由 ``aidoc/tools/gen_face_table.py`` 从三个上游源**脚本抓取生成**，
 不靠记忆编造 ID → 名称的对应关系（aidoc/03 红线：编错比缺更糟，
 模型会把"流泪"理解成"微笑"）。
 
@@ -114,9 +170,14 @@ def main():
 - **扩展 ``QQ_FACE_EXT``（256~{ext_max}）+ ``QQ_FACE_CODEPOINT``（unicode 码点段）**
   `github.com/Mai-with-u/MaiBot-Napcat-Adapter` → `qq_emoji_list.py` 的 ``QQ_FACE``
   （该仓库为 NapCat 适配器，实测表情 ID 覆盖到 {ext_max}）。
+- **补缺（运行时同步的权威源）**
+  `github.com/koishijs/QFace` → `public/assets/qq_emoji/_index.json`
+  （QQ 官方表情资源索引，覆盖到 507；A/B 缺失的 ID 由此补齐，
+  运行时还会经 ``updater.py`` 每天 4:30 自动拉取增量）。
 
 **冲突处理**：两表在 0~255 只有 {nconf} 处不一致（见下方 ``CONFLICTS``），
-一律以**主表（源 A）为准**，源 A 覆盖全 0~255 连续区间。
+一律以**主表（源 A）为准**，源 A 覆盖全 0~255 连续区间；
+A/B 都没有的 ID 由源 C 补缺（{ncfill} 个）。
 
 **查不到怎么办**：``face_name()`` 返回 ``None`` → 调用方渲染成
 ``[表情:ID233]``，**宁可泄露 ID 也不瞎猜语义**（绝不静默丢弃）。
@@ -133,6 +194,7 @@ QQ_FACE: Dict[int, str] = {
 '''
     _hdr = _hdr.replace("{ext_max}", str(max(ext) if ext else 0))
     _hdr = _hdr.replace("{nconf}", str(len(conflicts)))
+    _hdr = _hdr.replace("{ncfill}", str(added_by_c))
     out.write(_hdr)
     out.write(fmt(classic))
     out.write("\n}\n\n")

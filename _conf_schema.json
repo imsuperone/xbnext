@@ -35,6 +35,22 @@
     "collapsed": true,
     "condition": { "enable_face_translate": true }
   },
+  "face_auto_update": {
+    "type": "bool",
+    "description": "表情表自动更新",
+    "hint": "开启后，XBNEXT 会定期从 QQ 表情权威源（koishijs/QFace 的 _index.json）拉取新增的表情 ID，补进内置表的缺口（内置表优先、只补缺，不覆盖）。成功后有新增打一条日志；拉取失败只记警告，不影响表情翻译本身。仅在「QQ 表情翻译」开启时生效。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": { "enable_face_translate": true }
+  },
+  "face_update_time": {
+    "type": "string",
+    "description": "表情表自动更新时间",
+    "hint": "每天在本地时间的这个时刻自动更新表情表，24 小时制 HH:MM，例如 04:30（凌晨四点半）。格式非法时按 04:30 处理；首次安装启动约 1 分钟后会先拉一次，不用等到凌晨。仅在「表情表自动更新」开启时生效。默认 04:30。",
+    "default": "04:30",
+    "collapsed": true,
+    "condition": { "enable_face_translate": true, "face_auto_update": true }
+  },
   "enable_reply_attribution": {
     "type": "bool",
     "description": "回复指向索引（R1）",
