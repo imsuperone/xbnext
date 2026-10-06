@@ -31,7 +31,7 @@ AstrBot 目前存在若干长期问题（详见 `01-需求与根因.md`），XBN
 | :-: | :--- | :--- | :--- |
 | R1 | 身份串台 | 用户 A 先问 bot，之后 bot 把 A 的话套到 B 头上 | 根因已定位，待实现 |
 | R2 | 引用空白附件 | 引用回复时 bot 误以为有一张空白图片/附件，导致回复出错 | 根因已定位，待实现 |
-| R3 | QQ 表情不识别 | QQ 自带 emoji（face/mface）发给 bot，bot 看不懂 | 根因已定位（**AstrNa 未做，属空白区**），待实现 |
+| R3 | QQ 表情不识别 | QQ 自带 emoji（face/mface）发给 bot，bot 看不懂 | ✅ 已实现（**AstrNa 未做，属空白区**） |
 | R4 | 认人差 → 用户档案 | 用户自定义对自己的设定，bot 读取档案库了解用户，而非自行臆测 | 根因已定位，待实现 |
 | R5 | WebUI | 前端 UI 完全仿照 xbdoc / xbimg / xbbot_beta 的风格与工程结构 | 基准已调研，待实现 |
 
@@ -74,6 +74,8 @@ astrbot_plugin_xbnext/
 │  ├─ 02-架构设计.md
 │  ├─ 03-开发规范.md
 │  ├─ 04-WebUI规范.md
+│  ├─ tools/
+│  │  └─ gen_face_table.py     ← 从上游仓库抓表情表（可重跑，保证 data.py 不是手写）
 │  └─ research/
 │     ├─ astrbot-core.md      ← AstrBot 核心源码证据（行号可追）
 │     ├─ astrna.md            ← AstrNa 方案拆解
@@ -113,7 +115,7 @@ astrbot_plugin_xbnext/
 | :--- | :--- | :--- |
 | P0 | 创建 aidoc、根因调研（AstrBot core / AstrNa / 参考 UI） | ✅ 完成 |
 | P1 | 项目骨架：metadata.yaml / main.py / _conf_schema.json / `xbnext/` 分层 + 功能注册表 + 单测 | ✅ 完成（**未做真机回归**） |
-| P2 | R3 表情翻译：补权威表情表 + 消息链接入（当前只有纯逻辑与样例表） | ⬜ 待开始 |
+| P2 | R3 表情翻译：补权威表情表 + 消息链接入 | ✅ 完成（**未做真机回归**） |
 | P3 | R2 引用死路径过滤策略（当前只有占位符识别与三种改写策略） | ⬜ 待开始 |
 | P4 | R1 回复指向注入文案（当前只有存储与开关接线） | ⬜ 待开始 |
 | P5 | R4 档案指令入口 + 注入落地（当前只有存储与渲染） | ⬜ 待开始 |
@@ -124,6 +126,15 @@ astrbot_plugin_xbnext/
 > 四个功能目前都只完成"存储 + 纯逻辑 + 接线"，**真正改写请求的注入文案
 > 要到 P2~P5 才落地** —— 这是刻意的：先把地基和护栏（机械校验）铺好，
 > 再往里填行为，避免后面边写边返工。
+
+> **P2 交付内容**：`face/data.py` 换成**脚本生成的权威全量表**（314 条，
+> 0~255 主表 + 256~9786 扩展 + unicode 码点段；生成器
+> `aidoc/tools/gen_face_table.py` 可重跑，两源冲突已记录进 `CONFLICTS`）；
+> 抽取链路接通"消息链 + OneBot 原始载荷"两条来源（`mface` 不进消息链，
+> 只能从 `raw_message` 的 `summary` 拿中文名）；新增 `KIND_SUMMARY` 片段种类；
+> 正文里已有的片段不重复注入；单测 **141 → 168**。
+> **刻意不做**：aidoc/01 §3.3 第 4 步"翻译群上下文里的 `[Sticker: {id}]`" ——
+> 那段文本在会话历史里，不经过 `req.prompt`，实现它就是死代码。
 
 > **P6 交付内容**（早于 P2~P5 完成）：`pages/manager/` 四文件按母版重写
 > （M3 token / `.app-layout` / `.top-bar` / `.category-tabs-bar` / `.m3-card` /

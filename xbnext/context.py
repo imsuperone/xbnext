@@ -17,7 +17,7 @@ from .config import Config
 class RequestContext:
     """一次 LLM 请求的执行上下文。"""
 
-    __slots__ = ("event", "req", "conf", "runtime", "notes", "injected")
+    __slots__ = ("event", "req", "conf", "runtime", "notes", "injected", "text_part_cls")
 
     def __init__(
         self,
@@ -25,6 +25,7 @@ class RequestContext:
         req: Any,
         conf: Config,
         runtime: Any = None,
+        text_part_cls: Any = None,
     ):
         self.event = event
         self.req = req
@@ -34,6 +35,9 @@ class RequestContext:
         self.notes: List[str] = []
         #: 本次成功注入的片段数
         self.injected = 0
+        #: 注入用的 ``TextPart`` 实现；``None`` = 走 astrbot 真身，
+        #: 单测里传假实现即可在无 astrbot 环境跑通注入链路
+        self.text_part_cls = text_part_cls
 
     # -- 开关 ---------------------------------------------------------
     def enabled(self, key: str) -> bool:
@@ -52,7 +56,8 @@ class RequestContext:
     # -- 注入 ---------------------------------------------------------
     def inject(self, text: str, text_part_cls: Any = None) -> bool:
         """走统一出口注入一段 temp 文本；返回是否成功。"""
-        ok = injector.inject_text(self.req, text, text_part_cls=text_part_cls)
+        cls = text_part_cls if text_part_cls is not None else self.text_part_cls
+        ok = injector.inject_text(self.req, text, text_part_cls=cls)
         if ok:
             self.injected += 1
         return ok
