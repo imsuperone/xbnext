@@ -133,7 +133,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">撤回取消请求</h2>
-              <p class="card-desc">撤回刚发的那条消息时，取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段。只掐请求本身，bot 已发出的回复不跟着撤回。默认开启。</p>
+              <p class="card-desc">撤回刚发的那条消息时，取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；bot 已发出的回复也会连带撤回（aiocqhttp 下生效）。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_recall_cancel" data-key="enable_recall_cancel" />

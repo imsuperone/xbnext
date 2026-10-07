@@ -23,7 +23,7 @@ XBNEXT 解决 AstrBot 使用过程中的四个实际问题，并附带一个控�
 | `face_update_time` | 表情表每天更新时间（`HH:MM`，默认 `04:30`；首次启动约 1 分钟后先拉一次） | `04:30` |
 | `enable_reply_attribution` | 回复指向索引（R1） | ❌ 关 |
 | `enable_user_profile` | 用户档案注入（R4） | ❌ 关 |
-| `enable_recall_cancel` | 撤回取消请求（撤回触发消息 → 掐掉在飞 LLM 请求） | ✅ 开 |
+| `enable_recall_cancel` | 撤回取消请求（撤回触发消息 → 掐掉在飞 LLM 请求 + 连带撤回已发回复） | ✅ 开 |
 
 > 纯修正类（R2/R3）默认开，因为它们修的是明确 bug，不开启反而留着 bug；
 > 新增行为类（R1/R4）默认关，由用户自行决定是否开启。

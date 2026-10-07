@@ -90,7 +90,7 @@
   "enable_recall_cancel": {
     "type": "bool",
     "description": "撤回取消请求",
-    "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段。只掐请求本身，bot 已经发出去的回复不会跟着撤回。默认开启。",
+    "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；如果 bot 已经把回复发出去了，会连带把回复一并撤回（aiocqhttp 下生效）。默认开启。",
     "default": true
   },
   "debug_log": {

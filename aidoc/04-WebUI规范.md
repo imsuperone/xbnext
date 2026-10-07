@@ -221,7 +221,7 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
 
 | 页签 | `data-tab` | 内容 | 后端 |
 | :--- | :--- | :--- | :--- |
-| 功能开关 | `tab-switches` | **5 张卡**：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入 / 撤回取消请求（P16），每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
+| 功能开关 | `tab-switches` | **5 张卡**：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入 / 撤回取消请求（P16/P17），每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、表情表自动更新（开关 + 更新时间输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
 | 用户档案 | `tab-profile` | 按「平台 · 群」**分组分类**列出全部档案（分组标题 + `platform / uid` + 称呼/自述摘要）、行内编辑/删除、新建、可改「群号」挪群、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
 | 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道、**「表情表」状态卡**（P17：内置/补充条数 + 上次更新时间，未启用/停更新时给提示）、**「提示词注入记录」入口卡片**（P16，点按钮拉最近 10 轮，textContent 渲染；P17 起超 300 字的段默认折叠，「展开全部」看全文） | `state` + `GET inject_log` |

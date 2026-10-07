@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""撤回取消请求（P16）：notice 识别（纯函数） + 在飞任务登记/取消。
+"""撤回取消请求：P16 一期掐请求 + P17 二期连带撤回复。
 
-真机链路（aiocqhttp）：撤回 notice 被适配器转成 ``message_str=""`` 的
-事件进早期钩子；本测试覆盖**插件侧**的全部分支 —— 识别、登记、取消、
-摘表、未知撤回静默 no-op。
+一期（P16）：notice 识别（纯函数） + 在飞任务登记/取消 —— 真机链路
+（aiocqhttp）：撤回 notice 被适配器转成 ``message_str=""`` 的事件进
+早期钩子；覆盖识别、登记、取消、摘表、未知撤回静默 no-op。
+
+二期（P17 · 方案②）：接管本条事件的 ``send`` 拿回复 id（``replies``
+登记表）→ 撤回时 ``delete_msg``；覆盖接管记账、原方法兜底、分段
+累计、在飞补删、str→int 双试、登记表状态机。
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from types import SimpleNamespace
 
 from conftest import _ROOT  # noqa: F401  触发 sys.path 注入
 
-from xbnext.features.recall import RecallFeature
+from xbnext.features.recall import RecallFeature, replies
 from xbnext.features.recall.service import (
     parse_recall,
     raw_sources,
@@ -222,6 +226,283 @@ class TestRecallFeature(unittest.TestCase):
         self.assertEqual(feat.key, "enable_recall_cancel")
         self.assertTrue(feat.uses_adapter_hook)
         self.assertEqual(feat.command, "")
+
+
+# ==================================================================
+# P17 二期 · 连带撤回复（方案②接管本条 send）
+# ==================================================================
+class _FakeBot:
+    """OneBot 客户端替身：记录调用，发送返回 ``message_id``。"""
+
+    def __init__(self, ret_id=777, fail_send=False):
+        self.calls = []
+        self.ret_id = ret_id
+        self.fail_send = fail_send
+
+    async def send_group_msg(self, **kw):
+        self.calls.append(("send_group_msg", kw))
+        if self.fail_send:
+            raise RuntimeError("发送失败")
+        return {"message_id": self.ret_id}
+
+    async def send_private_msg(self, **kw):
+        self.calls.append(("send_private_msg", kw))
+        if self.fail_send:
+            raise RuntimeError("发送失败")
+        return {"message_id": self.ret_id}
+
+    async def call_action(self, action, **kw):
+        self.calls.append((action, kw))
+        return True
+
+
+class _IntOnlyBot(_FakeBot):
+    """delete_msg 只认 int 的协议端：str 先试必须落空、换 int 才成功。"""
+
+    async def call_action(self, action, **kw):
+        self.calls.append((action, kw))
+        if isinstance(kw.get("message_id"), str):
+            raise RuntimeError("要求 int")
+        return True
+
+
+class _SendEvent:
+    """带 bot 的 aiocqhttp 事件替身（能被 _install_capture 认出）。"""
+
+    def __init__(self, mid="cap-1", group="1001", bot=None):
+        self.message_obj = SimpleNamespace(
+            message_id=mid,
+            raw_message={"post_type": "message", "self_id": 555},
+        )
+        self.message_str = "hi"
+        self.bot = _FakeBot() if bot is None else bot
+        self._group = group
+        self.original_sends = []
+        self._has_send_oper = False
+
+    def get_platform_name(self):
+        return "aiocqhttp"
+
+    def get_group_id(self):
+        return self._group
+
+    def get_sender_id(self):
+        return "666"
+
+    async def send(self, chain):
+        # 原方法：接管后只在「退回原发送」时被调用
+        self.original_sends.append(chain)
+        self._has_send_oper = True
+
+
+async def _fake_parse(chain):
+    """``_parse_segments`` 的测试替身（真实实现需要 astrbot）。"""
+    return [{"type": "text", "data": {"text": "ok"}}]
+
+
+class TestCaptureSend(unittest.TestCase):
+    """P17 二期 · 方案②：接管本条 send，记下回复 id。"""
+
+    def setUp(self):
+        replies.clear()
+
+    def tearDown(self):
+        replies.clear()
+
+    def _run(self, coro):
+        asyncio.run(coro)
+
+    async def _prepare(self, feat, ev):
+        await feat.on_adapter_message(_Ctx(ev))
+        feat._inflight.clear()  # 模拟管线已结束（真实由 done_callback 摘）
+        feat._parse_segments = _fake_parse
+
+    def test_group_send_records_reply_id(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-1")
+            await self._prepare(feat, ev)
+            self.assertTrue(getattr(ev, "_xbnext_send_capture", False))
+
+            await ev.send("CHAIN")
+
+            self.assertEqual(ev.bot.calls[0][0], "send_group_msg")
+            kw = ev.bot.calls[0][1]
+            self.assertEqual(kw["group_id"], 1001)
+            self.assertEqual(kw["self_id"], 555)  # 多连接路由参数
+            self.assertEqual(replies.take("cap-1"), (["777"], False))
+            self.assertTrue(ev._has_send_oper)  # 指标位等价补齐
+            self.assertEqual(ev.original_sends, [])  # 原方法没被碰
+
+        self._run(main())
+
+    def test_private_send_path(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-2", group=None)
+            await self._prepare(feat, ev)
+            await ev.send("CHAIN")
+            self.assertEqual(ev.bot.calls[0][0], "send_private_msg")
+            self.assertEqual(ev.bot.calls[0][1]["user_id"], 666)
+            self.assertEqual(replies.take("cap-2"), (["777"], False))
+
+        self._run(main())
+
+    def test_parse_failure_falls_back_to_original(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-3")
+            await feat.on_adapter_message(_Ctx(ev))
+            feat._inflight.clear()
+            # 不替换 _parse_segments：astrbot 不可导入 → None → 退回原方法
+            await ev.send("CHAIN")
+            self.assertEqual(ev.original_sends, ["CHAIN"])
+            self.assertEqual(ev.bot.calls, [])
+            self.assertEqual(replies.take("cap-3"), ([], False))
+
+        self._run(main())
+
+    def test_send_failure_falls_back_to_original(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-4", bot=_FakeBot(fail_send=True))
+            await self._prepare(feat, ev)
+            await ev.send("CHAIN")
+            self.assertEqual(ev.original_sends, ["CHAIN"])  # 回复没丢
+            self.assertEqual(replies.take("cap-4"), ([], False))
+
+        self._run(main())
+
+    def test_no_bot_no_capture(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _normal_event("cap-5")  # 没有 bot（非 aiocqhttp）
+            await feat.on_adapter_message(_Ctx(ev))
+            self.assertFalse(getattr(ev, "_xbnext_send_capture", False))
+
+        self._run(main())
+
+    def test_empty_message_str_no_capture(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-6")
+            ev.message_str = ""  # 空消息不会唤起 LLM，不装
+            await feat.on_adapter_message(_Ctx(ev))
+            self.assertFalse(getattr(ev, "_xbnext_send_capture", False))
+
+        self._run(main())
+
+    def test_recall_after_send_deletes_reply(self):
+        async def main():
+            feat = RecallFeature()
+            ev = _SendEvent(mid="cap-d")
+            await self._prepare(feat, ev)
+            await ev.send("CHAIN")  # 记账 ["777"]
+
+            notice = _recall_event("cap-d")  # 撤回 notice（用同一 bot 删）
+            notice.bot = ev.bot
+            ctx = _Ctx(notice)
+            await feat.on_adapter_message(ctx)
+
+            dels = [c for c in ev.bot.calls if c[0] == "delete_msg"]
+            self.assertEqual(len(dels), 1)
+            self.assertEqual(str(dels[0][1]["message_id"]), "777")
+            self.assertEqual(replies.take("cap-d"), ([], False))  # 摘表
+            self.assertTrue(any("连带撤回" in n for n in ctx.notes))
+
+        self._run(main())
+
+    def test_delete_retries_with_int_id(self):
+        async def main():
+            feat = RecallFeature()
+            bot = _IntOnlyBot()
+            ev = _SendEvent(mid="cap-i", bot=bot)
+            done = await feat._delete_replies(ev, ["777"], "cap-i")
+            self.assertEqual(done, 1)
+            tries = [c for c in bot.calls if c[0] == "delete_msg"]
+            self.assertEqual([t[1]["message_id"] for t in tries], ["777", 777])
+
+        self._run(main())
+
+    def test_recall_during_send_marks_pending_then_deletes(self):
+        async def main():
+            feat = RecallFeature()
+            bot = _FakeBot()
+            gate = asyncio.Event()
+
+            async def slow_send(**kw):
+                bot.calls.append(("send_group_msg", kw))
+                await gate.wait()
+                return {"message_id": 888}
+
+            bot.send_group_msg = slow_send
+            ev = _SendEvent(mid="cap-p", bot=bot)
+            await self._prepare(feat, ev)
+
+            task = asyncio.ensure_future(ev.send("CHAIN"))
+            await asyncio.sleep(0)  # 走到 gate.wait() 挂住
+
+            notice = _recall_event("cap-p")
+            notice.bot = bot
+            await feat._recall_replies(_Ctx(notice), notice, "cap-p")
+
+            gate.set()
+            await task
+
+            dels = [c for c in bot.calls if c[0] == "delete_msg"]
+            self.assertEqual(len(dels), 1)
+            self.assertEqual(str(dels[0][1]["message_id"]), "888")
+            self.assertEqual(replies.take("cap-p"), ([], False))
+
+        self._run(main())
+
+
+class TestRepliesRegistry(unittest.TestCase):
+    """replies 登记表：状态机 + 分段累计 + 有界清理。"""
+
+    def setUp(self):
+        replies.clear()
+
+    def tearDown(self):
+        replies.clear()
+
+    def test_begin_keeps_existing_ids_on_resend(self):
+        replies.begin("t1")
+        replies.record("t1", ["111"])
+        replies.begin("t1")  # 分段回复的第二次发送不许清掉旧 id
+        self.assertFalse(replies.record("t1", ["222"]))
+        self.assertEqual(replies.take("t1"), (["111", "222"], False))
+
+    def test_take_while_sending_marks_pending(self):
+        replies.begin("t2")
+        self.assertEqual(replies.take("t2"), ([], True))
+        self.assertTrue(replies.record("t2", ["333"]))  # True = 该补删
+        self.assertEqual(replies.take("t2"), (["333"], False))
+
+    def test_abandon_keeps_ids_without_pending(self):
+        replies.begin("t3")
+        replies.record("t3", ["444"])
+        self.assertEqual(replies.abandon("t3"), [])  # 无补删标记：留 id 等撤回
+        self.assertEqual(replies.take("t3"), (["444"], False))
+
+    def test_abandon_returns_ids_when_pending(self):
+        replies.begin("t4")
+        replies.record("t4", ["555"])
+        replies.begin("t4")  # 又开始发下一段
+        self.assertEqual(replies.take("t4"), ([], True))  # 标记补删
+        self.assertEqual(replies.abandon("t4"), ["555"])  # 交出旧 id 收尾
+        self.assertEqual(replies.take("t4"), ([], False))
+
+    def test_empty_trigger_is_noop(self):
+        self.assertEqual(replies.take(""), ([], False))
+        self.assertFalse(replies.record("", ["1"]))
+        replies.begin("")
+        self.assertEqual(replies.take("x"), ([], False))
+
+    def test_clear_empties_table(self):
+        replies.begin("t5")
+        replies.clear()
+        self.assertEqual(replies.take("t5"), ([], False))
 
 
 if __name__ == "__main__":  # pragma: no cover
