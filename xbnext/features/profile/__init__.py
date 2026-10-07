@@ -7,7 +7,8 @@
 
 自助链路（P5 落地）：
 
-- **入口**：``/xbnext profile``（查看 / 设置 / 清空）—— **与开关无关**，
+- **入口**：``/xbnext profile``（查看 / 设置 / 删单字段 / 清空，语法宽容 ——
+  空格 / 冒号 / 等号分隔可混写，``字段:`` 留空即删单个字段）—— **与开关无关**，
   开关关着也照样能维护档案（写 KV），只是不喂给模型；
 - **存**：按**会话范围分群**（真机反馈「用户档案也分群」）——
   群聊 ``xbnext:profile:<platform>:<gid>:<uid>``（同一个人在不同群是
@@ -125,10 +126,7 @@ class ProfileFeature(Feature):
             ok = await self._store.delete(platform, uid, gid)
             if not ok:
                 return "删除失败（存储异常），请稍后再试。"
-            return (
-                f"档案已清空（{label}）。"
-                "开关开着的话，下一轮起模型就不再读到你的档案。"
-            )
+            return self._cleared(label)
 
         # ACTION_SET
         try:
@@ -136,18 +134,28 @@ class ProfileFeature(Feature):
         except Exception:  # noqa: BLE001
             existing = {}
         merged = service.merge(existing, updates)
+        if not merged:
+            # 所有字段都被删空（含「本来就没档案」）→ 等价清空。
+            # store.set 对空值不落盘，直接写会误报"写入失败"还留着旧档案。
+            if existing:
+                ok = await self._store.delete(platform, uid, gid)
+                if not ok:
+                    return "写入失败（存储异常），请稍后再试。"
+            return self._cleared(label)
         saved = await self._store.set(platform, uid, merged, gid)
         if not saved:
             return "写入失败（存储异常），请稍后再试。"
-        labels = {"name": "称呼", "facts": "自述", "style": "口吻"}
-        changed = "、".join(labels.get(k, k) for k in updates)
-        # 设置回执不重复"维护方式"帮助块（刚用过指令的人不需要再看一遍）
+        # 首行 = 改动摘要 + 范围；卡片不再重复范围标签（范围只标一处）
         return (
-            f"已更新你的档案（{changed}）· {label}。\n"
-            + service.describe(
-                saved, extra=self._status_line(conf), scope=label, usage=False
-            )
+            service.change_summary(updates, scope=label)
+            + "\n"
+            + service.describe(saved, extra=self._status_line(conf), usage=False)
         )
+
+    @staticmethod
+    def _cleared(label: str) -> str:
+        """清空回执（``/xbnext profile 清空`` 与「字段留空删光」共用）。"""
+        return f"档案已清空（{label}）。其它范围的档案不受影响。"
 
     # -- WebUI 档案页签 -----------------------------------------------
     async def web_list(self) -> List[Dict[str, Any]]:
