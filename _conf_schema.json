@@ -93,6 +93,13 @@
     "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；如果 bot 已经把回复发出去了，会连带把回复一并撤回（aiocqhttp 下生效）。默认开启。",
     "default": true
   },
+  "enable_recall_confirm": {
+    "type": "bool",
+    "description": "撤回先询问再取消",
+    "hint": "开启后，撤回消息时不再立刻动手 —— bot 会先在原会话问一句「要取消这次回复吗」（群里会 @ 执行撤回的那个人），只有撤回者本人的回答算数，其他人回复无效。回复「是」才取消：还没发完的不再发，已经发出来的回复也一并撤回；回复「否」就保留。30 秒内没人回复，按原行为自动取消。仅在「撤回取消请求」开启时生效。默认关闭。",
+    "default": false,
+    "condition": { "enable_recall_cancel": true }
+  },
   "enable_image_slim": {
     "type": "bool",
     "description": "历史图片瘦身（R8）",

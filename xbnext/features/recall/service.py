@@ -20,12 +20,35 @@ OneBot v11 的撤回是 notice 事件，aiocqhttp 适配器把整个事件 dict 
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-__all__ = ["RECALL_NOTICE_TYPES", "parse_recall", "raw_sources", "trigger_id"]
+__all__ = [
+    "CONFIRM_TIMEOUT",
+    "RECALL_NOTICE_TYPES",
+    "ask_text",
+    "match_answer",
+    "parse_recall",
+    "raw_sources",
+    "recall_meta",
+    "trigger_id",
+]
 
 #: 认得的撤回 notice 类型（群 + 好友）
 RECALL_NOTICE_TYPES = ("group_recall", "friend_recall")
+
+#: 撤回确认询问的等待时长（秒）；超时按老规矩自动取消
+CONFIRM_TIMEOUT = 30.0
+
+#: 认「是」（取消）的回答词 —— 精确匹配，不搞包含判断防误伤
+_YES_WORDS = frozenset({"是", "对", "要", "确认", "取消", "y", "yes", "ok", "1"})
+
+#: 认「否」（保留）的回答词
+_NO_WORDS = frozenset(
+    {"否", "不", "不要", "不取消", "不要取消", "保留", "继续", "不用", "n", "no", "0"}
+)
+
+#: 归一化时剥掉的首尾字符（标点 + 引导符，用户照抄提问里的「是」也算）
+_EDGE_CHARS = "。！？!?.．,，~～…、;；:：\"'`“”‘’「」『』（）() \t\n"
 
 
 def parse_recall(raw: Any) -> Optional[str]:
@@ -38,6 +61,55 @@ def parse_recall(raw: Any) -> Optional[str]:
     if mid is None or str(mid).strip() == "":
         return None
     return str(mid)
+
+
+def recall_meta(raw: Any) -> Optional[Dict[str, str]]:
+    """撤回 notice → ``{message_id, operator_id, group_id}``；非撤回 ``None``。
+
+    ``operator_id`` 是**执行撤回的人**（群管理员可以撤别人的 message，
+    此时 operator ≠ user）；群撤回带 ``group_id``，好友撤回没有 ⇒
+    ``group_id`` 为空串、``operator_id`` 取 ``user_id``。
+    """
+    mid = parse_recall(raw)
+    if mid is None:
+        return None
+    operator = raw.get("operator_id")
+    if operator in (None, ""):
+        operator = raw.get("user_id")
+    group = raw.get("group_id")
+    return {
+        "message_id": mid,
+        "operator_id": str(operator) if operator not in (None, "") else "",
+        "group_id": str(group) if group not in (None, "") else "",
+    }
+
+
+def match_answer(text: Any) -> Optional[bool]:
+    """回答文本 → ``True``（取消）/ ``False``（保留）/ ``None``（不认识）。
+
+    只做**精确匹配**（先剥首尾空白与标点、转小写）：群里聊着聊着出现
+    「取消」两个字太常见，包含判断会误伤 —— 认不出的词一律 ``None``，
+    询问继续等到超时。
+    """
+    if not isinstance(text, str):
+        return None
+    norm = text.strip(_EDGE_CHARS).lower()
+    if not norm:
+        return None
+    if norm in _NO_WORDS:
+        return False
+    if norm in _YES_WORDS:
+        return True
+    return None
+
+
+def ask_text() -> str:
+    """撤回确认询问的正文（群私通用；群里前面会再 @ 撤回者）。"""
+    return (
+        "你撤回了一条消息，要取消这次回复吗？"
+        "回复「是」：不再往下生成，已经发出来的回复也一并撤回；"
+        "回复「否」：保留。30 秒内不回复，就自动取消。"
+    )
 
 
 def raw_sources(event: Any) -> List[Any]:

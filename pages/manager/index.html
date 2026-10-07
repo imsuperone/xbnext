@@ -145,6 +145,19 @@
         <div class="m3-card">
           <div class="card-row-split">
             <div>
+              <h2 class="card-title">撤回先询问再取消</h2>
+              <p class="card-desc">撤回消息时先问一句「要取消这次回复吗」，只有撤回者本人的回答算数（其他人回复无效），回复「是」才取消，回复「否」就保留，30 秒内没人回复则按原行为自动取消。仅在上面的开关开启时生效。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_recall_confirm" data-key="enable_recall_confirm" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
               <h2 class="card-title">历史图片瘦身</h2>
               <p class="card-desc">把对话历史里较旧消息携带的图片换成文字占位，大幅减少输入 token（一张截图动辄几千 token）。最近 6 条消息的原图保留，当轮刚发的图不受影响。改写类功能，默认关闭。</p>
             </div>
