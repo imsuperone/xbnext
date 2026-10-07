@@ -109,7 +109,7 @@ pages:
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
     <title>XBNEXT 控制台</title>
-    <link rel="stylesheet" href="./style.css?v=0.1.0"/>
+    <link rel="stylesheet" href="./style.css?v=0.1.1"/>
     <style>
       html[data-boot] { visibility: hidden; background: #f4f6f8; }
       @media (prefers-color-scheme: dark) { html[data-boot] { background: #0f1115; } }
@@ -120,7 +120,7 @@ pages:
     <div class="app-layout">                     <!-- max-width 1320 -->
       <header class="top-bar">
         <div class="top-bar-brand"><div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.1.0">0.1.0</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.1.1">0.1.1</span></h1>
         </div></div>
         <div class="top-bar-actions">取色器 + 恢复默认色 + 主题切换 + 刷新</div>
       </header>
@@ -133,8 +133,8 @@ pages:
       </main>
     </div>
     <div class="toast-container" id="toastBox"></div>
-    <script src="./api.js?v=0.1.0"></script>
-    <script src="./app.js?v=0.1.0"></script>
+    <script src="./api.js?v=0.1.1"></script>
+    <script src="./app.js?v=0.1.1"></script>
   </body>
 </html>
 ```

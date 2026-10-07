@@ -136,5 +136,42 @@ class TestRecordLoad(unittest.TestCase):
         _run(main())
 
 
+    def test_empty_parts_skipped(self):
+        """空文本段不落记录（core 的空 TextPart 不许变成噪音占位）。"""
+        req = FakeReq()
+        req.extra_user_content_parts = [FakeTextPart(""), ""]
+        entry = inject_log.build_entry(FakeEvent(), [], req)
+        self.assertEqual(entry["parts"], [])
+
+    def test_concurrent_record_keeps_both(self):
+        """两轮同时收尾不许互相覆盖（record 模块锁的回归看护）。"""
+
+        class SlowKV:
+            """每次读写都让出事件循环，制造交错窗口。"""
+
+            def __init__(self):
+                self.data = None
+
+            async def get(self, key, default=None):
+                await asyncio.sleep(0)
+                return default if self.data is None else self.data
+
+            async def set(self, key, value):
+                await asyncio.sleep(0)
+                self.data = value
+                return True
+
+        async def main():
+            kv = SlowKV()
+            await asyncio.gather(
+                inject_log.record(kv, {"ts": 1, "prompt": "A"}),
+                inject_log.record(kv, {"ts": 2, "prompt": "B"}),
+            )
+            items = await inject_log.load(kv)
+            self.assertEqual({x["prompt"] for x in items}, {"A", "B"})
+
+        _run(main())
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -500,17 +500,23 @@
     items.forEach(function (it, idx) {
       var card = mkEl("div", "inj-item");
       var head = mkEl("div", "inj-item-head");
-      head.appendChild(mkEl("span", "inj-item-title", "第 " + (idx + 1) + " 轮"));
-      try {
-        head.appendChild(mkEl("span", "inj-item-time",
-          new Date(((it.ts || 0) * 1000)).toLocaleString()));
-      } catch (e) { /* 时间格式化失败就只显示轮次 */ }
+      // 列表新在前：idx 0 是最新一轮，不是「第 1 轮最早」
+      head.appendChild(mkEl("span", "inj-item-title",
+        idx === 0 ? "最新一轮" : idx + " 轮前"));
+      if (it.ts) {
+        try {
+          head.appendChild(mkEl("span", "inj-item-time",
+            new Date(it.ts * 1000).toLocaleString()));
+        } catch (e) { /* 时间格式化失败就只显示轮次 */ }
+      }
+      var actions = Array.isArray(it.actions) ? it.actions : [];
       head.appendChild(mkEl("span", "inj-item-actions",
-        (it.actions && it.actions.length) ? it.actions.join("、") : "无注入"));
+        actions.length ? actions.join("、") : "无注入"));
       card.appendChild(head);
       card.appendChild(mkEl("div", "inj-item-umo",
         (it.umo || "（未知会话）") + (it.images ? "　图片 " + it.images + " 张" : "")));
-      (it.parts || []).forEach(function (p, i) {
+      var parts = Array.isArray(it.parts) ? it.parts : [];
+      parts.forEach(function (p, i) {
         card.appendChild(mkEl("div", "inj-item-label", "注入段 " + (i + 1)));
         card.appendChild(mkEl("pre", "inj-pre", String(p)));
       });

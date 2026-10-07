@@ -24,7 +24,7 @@ def _read(path: Path) -> str:
 
 
 class TestVersionSync(unittest.TestCase):
-    """版本号必须三处一致（metadata / 代码 / CHANGELOG）。"""
+    """版本号必须四处一致（metadata / CHANGELOG / README / index.html）。"""
 
     def test_metadata_version(self):
         text = _read(_ROOT / "metadata.yaml")
@@ -61,6 +61,19 @@ class TestVersionSync(unittest.TestCase):
 
     def test_semver_format(self):
         self.assertRegex(xbnext.__version__, r"^\d+\.\d+\.\d+$")
+
+    def test_index_html_version(self):
+        """WebUI 静态版本位与缓存戳也必须跟版本走（第四处）。"""
+        path = _ROOT / "pages" / "manager" / "index.html"
+        self.assertTrue(path.exists(), "缺少 pages/manager/index.html")
+        text = _read(path)
+        found = re.search(r'data-ver="(\d+\.\d+\.\d+)"', text)
+        self.assertIsNotNone(found, "index.html 缺少 data-ver 版本位")
+        self.assertEqual(found.group(1), xbnext.__version__)
+        stamps = re.findall(r"\?v=(\d+\.\d+\.\d+)", text)
+        self.assertTrue(stamps, "index.html 缺少 ?v= 缓存戳")
+        for stamp in stamps:
+            self.assertEqual(stamp, xbnext.__version__, "?v= 缓存戳没跟版本走")
 
 
 class TestConfSchema(unittest.TestCase):

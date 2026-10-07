@@ -37,6 +37,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, Mapping, Optional
 
+from ... import __version__
 from .data import QQ_FACE_ALL
 
 #: 权威源索引（koishijs/QFace 的 QQ 官方表情资源清单）
@@ -217,7 +218,7 @@ def face_name_with_overlay(code: object) -> Optional[str]:
 # ==================================================================
 def _fetch_sync(url: str) -> str:
     """``urllib`` 同步拉取（在 ``asyncio.to_thread`` 里跑，不阻塞事件循环）。"""
-    req = urllib.request.Request(url, headers={"User-Agent": "xbnext-face/0.1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": f"xbnext-face/{__version__}"})
     with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
         return resp.read().decode("utf-8")
 

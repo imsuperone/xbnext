@@ -18,8 +18,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List
+
+#: 并发写锁：``record`` 的「读-改-写」串行化 —— 真实 KV 是文件写、有让出
+#: 窗口，两轮请求同时收尾时裸读改写会互相覆盖（丢一条记录）
+_LOCK = asyncio.Lock()
 
 __all__ = [
     "KEY",
@@ -74,8 +79,8 @@ def part_text(part: Any) -> str:
     其它组件记类型名占位 —— 至少让人知道这里有个东西。
     """
     text = getattr(part, "text", None)
-    if isinstance(text, str) and text:
-        return text
+    if isinstance(text, str):
+        return text  # 空串也返回 —— 由 build_entry 跳过，不落 <TextPart> 噪音
     if isinstance(part, str):
         return part
     return f"<{type(part).__name__}>"
@@ -127,13 +132,17 @@ async def load(kv: Any) -> List[Dict[str, Any]]:
 
 
 async def record(kv: Any, entry: Dict[str, Any]) -> bool:
-    """插到队首、截断到上限、写 KV；失败返回 ``False`` 不冒泡。"""
+    """插到队首、截断到上限、写 KV；失败返回 ``False`` 不冒泡。
+
+    全程持模块锁 —— 读-改-写不是原子的，并发收尾会互相覆盖丢记录。
+    """
     if kv is None:
         return False
     try:
-        items = await load(kv)
-        items.insert(0, dict(entry))
-        del items[MAX_ITEMS:]
-        return bool(await kv.set(KEY, {"items": items}))
+        async with _LOCK:
+            items = await load(kv)
+            items.insert(0, dict(entry))
+            del items[MAX_ITEMS:]
+            return bool(await kv.set(KEY, {"items": items}))
     except Exception:  # noqa: BLE001
         return False

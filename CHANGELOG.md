@@ -2,6 +2,34 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## v0.1.1
+
+v0.1.0 发布当日的自检加固：无功能增减，只修隐患与文案。
+
+### Fixed
+
+- **注入记录并发写丢条目**：两轮 LLM 请求同时收尾时 `record()` 的
+  读-改-写竞态会互相覆盖（真实 KV 文件写有让出窗口）→ 加模块级
+  `asyncio.Lock` 串行化，并用「每次读写都让出事件循环」的假 KV
+  写并发回归测试看护
+- **注入记录渲染对脏数据不设防**：`actions` / `parts` 不是数组会让
+  整块渲染抛错变成「加载失败」→ `Array.isArray` 守卫；`ts` 缺失时
+  不再显示 1970 年时间
+- **空注入段被记成 `<TextPart>` 占位**：`part_text` 对空文本返回
+  空串由 `build_entry` 跳过，记录里不再出现无意义占位
+- **`face/updater.py` 硬编码 UA 版本字面量**（违反 aidoc/03「禁止在
+  Python 代码里硬编码版本字面量」）→ 改读 `xbnext.__version__`
+
+### Changed
+
+- 注入记录轮次文案：列表是新在前，原「第 1 轮」实际是最新一条、
+  易误读 → 改「最新一轮 / N 轮前」，卡片说明补「（新在前）」
+- 版本同步看护扩到第四处 `pages/manager/index.html`（`data-ver`
+  静态位 + `?v=` 缓存戳），`aidoc/03` 规则同步更新，由
+  `test_structure::TestVersionSync` 机械看护
+
+**自检**：单测 475 → 478；`v0.1.1` tag 随本版打上。
+
 ## v0.1.0
 
 首个版本：R1~R5 全部落地，控制台 WebUI 就绪。
@@ -196,4 +224,4 @@
   与 xbdoc 同开的实机对照）。
 - 发布包排除 `aidoc/ tests/ .git/ __pycache__/ *.pyc`，但 `aidoc/` 与 `tests/`
   **必须进 git**。
-- 已 push 到 `origin/main`；`v0.1.0` tag **待真机测试通过后再打**。
+- 已 push 到 `origin/main`；`v0.1.0` tag 已在菜单三条真机回归通过后打上。

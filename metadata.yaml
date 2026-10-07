@@ -8,7 +8,7 @@ desc: |
   - 😊 表情翻译：把 QQ 自带表情（face / mface）翻译成文字描述，模型真正读得懂
   - 🗂️ 用户档案：用户自助维护对自己的设定，bot 按档案理解人而不是乱猜
   - 🎛️ 控制台：仿 xbdoc / xbimg / xbbot_beta 风格的 WebUI，开关与档案统一管理
-version: 0.1.0
+version: 0.1.1
 author: Light
 repo: https://github.com/imsuperone/xbnext
 support_platforms:

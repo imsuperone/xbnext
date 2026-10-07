@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.1.0" />
+  <link rel="stylesheet" href="./style.css?v=0.1.1" />
   <!-- 深浅色与主题色存在服务端配置里（唯一真相源，无本地副本），需等 state 回来才套用；
        首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
   <style>
@@ -25,7 +25,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.1.0">0.1.0</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.1.1">0.1.1</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -317,7 +317,7 @@
 
         <div class="m3-card">
           <h2 class="card-title">提示词注入记录</h2>
-          <p class="card-desc">最近 10 轮实际发给模型的内容：清洗后的正文（prompt）+ 本轮注入的各段（引用块 / 表情 / 指向说明 / 档案）。存插件 KV，重启后还能看。</p>
+          <p class="card-desc">最近 10 轮（新在前）实际发给模型的内容：清洗后的正文（prompt）+ 本轮注入的各段（引用块 / 表情 / 指向说明 / 档案）。存插件 KV，重启后还能看。</p>
           <div class="pf-actions">
             <button type="button" class="m3-btn secondary-btn" id="injRefreshBtn">查看最近注入</button>
           </div>
@@ -372,7 +372,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.1.0"></script>
-  <script src="./app.js?v=0.1.0"></script>
+  <script src="./api.js?v=0.1.1"></script>
+  <script src="./app.js?v=0.1.1"></script>
 </body>
 </html>

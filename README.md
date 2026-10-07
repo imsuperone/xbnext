@@ -1,6 +1,6 @@
 # XBNEXT · AstrBot 对话质量修正插件
 
-> 版本：**v0.1.0**
+> 版本：**v0.1.1**
 > 仓库：https://github.com/imsuperone/xbnext
 
 XBNEXT 解决 AstrBot 使用过程中的四个实际问题，并附带一个控制台 WebUI。
