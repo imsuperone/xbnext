@@ -17,7 +17,16 @@ from .config import Config
 class RequestContext:
     """一次 LLM 请求的执行上下文。"""
 
-    __slots__ = ("event", "req", "conf", "runtime", "notes", "injected", "text_part_cls")
+    __slots__ = (
+        "event",
+        "req",
+        "conf",
+        "runtime",
+        "notes",
+        "injected",
+        "parts_cleaned",
+        "text_part_cls",
+    )
 
     def __init__(
         self,
@@ -35,6 +44,8 @@ class RequestContext:
         self.notes: List[str] = []
         #: 本次成功注入的片段数
         self.injected = 0
+        #: 本轮被 R2 改写/移除的 ``extra_user_content_parts`` 内容块数
+        self.parts_cleaned = 0
         #: 注入用的 ``TextPart`` 实现；``None`` = 走 astrbot 真身，
         #: 单测里传假实现即可在无 astrbot 环境跑通注入链路
         self.text_part_cls = text_part_cls

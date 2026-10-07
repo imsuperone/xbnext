@@ -213,6 +213,33 @@ class TestFullRoundCoexist(unittest.TestCase):
         self.assertIs(req.extra_user_content_parts[0], foreign)
         self.assertEqual(req.system_prompt, "SYSTEM_PROMPT 不许动")
 
+    def test_round_cleans_core_quote_parts(self):
+        """第六轮：core 的引用块/附件标记也必须被洗掉，且只打一条汇总。"""
+        quote_part = FakeTextPart(
+            text="<Quoted Message>\n(Light): [Empty Text]\n</Quoted Message>"
+        )
+        attach_part = FakeTextPart(
+            text="[File Attachment in quoted message: name 报告.docx, path /tmp/报告.docx]"
+        )
+        req, log = self._round("", extra_parts=[quote_part, attach_part])
+        texts = [p.text for p in req.extra_user_content_parts]
+        self.assertEqual(len(texts), 2, "不该删除正常的引用块/附件块")
+        self.assertTrue(any("（此消息没有文字内容）" in t for t in texts), texts)
+        self.assertTrue(
+            any("引用消息中的文件附件：报告.docx" in t for t in texts), texts
+        )
+        self.assertFalse(
+            any("[Empty Text]" in t or "path " in t for t in texts), texts
+        )
+        # 系统提示与历史仍然一字不碰
+        self.assertEqual(req.system_prompt, "SYSTEM_PROMPT 不许动")
+        self.assertEqual(req.contexts, [{"role": "user", "content": "历史"}])
+        # 汇总仍然只有一条，且带新动作标签
+        summaries = [m for m in log.of("info") if m.startswith("[XBNEXT] 本轮 ")]
+        self.assertEqual(len(summaries), 1, summaries)
+        self.assertIn("引用占位清洗", summaries[0])
+        self.assertIn("清洗2块", summaries[0])
+
     def test_round_logs_single_summary_line(self):
         """有动作时只打**一条** INFO 汇总，不再逐条刷屏。"""
         req, log = self._round("问题 [Empty Text] 他说 [Image unavailable]")

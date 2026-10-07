@@ -51,7 +51,7 @@
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**383 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**408 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 
@@ -74,7 +74,7 @@
 - **注入日志看不到、且一开调试就乱**：`handle_llm_request` 原来只在
   `debug_log` 下逐条打 notes。改为**有动作才打一条 INFO 汇总**，
   形如 `[XBNEXT] 本轮 引用占位清洗·改写正文、用户档案·注入1段`
-  （动作标签：`注入N段` / `改写正文` / `清图a→b`），没动作一行不打；
+  （动作标签：`注入N段` / `改写正文` / `清洗N块` / `清图a→b`），没动作一行不打；
   纯表情补写另打 `[XBNEXT] 纯表情补写正文：[表情:得意]`；
   逐条 notes 仍然只在 `debug_log` 打开时落 DEBUG
 - **热装插件拿不到 `on_astrbot_loaded`**：该事件只在 AstrBot 核心启动收尾广播
@@ -101,6 +101,23 @@
   抢答成「参数不足 + 指令树」技术树、旧版会把打错的子指令漏给 LLM；
   菜单换成 xbdoc 分节 + xbimg 分隔线的精美排版（`commands.MENU`），
   未知子指令回一句「❓ 未知子指令」提示（不再漏给 LLM 乱答）
+- **单引用+@无正文时模型仍盯着「图、附件」说事**（真机第六轮反馈）：
+  从 core 源码（`astr_main_agent.py`）查实 —— 引用块
+  `<Quoted Message>…</Quoted Message>`、`[Image unavailable]` /
+  `[File Attachment in quoted message: name X, path …]` 等标记全部
+  append 进 `req.extra_user_content_parts`，`req.prompt` 只是
+  `event.message_str`，而 R2 只清 prompt；单引用 + @ 且无正文时 prompt
+  几乎为空，**这些块是模型唯一看到的内容**。修法三层：
+  ① `service.clean_parts()` 与 `clean_prompt` 同规则**就地**清洗内容块
+  （未命中的他方 part 对象原样保留、列表原地改保引用；改写后变空的噪声块
+  剔除）；② 附件标记中文归因改写 `[File Attachment in quoted message:
+  name X, path …]` → `［引用消息中的文件附件：X］`（补 `Voice unavailable`），
+  引用块被删空补 `（此消息没有文字内容）` 不留半截空壳；
+  ③ `QuoteFeature` 去掉「prompt 为空直接 return」的早退（那正是本场景），
+  汇总行新增第四动作标签 `清洗N块`（`ctx.parts_cleaned`）。
+  红线措辞同步为「本轮请求面 `req.prompt` / `req.image_urls` /
+  `req.extra_user_content_parts`」，`req.system_prompt` /
+  `req.contexts` / `conversation.history` 仍然不碰
 
 ### Notes
 

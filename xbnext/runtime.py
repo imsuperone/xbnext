@@ -111,8 +111,9 @@ class XbnextRuntime:
 
               [XBNEXT] 本轮 引用占位清洗·改写正文、用户档案·注入1段
 
-          每个功能一段，用「·」连接它的动作（注入N段 / 改写正文 / 清图N）；
-          没有任何功能动作 ⇒ 一行不打，日志不被正常请求刷屏；
+          每个功能一段，用「·」连接它的动作（注入N段 / 改写正文 /
+          清洗N块 / 清图N）；没有任何功能动作 ⇒ 一行不打，日志不被
+          正常请求刷屏；
         - 详细备注仍然只在 ``debug_log`` 打开时逐条落 DEBUG（不变）；
         - 单个功能失败仍只打 WARNING，不影响其他功能（AstrBot 原则 4）。
         """
@@ -126,6 +127,7 @@ class XbnextRuntime:
                 inj_before = ctx.injected
                 prompt_before = ctx.prompt()
                 urls_before = self._image_url_count(req)
+                parts_before = ctx.parts_cleaned
                 await self._invoke(feat.on_llm_request, ctx)
             except Exception as exc:  # noqa: BLE001  单功能失败不许拖垮请求
                 self._warn(f"{feat.key} 执行失败：{exc!r}")
@@ -135,6 +137,8 @@ class XbnextRuntime:
                 acts.append(f"注入{ctx.injected - inj_before}段")
             if ctx.prompt() != prompt_before:
                 acts.append("改写正文")
+            if ctx.parts_cleaned > parts_before:
+                acts.append(f"清洗{ctx.parts_cleaned - parts_before}块")
             urls_after = self._image_url_count(req)
             if urls_after != urls_before:
                 acts.append(f"清图{urls_before}→{urls_after}")

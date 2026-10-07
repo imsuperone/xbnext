@@ -308,6 +308,30 @@ astrbot_plugin_xbnext/
 > 文档同步：aidoc/01/02/03 的指令形态说明改为单指令 + dispatch。
 > 单测 **379 → 383**（dispatch 矩阵：裸/help/状态/档案往返/未知提示 +
 > 菜单排版红线，smoke 的 command_group 断言改为单指令断言）。
+>
+> **真机第六轮反馈修复（P13，未打 tag）**：「单引用+@无消息的时候还是会
+> 说有图、附件，这个是怎么回事」。从 core 源码（`astr_main_agent.py`）
+> 查实根因 —— **证据⑥**：引用块 `<Quoted Message>…</Quoted Message>`、
+> `[Image unavailable]` / `[File Attachment in quoted message: name X, path …]`
+> 等标记全部 append 进 `req.extra_user_content_parts`，而 R2 早期版本只清
+> `req.prompt`；「单引用 + @ 且无正文」时 prompt 几乎为空，**这些块是模型
+> 唯一看到的内容**，于是模型盯着图/附件说事。修法三层：
+> ① `service.py` 新增 `clean_parts()` —— 与 `clean_prompt` 同规则**就地**
+> 清洗 `extra_user_content_parts`（未命中的他方 part 对象原样保留，
+> 共存红线不破；改写后变空串的噪声块剔除；列表切片赋值保引用）；
+> ② 新增附件标记中文归因改写 `[File Attachment in quoted message: name X,
+> path …]` → `［引用消息中的文件附件：X］`（归因到"引用的"、丢本地路径
+> 噪声）+ 补 `Voice unavailable`；引用块被删空后补
+> `（此消息没有文字内容）`，不留半截 `(昵称):` 空壳；
+> ③ `QuoteFeature.on_llm_request` 去掉「prompt 为空直接 return」的早退
+> （那正是本场景），`RequestContext` 新增 `parts_cleaned` 计数、汇总行
+> 新增第四动作标签 `清洗N块`。红线措辞同步为「本轮请求面
+> `req.prompt` / `req.image_urls` / `req.extra_user_content_parts`」，
+> `req.system_prompt` / `req.contexts` / `conversation.history` 仍然不碰。
+> **顺带查清（不改码）**：两份日志里裸 `/xbnext` 没有 `Prepare to send`
+> 行是日志特性 —— 插件用 `await event.send()` 直发，不走 RespondStage，
+> 该日志只打 `yield`/`set_result` 的结果；`/xbnext status <疑问>` 会把
+> status 后面的参数忽略掉（分发只取第一个 token）。单测 **383 → 408**。
 
 ---
 

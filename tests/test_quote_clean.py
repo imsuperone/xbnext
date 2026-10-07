@@ -13,15 +13,10 @@ from xbnext.features.quote import service
 
 class TestFindPlaceholders(unittest.TestCase):
     def test_empty_input(self):
-        self.assertEqual(
-            service.find_placeholders(""), {"noise": [], "degraded": [], "bare_image": []}
-        )
-        self.assertEqual(
-            service.find_placeholders(None), {"noise": [], "degraded": [], "bare_image": []}
-        )
-        self.assertEqual(
-            service.find_placeholders(123), {"noise": [], "degraded": [], "bare_image": []}
-        )
+        empty = {"noise": [], "degraded": [], "bare_image": [], "attachment": []}
+        self.assertEqual(service.find_placeholders(""), empty)
+        self.assertEqual(service.find_placeholders(None), empty)
+        self.assertEqual(service.find_placeholders(123), empty)
 
     def test_noise(self):
         stats = service.find_placeholders("[Empty Text] 后面还有")
@@ -237,6 +232,227 @@ class TestQuoteFeatureWiring(unittest.TestCase):
         ctx = self._ctx("正常一句话", [])
         QuoteFeature().on_llm_request(ctx)
         self.assertEqual(ctx.req.prompt, "正常一句话")
+
+
+class TestAttachmentMarkers(unittest.TestCase):
+    """附件引用标记 → 中文归因标签（真机第六轮：「还是会说有图、附件」）。"""
+
+    def test_quoted_file_label_drops_path(self):
+        out, stats = service.clean_prompt(
+            "[File Attachment in quoted message: name 报告.docx, path C:/tmp/报告.docx]"
+        )
+        self.assertIn("［引用消息中的文件附件：报告.docx］", out)
+        self.assertNotIn("path", out)
+        self.assertNotIn("C:/tmp", out)
+        self.assertEqual(stats["attachment"], 1)
+
+    def test_current_file_label(self):
+        out, _ = service.clean_prompt(
+            "[File Attachment: name a.txt, path /data/a.txt]"
+        )
+        self.assertIn("［消息中的文件附件：a.txt］", out)
+        self.assertNotIn("/data/", out)
+
+    def test_quoted_audio_without_name(self):
+        out, _ = service.clean_prompt(
+            "[Audio Attachment in quoted message: path /data/x.amr]"
+        )
+        self.assertEqual(out, "［引用消息中的语音附件］")
+
+    def test_video_ref_variant(self):
+        out, _ = service.clean_prompt(
+            "[Video Attachment in quoted message: name 视频, ref 12345]"
+        )
+        self.assertIn("［引用消息中的视频附件：视频］", out)
+        self.assertNotIn("ref", out)
+
+    def test_strip_removes_attachment_markers(self):
+        out, _ = service.clean_prompt(
+            "看 [File Attachment: name a.txt, path /a.txt]", action="strip"
+        )
+        self.assertNotIn("Attachment", out)
+        self.assertIn("看", out)
+
+    def test_keep_policy_untouched(self):
+        src = "[Audio Attachment: path /x.amr]"
+        out, stats = service.clean_prompt(src, action="keep")
+        self.assertEqual(out, src)
+        self.assertEqual(stats["attachment"], 1)
+
+    def test_voice_unavailable_degraded(self):
+        """core 的 [Voice unavailable] 与其它 unavailable 同级处理。"""
+        out, stats = service.clean_prompt("语音：[Voice unavailable]")
+        self.assertIn(service.DEGRADED_LABEL, out)
+        self.assertEqual(stats["degraded"], 1)
+
+
+class TestRepairQuoteBlock(unittest.TestCase):
+    """引用块被清空后补事实说明，不留半截空壳（第六轮根因之二）。"""
+
+    def test_empty_body_with_sender(self):
+        src = "<Quoted Message>\n(Rinne.): [Empty Text]\n</Quoted Message>"
+        out, _ = service.clean_prompt(src)
+        self.assertNotIn("[Empty Text]", out)
+        self.assertIn("(Rinne.): （此消息没有文字内容）", out)
+        self.assertIn("<Quoted Message>", out)
+
+    def test_empty_body_without_sender(self):
+        src = "<Quoted Message>\n[Empty Text]\n</Quoted Message>"
+        out, _ = service.clean_prompt(src)
+        self.assertNotIn("[Empty Text]", out)
+        self.assertIn(service.QUOTED_EMPTY_NOTE, out)
+
+    def test_real_content_untouched(self):
+        src = "<Quoted Message>\n(Rinne.): 这是有内容的引用\n</Quoted Message>"
+        out, _ = service.clean_prompt(src)
+        self.assertEqual(out, src)
+
+    def test_partial_content_kept(self):
+        src = "<Quoted Message>\n(X): 前文 [Empty Text] 后文\n</Quoted Message>"
+        out, _ = service.clean_prompt(src)
+        self.assertNotIn("[Empty Text]", out)
+        self.assertIn("前文", out)
+        self.assertIn("后文", out)
+        # 正文非空 ⇒ 不触发补写
+        self.assertNotIn(service.QUOTED_EMPTY_NOTE, out)
+
+    def test_direct_non_string_and_no_marker(self):
+        self.assertIsNone(service.repair_quote_block(None))
+        src = "普通文本"
+        self.assertEqual(service.repair_quote_block(src), src)
+
+    def test_strip_mode_repairs_too(self):
+        src = "<Quoted Message>\n(X): [Empty Text]\n</Quoted Message>"
+        out, _ = service.clean_prompt(src, action="strip")
+        self.assertIn(service.QUOTED_EMPTY_NOTE, out)
+
+
+class TestCleanParts(unittest.TestCase):
+    """``extra_user_content_parts`` 就地清洗（第六轮根因：模型唯一的内容）。"""
+
+    @staticmethod
+    def _part(text: str) -> "FakeTextPart":
+        from conftest import FakeTextPart
+
+        return FakeTextPart(text=text)
+
+    def test_rewrites_degraded_marker(self):
+        parts = [self._part("[Image unavailable]")]
+        changed, removed = service.clean_parts(parts)
+        self.assertEqual((changed, removed), (1, 0))
+        self.assertIn(service.DEGRADED_LABEL, parts[0].text)
+
+    def test_removes_noise_only_part(self):
+        parts = [self._part("[Empty Text]"), self._part("正常的")]
+        changed, removed = service.clean_parts(parts)
+        self.assertEqual((changed, removed), (0, 1))
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0].text, "正常的")
+
+    def test_repairs_quote_block_part(self):
+        parts = [self._part("<Quoted Message>\n(Light): [Empty Text]\n</Quoted Message>")]
+        changed, removed = service.clean_parts(parts)
+        self.assertEqual((changed, removed), (1, 0))
+        self.assertIn("（此消息没有文字内容）", parts[0].text)
+        self.assertNotIn("[Empty Text]", parts[0].text)
+
+    def test_foreign_part_identity_preserved(self):
+        """共存红线：不含占位符的他方 part 连对象引用都不动。"""
+        foreign = self._part("别人的注入内容，不含占位符")
+        parts = [foreign]
+        changed, removed = service.clean_parts(parts)
+        self.assertEqual((changed, removed), (0, 0))
+        self.assertIs(parts[0], foreign)
+
+    def test_list_object_identity_preserved(self):
+        """原地修改：外部持有的同一个 list 引用不失效。"""
+        parts = [self._part("[Empty Text]"), self._part("保留")]
+        holder = parts
+        service.clean_parts(parts)
+        self.assertIs(holder, parts)
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0].text, "保留")
+
+    def test_keep_action_noop(self):
+        src = "[Image unavailable]"
+        parts = [self._part(src)]
+        changed, removed = service.clean_parts(parts, action="keep")
+        self.assertEqual((changed, removed), (0, 0))
+        self.assertEqual(parts[0].text, src)
+
+    def test_non_list_input(self):
+        self.assertEqual(service.clean_parts(None), (0, 0))
+        self.assertEqual(service.clean_parts("x"), (0, 0))
+        self.assertEqual(service.clean_parts([]), (0, 0))
+
+    def test_part_without_text_untouched(self):
+        obj = object()
+        parts = [obj]
+        changed, removed = service.clean_parts(parts)
+        self.assertEqual((changed, removed), (0, 0))
+        self.assertIs(parts[0], obj)
+
+
+class TestQuoteFeaturePartsWiring(unittest.TestCase):
+    """真机第六轮场景：单引用+@无正文 —— **prompt 为空也必须清洗内容块**。"""
+
+    @staticmethod
+    def _ctx(prompt, parts):
+        from xbnext.config import Config
+        from xbnext.context import RequestContext
+        from conftest import FakeEvent, FakeReq, FakeTextPart
+
+        event = FakeEvent(message=[])
+        req = FakeReq(prompt=prompt, image_urls=[])
+        for part in parts:
+            req.extra_user_content_parts.append(part)
+        return RequestContext(
+            event=event, req=req, conf=Config({}), text_part_cls=FakeTextPart
+        )
+
+    def test_cleans_parts_when_prompt_empty(self):
+        from conftest import FakeTextPart
+        from xbnext.features.quote import QuoteFeature
+
+        quote_part = FakeTextPart(
+            text="<Quoted Message>\n(Light): [Empty Text]\n</Quoted Message>"
+        )
+        attach_part = FakeTextPart(
+            text="[File Attachment in quoted message: name 报告.docx, path /tmp/报告.docx]"
+        )
+        ctx = self._ctx("", [quote_part, attach_part])
+        QuoteFeature().on_llm_request(ctx)
+        texts = [p.text for p in ctx.req.extra_user_content_parts]
+        self.assertEqual(len(texts), 2)
+        self.assertTrue(any("（此消息没有文字内容）" in t for t in texts))
+        self.assertTrue(any("引用消息中的文件附件：报告.docx" in t for t in texts))
+        self.assertFalse(
+            any("[Empty Text]" in t or "path " in t for t in texts), texts
+        )
+        self.assertEqual(ctx.parts_cleaned, 2)
+
+    def test_parts_counter_zero_when_nothing_to_clean(self):
+        from conftest import FakeTextPart
+        from xbnext.features.quote import QuoteFeature
+
+        ctx = self._ctx("普通一句话", [FakeTextPart(text="别人的参考资料")])
+        QuoteFeature().on_llm_request(ctx)
+        self.assertEqual(ctx.parts_cleaned, 0)
+        self.assertEqual(ctx.req.extra_user_content_parts[0].text, "别人的参考资料")
+
+    def test_prompt_and_parts_both_cleaned(self):
+        from conftest import FakeTextPart
+        from xbnext.features.quote import QuoteFeature
+
+        ctx = self._ctx(
+            "引用：[Empty Text] 他说 [Image unavailable]",
+            [FakeTextPart(text="[Image unavailable]")],
+        )
+        QuoteFeature().on_llm_request(ctx)
+        self.assertNotIn("[Empty Text]", ctx.req.prompt)
+        self.assertNotIn("[Image unavailable]", ctx.req.prompt)
+        self.assertNotIn("[Image unavailable]", ctx.req.extra_user_content_parts[0].text)
+        self.assertEqual(ctx.parts_cleaned, 1)
 
 
 if __name__ == "__main__":
