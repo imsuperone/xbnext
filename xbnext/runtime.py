@@ -31,7 +31,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Dict, List
 
-from . import commands, features, injector
+from . import commands, features, inject_log, injector
 from .config import Config
 from .context import RequestContext
 from .storage import KV
@@ -148,6 +148,17 @@ class XbnextRuntime:
             ctx.flush_notes(self.log)
         if actions:
             self._info("本轮 " + "、".join(actions))
+
+        # P16 · 注入记录：把发给模型的最终态存一份，供 WebUI「运行状态」
+        # 底部的「提示词注入记录」入口查看。KV 不可用时照常降级进内存缓存
+        # （本期可读、重启丢），只有 debug_log 打开才吭声 —— 不给日志加噪。
+        try:
+            entry = inject_log.build_entry(event, actions, req)
+            if not await inject_log.record(self.kv, entry) and self.conf.bool("debug_log"):
+                self._debug("注入记录未落盘（KV 不可用，本期仍可查看）")
+        except Exception as exc:  # noqa: BLE001
+            if self.conf.bool("debug_log"):
+                self._debug(f"注入记录失败：{exc!r}")
 
     async def handle_adapter_message(self, event: Any) -> None:
         """适配器早期钩子（``event_message_type(ALL)``）。

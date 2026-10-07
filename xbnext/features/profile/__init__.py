@@ -165,10 +165,10 @@ class ProfileFeature(Feature):
         return await self._store.list_all()
 
     async def web_save(self, payload: Any) -> Dict[str, Any]:
-        """按 WebUI 表单写一份档案（三个字段**整体替换**，留空即删除该字段）。
+        """按 WebUI 表单写一份档案（字段**整体替换**，留空即删除该字段）。
 
         与指令 ``/xbnext profile 字段 内容`` 的合并语义不同 —— 页面上看到的
-        就是完整的档案，所以按"所见即所存"处理；三个字段全空 = 删掉整份档案。
+        就是完整的档案，所以按"所见即所存"处理；字段全空 = 删掉整份档案。
 
         分群字段：``group``（群号，留空 = 私聊/未分群）。编辑时把档案从一个
         群挪到另一个群，前端额外传 ``prev_group``（旧范围），服务端先写新键、
@@ -189,7 +189,6 @@ class ProfileFeature(Feature):
         raw = {
             "name": payload.get("name"),
             "facts": payload.get("facts"),
-            "style": payload.get("style"),
         }
         if not store_mod.normalize(raw):
             await self._store.delete(platform, uid, gid)

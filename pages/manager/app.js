@@ -485,6 +485,65 @@
     });
   }
 
+  /* ========================================================================
+   * 提示词注入记录（P16：运行状态底部入口）
+   * 全部走 textContent 渲染（mkEl）—— prompt 是模型输出，绝不 innerHTML。
+   * ====================================================================== */
+  function renderInjectLog(items) {
+    var box = $("injectLogList");
+    if (!box) return;
+    box.textContent = "";
+    if (!items || !items.length) {
+      box.appendChild(mkEl("div", "card-note", "暂无记录 —— 有 LLM 请求跑过之后这里就会有。"));
+      return;
+    }
+    items.forEach(function (it, idx) {
+      var card = mkEl("div", "inj-item");
+      var head = mkEl("div", "inj-item-head");
+      head.appendChild(mkEl("span", "inj-item-title", "第 " + (idx + 1) + " 轮"));
+      try {
+        head.appendChild(mkEl("span", "inj-item-time",
+          new Date(((it.ts || 0) * 1000)).toLocaleString()));
+      } catch (e) { /* 时间格式化失败就只显示轮次 */ }
+      head.appendChild(mkEl("span", "inj-item-actions",
+        (it.actions && it.actions.length) ? it.actions.join("、") : "无注入"));
+      card.appendChild(head);
+      card.appendChild(mkEl("div", "inj-item-umo",
+        (it.umo || "（未知会话）") + (it.images ? "　图片 " + it.images + " 张" : "")));
+      (it.parts || []).forEach(function (p, i) {
+        card.appendChild(mkEl("div", "inj-item-label", "注入段 " + (i + 1)));
+        card.appendChild(mkEl("pre", "inj-pre", String(p)));
+      });
+      card.appendChild(mkEl("div", "inj-item-label", "正文 prompt（清洗后）"));
+      card.appendChild(mkEl("pre", "inj-pre", String(it.prompt || "（空）")));
+      box.appendChild(card);
+    });
+  }
+
+  function loadInjectLog() {
+    var btn = $("injRefreshBtn");
+    var box = $("injectLogList");
+    if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
+    return API.injectLog().then(function (res) {
+      var items = (res && res.items) || [];
+      renderInjectLog(items);
+      if (btn) { btn.disabled = false; btn.textContent = "刷新记录"; }
+    }).catch(function (e) {
+      if (box) {
+        box.textContent = "";
+        box.appendChild(mkEl("div", "card-note",
+          "加载失败：" + (e && e.message ? e.message : e)));
+      }
+      if (btn) { btn.disabled = false; btn.textContent = "查看最近注入"; }
+    });
+  }
+
+  function initInjectLog() {
+    if ($("injRefreshBtn")) $("injRefreshBtn").addEventListener("click", function () {
+      loadInjectLog();
+    });
+  }
+
   function reveal() {
     if (booted) return;
     booted = true;
@@ -692,7 +751,6 @@
     var parts = [];
     if (p.name) parts.push("称呼：" + p.name);
     if (p.facts) parts.push("自述：" + truncate(p.facts, 70));
-    if (p.style) parts.push("口吻：" + truncate(p.style, 40));
     main.appendChild(mkEl("div", "pf-row-sub", parts.length ? parts.join("　|　") : "（空档案）"));
 
     var actions = mkEl("div", "pf-actions");
@@ -805,7 +863,6 @@
     if ($("pfGroup")) $("pfGroup").value = pfCurrent.group;
     if ($("pfName")) $("pfName").value = p.name || "";
     if ($("pfFacts")) $("pfFacts").value = p.facts || "";
-    if ($("pfStyle")) $("pfStyle").value = p.style || "";
     if ($("pfEditorTitle")) $("pfEditorTitle").textContent = isNew ? "新建档案" : "编辑档案";
     if ($("pfDeleteBtn")) $("pfDeleteBtn").textContent = isNew ? "取消新建" : "删除这份档案";
     pfShowEditor(true);
@@ -832,8 +889,7 @@
       group: group,
       uid: uid,
       name: $("pfName") ? $("pfName").value : "",
-      facts: $("pfFacts") ? $("pfFacts").value : "",
-      style: $("pfStyle") ? $("pfStyle").value : ""
+      facts: $("pfFacts") ? $("pfFacts").value : ""
     };
     // 编辑已有档案时带上原范围：挪群后服务端会删掉旧键，不留重复行
     var wasNew = !pfCurrent || pfCurrent.isNew;
@@ -841,7 +897,7 @@
     API.profileSave(payload).then(function (res) {
       var deleted = res && res.deleted;
       var label = pfScopeLabel(group);
-      toast(deleted ? "档案已清空（" + label + "，三个字段都为空）"
+      toast(deleted ? "档案已清空（" + label + "，字段都为空）"
                     : "档案已保存（" + label + "）", "ok");
       var back = { platform: platform, group: group, uid: uid, profile: (res && res.profile) || {} };
       if (wasNew && deleted) pfClose();
@@ -899,6 +955,7 @@
     initControls();
     initAccent();
     initProfile();
+    initInjectLog();
     watchSystemTheme();
 
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);

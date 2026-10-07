@@ -15,8 +15,9 @@
 
 **宽容规则**：查看词后面带多余内容直接当查看；裸字段名没写值才报错
 （防手滑误删，报错里带正确示例）；值里的普通词（含 ``a=b``）不会被误拆。
-**红线**：字段名只能是 :data:`~xbnext.features.profile.store.FIELDS` 里的三个，
-其余一律报错（不让用户往档案里塞结构化指令，aidoc/03）。
+**红线**：字段名只能是 :data:`~xbnext.features.profile.store.FIELDS` 里的两个
+（称呼 / 自述），其余一律报错（不让用户往档案里塞结构化指令，aidoc/03）。
+「口吻」字段已随 P16 移除 —— 再发 `口吻 ...` 会走"未知字段"报错。
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ KEY_ALIASES: Dict[str, str] = {}
 for _names, _field in (
     (("称呼", "名字", "昵称", "昵", "name", "nick", "nickname"), "name"),
     (("自述", "信息", "描述", "资料", "简介", "facts", "info", "desc"), "facts"),
-    (("口吻", "风格", "相处", "方式", "语气", "style", "tone"), "style"),
 ):
     for _n in _names:
         KEY_ALIASES[_n] = _field
@@ -45,7 +45,7 @@ ACTION_DELETE = "delete"
 ACTION_SET = "set"
 
 #: 正式字段名 → 回执/帮助里的中文标签（迭代顺序即展示顺序）
-FIELD_LABELS: Dict[str, str] = {"name": "称呼", "facts": "自述", "style": "口吻"}
+FIELD_LABELS: Dict[str, str] = {"name": "称呼", "facts": "自述"}
 
 #: 值分隔符（等号 + 半角/全角冒号）—— 只有「字段名 + 分隔符」前缀才算字段声明
 SEPARATORS = ("=", ":", "：")
@@ -86,7 +86,7 @@ def _split_field_sep(token: str) -> Optional[Tuple[str, str]]:
 
     分隔符取**第一次出现**的位置（``=`` / ``:`` / ``：`` 都认）；
     字段名不在白名单也返回 ``None`` —— 交给调用方当普通词处理，
-    所以 ``口吻 a=b`` 的 ``a=b`` 不会被误拆成「字段 = 值」。
+    所以 ``自述 a=b`` 的 ``a=b`` 不会被误拆成「字段 = 值」。
     """
     if not isinstance(token, str):
         return None
@@ -208,7 +208,7 @@ def scope_label(gid: Any) -> str:
 
 
 def change_summary(updates: Dict[str, str], scope: str = "") -> str:
-    """设置回执首行：``已更新：称呼=小明；已删除：口吻（群 111）``。
+    """设置回执首行：``已更新：称呼=小明；已删除：自述（群 111）``。
 
     - 值超过 20 字截断成 ``…``（完整值下面的档案卡里有）；
     - ``scope`` 非空才带范围括号 —— 范围标签在首行与卡片**只标一处**，

@@ -211,10 +211,12 @@
     setting: function (payload) { return postJson("setting", payload); },
     /** 列出全部用户档案：profiles() -> [{platform, uid, profile, updated}] */
     profiles: function () { return getJson("profiles", null); },
-    /** 写一份档案：profileSave({platform, uid, name, facts, style})，三字段全空即删除 */
+    /** 写一份档案：profileSave({platform, uid, name, facts})，字段全空即删除 */
     profileSave: function (payload) { return postJson("profile_save", payload); },
     /** 删一份档案：profileDelete({platform, uid}) */
     profileDelete: function (payload) { return postJson("profile_delete", payload); },
+    /** 最近 10 轮提示词注入记录：injectLog() -> {items:[{ts,umo,actions,prompt,parts,images}]} */
+    injectLog: function () { return getJson("inject_log", null); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

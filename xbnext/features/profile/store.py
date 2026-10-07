@@ -13,7 +13,6 @@
     {
       "name":   "用户自己起的称呼",
       "facts":  "自述信息（身份、偏好、忌讳）",
-      "style":  "希望 bot 用什么口吻对待自己",
       "updated": 1728000000
     }
 
@@ -33,8 +32,10 @@ from typing import Any, Dict, List, Optional
 from ...injector import sanitize, strip_xbnext
 
 #: 允许的档案字段（多余字段一律丢弃，避免用户塞结构化指令进去）
-FIELDS = ("name", "facts", "style")
-DEFAULT_MAX_LEN = {"name": 32, "facts": 480, "style": 120}
+#: 「口吻 / style」已随 P16 移除 —— 旧数据里的 style 在下次写入时被
+#: ``normalize`` 顺手清掉，读取路径一律按本元组过滤、不会展示。
+FIELDS = ("name", "facts")
+DEFAULT_MAX_LEN = {"name": 32, "facts": 480}
 
 #: 索引键：AstrBot 的插件 KV **没有"遍历所有键"的能力**（只有按键 get/put/delete），
 #: WebUI 要列出全部档案就必须自己维护一份成员表。
@@ -99,8 +100,6 @@ def render(profile: Dict[str, Any], max_chars: int = 0) -> str:
             lines.append(f"称呼：{profile['name']}")
         if profile.get("facts"):
             lines.append(f"自述：{profile['facts']}")
-        if profile.get("style"):
-            lines.append(f"希望的相处方式：{profile['style']}")
         text = "\n".join(lines)
         if max_chars and len(text) > max_chars:
             text = text[:max_chars].rstrip()

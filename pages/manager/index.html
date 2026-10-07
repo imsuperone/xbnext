@@ -128,6 +128,19 @@
             </label>
           </div>
         </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">撤回取消请求</h2>
+              <p class="card-desc">撤回刚发的那条消息时，取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段。只掐请求本身，bot 已发出的回复不跟着撤回。默认开启。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_recall_cancel" data-key="enable_recall_cancel" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
       </section>
 
       <!-- ==================== Tab 2: 行为微调 ==================== -->
@@ -193,7 +206,7 @@
           <div class="form-group">
             <label class="form-label">每会话保留的记录数</label>
             <input type="number" class="m3-input" id="inp_reply_history_limit" data-key="reply_history_limit" min="10" max="5000" />
-            <span class="field-hint">单个会话最多保留多少条「回给谁」记录，超出按先进先出淘汰。默认 200。</span>
+            <span class="field-hint">单个会话最多保留多少条「回给谁」记录，超出按先进先出淘汰。默认 50。</span>
           </div>
           <div class="form-group">
             <label class="form-label">说明注入的回溯轮数</label>
@@ -232,7 +245,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">用户档案</h2>
-              <p class="card-desc">按「平台 · 群」分组分类列出全部已记录的自助档案：档案按群隔离，同一个人在不同群可以是不同的档案（留空群号 = 私聊 / 未分群）。点「编辑」可直接改称呼、自述、口吻；群里用 <code>/xbnext profile</code> 维护的是同一份数据。</p>
+              <p class="card-desc">按「平台 · 群」分组分类列出全部已记录的自助档案：档案按群隔离，同一个人在不同群可以是不同的档案（留空群号 = 私聊 / 未分群）。点「编辑」可直接改称呼、自述；群里用 <code>/xbnext profile</code> 维护的是同一份数据。</p>
             </div>
             <div class="pf-actions">
               <button type="button" class="m3-btn secondary-btn" id="pfRefreshBtn">刷新</button>
@@ -247,7 +260,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title" id="pfEditorTitle">编辑档案</h2>
-              <p class="card-desc">三个字段对应 <code>/xbnext profile</code> 的「称呼 / 自述 / 口吻」，留空的字段会被清掉。</p>
+              <p class="card-desc">两个字段对应 <code>/xbnext profile</code> 的「称呼 / 自述」，留空的字段会被清掉。</p>
             </div>
           </div>
           <div class="form-group">
@@ -272,10 +285,6 @@
             <label class="form-label" for="pfFacts">自述</label>
             <textarea class="m3-textarea" id="pfFacts" rows="4" maxlength="480" placeholder="身份、偏好、忌讳……"></textarea>
             <span class="field-hint">超长会在注入前被截断，默认上限 600 字（可在「行为微调」调整）。</span>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="pfStyle">口吻</label>
-            <input type="text" class="m3-input" id="pfStyle" maxlength="120" placeholder="希望 bot 用什么方式跟你说话" />
           </div>
           <div class="pf-actions">
             <button type="button" class="m3-btn primary-btn" id="pfSaveBtn">保存</button>
@@ -305,6 +314,15 @@
             <div class="kv-row"><span class="kv-k">接口通道</span><span class="kv-v" id="st_channel">—</span></div>
           </div>
         </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">提示词注入记录</h2>
+          <p class="card-desc">最近 10 轮实际发给模型的内容：清洗后的正文（prompt）+ 本轮注入的各段（引用块 / 表情 / 指向说明 / 档案）。存插件 KV，重启后还能看。</p>
+          <div class="pf-actions">
+            <button type="button" class="m3-btn secondary-btn" id="injRefreshBtn">查看最近注入</button>
+          </div>
+          <div id="injectLogList"><div class="card-note">尚未加载 —— 点「查看最近注入」。</div></div>
+        </div>
       </section>
 
       <!-- ==================== Tab 5: 使用指南 ==================== -->
@@ -317,10 +335,9 @@
             <div class="kv-row"><span class="kv-k">/xbnext profile</span><span class="kv-v">查看自己的档案</span></div>
             <div class="kv-row"><span class="kv-k">… 称呼 小明</span><span class="kv-v">改称呼（别名：名字 / 昵称）</span></div>
             <div class="kv-row"><span class="kv-k">… 自述 &lt;内容&gt;</span><span class="kv-v">改自述（别名：信息 / 描述）</span></div>
-            <div class="kv-row"><span class="kv-k">… 口吻 &lt;内容&gt;</span><span class="kv-v">改相处方式（别名：风格 / 语气）</span></div>
             <div class="kv-row"><span class="kv-k">… 清空</span><span class="kv-v">删除自己的全部档案</span></div>
           </div>
-          <span class="field-hint">档案与「用户档案」开关<strong>解耦</strong>：开关只决定喂不喂给模型，查看/设置/清空始终可用。字段只认上面三个，其余一律报错。</span>
+          <span class="field-hint">档案与「用户档案」开关<strong>解耦</strong>：开关只决定喂不喂给模型，查看/设置/清空始终可用。字段只认「称呼 / 自述」两个，其余一律报错。</span>
           <span class="field-hint">档案<strong>按群隔离</strong>：同一个人在不同群各存一份，私聊单独一份；回执抬头会标出当前范围（<code>群 123456</code> / <code>私聊</code>）。</span>
           <span class="field-hint">控制台的「用户档案」页签按「平台 · 群」分组分类列出并编辑<strong>所有人</strong>的档案，与上面的指令写的是同一份数据。</span>
         </div>

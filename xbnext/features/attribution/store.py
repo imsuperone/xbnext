@@ -23,7 +23,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-DEFAULT_LIMIT = 200
+#: 每会话保留的回复记录数（P16 起默认 50，用户拍板；超出先进先出淘汰）
+DEFAULT_LIMIT = 50
 #: 全局会话数上限（对标 AstrNa 的 300，我们取 200）
 DEFAULT_SESSION_LIMIT = 200
 #: 全局会话索引键（活跃序，新回复在前）

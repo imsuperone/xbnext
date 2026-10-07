@@ -23,6 +23,7 @@ FEATURE_KEYS = (
     "enable_face_translate",  # R3 face_translate
     "enable_reply_attribution",  # R1 reply_attribution
     "enable_user_profile",  # R4 user_profile
+    "enable_recall_cancel",  # 撤回取消请求（P16）
 )
 
 

@@ -84,18 +84,17 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(payload, {"name": "小明"})
 
     def test_positional_set_multi_word(self):
-        action, payload = service.classify(["口吻", "毒舌", "一点"])
-        self.assertEqual(payload, {"style": "毒舌 一点"})
+        action, payload = service.classify(["自述", "毒舌", "一点"])
+        self.assertEqual(payload, {"facts": "毒舌 一点"})
 
     def test_equals_form(self):
-        action, payload = service.classify(["称呼=小明", "口吻=轻松"])
+        action, payload = service.classify(["称呼=小明", "自述=轻松"])
         self.assertEqual(action, service.ACTION_SET)
-        self.assertEqual(payload, {"name": "小明", "style": "轻松"})
+        self.assertEqual(payload, {"name": "小明", "facts": "轻松"})
 
     def test_aliases(self):
         self.assertEqual(service.classify(["名字", "x"])[1], {"name": "x"})
         self.assertEqual(service.classify(["信息", "x"])[1], {"facts": "x"})
-        self.assertEqual(service.classify(["风格", "x"])[1], {"style": "x"})
         self.assertEqual(service.classify(["Name", "x"])[1], {"name": "x"})
 
     def test_only_allowed_fields(self):
@@ -105,6 +104,12 @@ class TestClassify(unittest.TestCase):
         self.assertIn("可用", str(cm.exception))
         with self.assertRaises(ValueError):
             service.classify(["unknown=1"])
+        # P16 移除「口吻」字段：旧写法现在走"未知字段"报错
+        with self.assertRaises(ValueError) as cm:
+            service.classify(["口吻", "轻松"])
+        self.assertIn("可用", str(cm.exception))
+        with self.assertRaises(ValueError):
+            service.classify(["风格=轻松"])
 
     def test_empty_value_rejected(self):
         """裸字段名没写值要报错（防手滑误删），报错里带正确示例。"""
@@ -125,14 +130,13 @@ class TestClassify(unittest.TestCase):
     def test_sep_empty_means_delete_field(self):
         """分隔符后留空 = 删掉该字段（merge 负责 pop）。"""
         self.assertEqual(service.classify(["称呼="])[1], {"name": ""})
-        self.assertEqual(service.classify(["口吻:"])[1], {"style": ""})
         self.assertEqual(service.classify(["自述："])[1], {"facts": ""})
 
     def test_mixed_forms_allowed(self):
         """分隔符可混写（旧版「一次只改一种写法」限制已去掉）。"""
-        action, payload = service.classify(["称呼", "小明", "口吻=轻松"])
+        action, payload = service.classify(["称呼", "小明", "自述=轻松"])
         self.assertEqual(action, service.ACTION_SET)
-        self.assertEqual(payload, {"name": "小明", "style": "轻松"})
+        self.assertEqual(payload, {"name": "小明", "facts": "轻松"})
 
     def test_multi_positional_split(self):
         """裸字段名开新字段 —— 旧版会把后面的词全吞进第一个字段的值。"""
@@ -141,8 +145,8 @@ class TestClassify(unittest.TestCase):
             {"name": "小明", "facts": "学生"},
         )
         self.assertEqual(
-            service.classify(["称呼:小明", "口吻", "毒舌", "一点"])[1],
-            {"name": "小明", "style": "毒舌 一点"},
+            service.classify(["称呼:小明", "自述", "毒舌", "一点"])[1],
+            {"name": "小明", "facts": "毒舌 一点"},
         )
 
     def test_bare_separator_noise(self):
@@ -152,7 +156,7 @@ class TestClassify(unittest.TestCase):
 
     def test_value_with_equals_not_split(self):
         """值里的普通词（含 =）不许被误拆成「字段=值」。"""
-        self.assertEqual(service.classify(["口吻", "a=b"])[1], {"style": "a=b"})
+        self.assertEqual(service.classify(["自述", "a=b"])[1], {"facts": "a=b"})
         self.assertEqual(service.classify(["自述", "x=1 y"])[1], {"facts": "x=1 y"})
 
     def test_view_with_extra_tolerated(self):
@@ -181,9 +185,16 @@ class TestMerge(unittest.TestCase):
     def test_keeps_other_fields(self):
         """改一个字段不能把用户其它字段抹掉（store.set 是整值覆盖）。"""
         merged = service.merge(
-            {"name": "小明", "facts": "学生", "updated": 1}, {"style": "轻松"}
+            {"name": "小明", "facts": "学生", "updated": 1}, {"facts": "工作党"}
         )
-        self.assertEqual(merged, {"name": "小明", "facts": "学生", "style": "轻松"})
+        self.assertEqual(merged, {"name": "小明", "facts": "工作党"})
+
+    def test_style_update_dropped(self):
+        """P16 移除「口吻」：updates 里的 style 直接被丢弃、不落库。"""
+        self.assertEqual(
+            service.merge({"name": "小明"}, {"style": "轻松"}),
+            {"name": "小明"},
+        )
 
     def test_drops_unknown_and_empty(self):
         merged = service.merge({"name": "x", "junk": "y"}, {"name": ""})
@@ -207,7 +218,9 @@ class TestDescribe(unittest.TestCase):
         )
         self.assertIn("称呼：小明", out)
         self.assertIn("自述：学生", out)
-        self.assertIn("口吻：轻松", out)
+        # P16 移除「口吻」：旧数据里的 style 一律不渲染
+        self.assertNotIn("口吻", out)
+        self.assertNotIn("希望的相处方式", out)
         self.assertNotIn("updated", out)
 
     def test_long_value_truncated(self):
@@ -224,14 +237,14 @@ class TestChangeSummary(unittest.TestCase):
         self.assertEqual(out, "已更新：称呼=小明（群 111）")
 
     def test_delete_only(self):
-        out = service.change_summary({"style": ""}, scope="私聊")
-        self.assertEqual(out, "已删除：口吻（私聊）")
+        out = service.change_summary({"facts": ""}, scope="私聊")
+        self.assertEqual(out, "已删除：自述（私聊）")
 
     def test_mixed(self):
         out = service.change_summary(
-            {"name": "小明", "style": ""}, scope="群 111"
+            {"name": "小明", "facts": ""}, scope="群 111"
         )
-        self.assertEqual(out, "已更新：称呼=小明；已删除：口吻（群 111）")
+        self.assertEqual(out, "已更新：称呼=小明；已删除：自述（群 111）")
 
     def test_long_value_truncated(self):
         out = service.change_summary({"facts": "长" * 80})
@@ -424,10 +437,10 @@ class TestHandleCommand(unittest.TestCase):
         feat = make_feature()
         conf = Config({})
         run(feat.handle_command(CmdEvent(), ["称呼", "小明"], conf))
-        run(feat.handle_command(CmdEvent(), ["口吻", "轻松"], conf))
+        run(feat.handle_command(CmdEvent(), ["自述", "轻松"], conf))
         view = run(feat.handle_command(CmdEvent(), [], conf))
         self.assertIn("称呼：小明", view)
-        self.assertIn("口吻：轻松", view)
+        self.assertIn("自述：轻松", view)
 
     def test_delete(self):
         feat = make_feature()
@@ -459,12 +472,12 @@ class TestHandleCommand(unittest.TestCase):
         feat = make_feature()
         conf = Config({})
         run(feat.handle_command(CmdEvent(), ["称呼", "小明"], conf))
-        run(feat.handle_command(CmdEvent(), ["口吻", "毒舌"], conf))
-        out = run(feat.handle_command(CmdEvent(), ["口吻:"], conf))
-        self.assertIn("已删除：口吻（私聊）", out)
+        run(feat.handle_command(CmdEvent(), ["自述", "毒舌"], conf))
+        out = run(feat.handle_command(CmdEvent(), ["自述:"], conf))
+        self.assertIn("已删除：自述（私聊）", out)
         view = run(feat.handle_command(CmdEvent(), [], conf))
         self.assertIn("称呼：小明", view)
-        self.assertNotIn("口吻：", view)
+        self.assertNotIn("自述：", view)
 
     def test_delete_all_fields_via_sep(self):
         """最后一个字段用「:」删掉 → 整份档案清空（不能误报写入失败）。"""
@@ -482,13 +495,13 @@ class TestHandleCommand(unittest.TestCase):
         out = run(
             feat.handle_command(
                 CmdEvent(),
-                ["称呼", "小明", "自述", "学生", "口吻=轻松"],
+                ["称呼", "小明", "自述", "学生"],
                 conf,
             )
         )
         self.assertIn("已更新", out)
         view = run(feat.handle_command(CmdEvent(), [], conf))
-        for line in ("称呼：小明", "自述：学生", "口吻：轻松"):
+        for line in ("称呼：小明", "自述：学生"):
             self.assertIn(line, view)
 
     def test_no_uid(self):
@@ -873,17 +886,19 @@ class TestProfileWebApi(unittest.TestCase):
 
     def test_save_then_list_then_delete(self):
         feat = make_feature()
+        # payload 里仍带 style（P16 已删字段）—— 后端必须忽略它、不落库
         out = run(feat.web_save(
             {"platform": "aiocqhttp", "uid": "30003", "name": "阿三",
              "facts": "爱睡懒觉", "style": "慵懒"}))
         self.assertFalse(out["deleted"])
         self.assertEqual(out["profile"]["name"], "阿三")
+        self.assertNotIn("style", out["profile"])
 
         rows = run(feat.web_list())
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["profile"]["facts"], "爱睡懒觉")
 
-        # 三个字段全空 = 删掉整份档案（页面上看到空的，存的就是没有）
+        # 字段全空 = 删掉整份档案（页面上看到空的，存的就是没有）
         out2 = run(feat.web_save(
             {"platform": "aiocqhttp", "uid": "30003", "name": "", "facts": "", "style": ""}))
         self.assertTrue(out2["deleted"])

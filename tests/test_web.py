@@ -17,7 +17,12 @@ from conftest import _ROOT  # noqa: F401  保证 sys.path 已就位
 
 from xbnext import switches
 from xbnext.config import SCHEMA, Config
-from xbnext.web import build_state, handle_profiles, handle_setting
+from xbnext.web import (
+    build_state,
+    handle_inject_log,
+    handle_profiles,
+    handle_setting,
+)
 
 
 class _RawConf:
@@ -278,6 +283,37 @@ class HandleSettingTest(unittest.TestCase):
         )
         self.assertFalse(out["ok"])
         self.assertIn("未保存", out["error"])
+
+
+class InjectLogEndpointTest(unittest.TestCase):
+    """P16 · GET inject_log：永远 ok，空 / 有数据两种形态。"""
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_empty_runtime_returns_empty_items(self):
+        # FakeRuntime 没有 kv / ensure_loaded → items 必须是 []，不许抛
+        out = self._run(handle_inject_log(FakeRuntime()))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["data"], {"items": []})
+
+    def test_returns_seeded_items(self):
+        from conftest import FakeKV
+
+        from xbnext import inject_log
+        from xbnext.storage import KV
+
+        rt = FakeRuntime()
+        rt.kv = KV(owner=FakeKV())
+        asyncio.run(
+            inject_log.record(
+                rt.kv, {"ts": 1, "prompt": "p", "parts": [], "actions": []}
+            )
+        )
+        out = self._run(handle_inject_log(rt))
+        self.assertTrue(out["ok"])
+        self.assertEqual(len(out["data"]["items"]), 1)
+        self.assertEqual(out["data"]["items"][0]["prompt"], "p")
 
 
 if __name__ == "__main__":

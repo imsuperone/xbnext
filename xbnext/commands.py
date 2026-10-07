@@ -41,7 +41,6 @@ MENU = (
     "• /xbnext profile — 查看我的档案\n"
     "• /xbnext profile 称呼 小明 — 改称呼（别名：名字 / 昵称；冒号=等号写法都认）\n"
     "• /xbnext profile 自述 <内容> — 改自述（别名：信息 / 描述）\n"
-    "• /xbnext profile 口吻 <内容> — 改相处方式（别名：风格 / 语气）\n"
     "• /xbnext profile 称呼: — 删掉单个字段（字段后跟冒号留空）\n"
     "• /xbnext profile 清空 — 删除我的档案\n"
     "\n"

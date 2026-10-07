@@ -227,7 +227,8 @@ class TestProfileRender(unittest.TestCase):
         )
         self.assertIn("称呼：小明", text)
         self.assertIn("自述：大二学生", text)
-        self.assertIn("希望的相处方式：直接一点", text)
+        # P16 移除「口吻」：旧数据里的 style 不进注入体
+        self.assertNotIn("相处", text)
         self.assertNotIn("{", text)  # 刻意不用 JSON，避免被当成数据
 
     def test_max_chars(self):

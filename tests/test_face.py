@@ -422,18 +422,19 @@ class TestOnAdapterMessage(unittest.TestCase):
 
 
 class TestAdapterHookFlag(unittest.TestCase):
-    """``uses_adapter_hook`` 只有 R3 打开，且基类默认关闭。"""
+    """``uses_adapter_hook`` 只有需要早期改写的功能打开，基类默认关闭。"""
 
     def test_default_off(self):
         from xbnext.features.base import Feature
 
         self.assertFalse(Feature.uses_adapter_hook)
 
-    def test_only_face_opts_in(self):
+    def test_only_early_rewriters_opt_in(self):
         from xbnext.features import FEATURES
 
         opted_in = [f.key for f in FEATURES if getattr(f, "uses_adapter_hook", False)]
-        self.assertEqual(opted_in, ["enable_face_translate"])
+        # R3 纯表情补写 + P16 撤回守候（都要跑在 core 判定空消息之前）
+        self.assertEqual(opted_in, ["enable_face_translate", "enable_recall_cancel"])
 
 
 class _CaptureLog:

@@ -892,6 +892,33 @@ code {
   line-height: 1.7;
 }
 
+/* ------------------------------------------------------------------
+ * 提示词注入记录（P16 · 运行状态底部入口）
+ * ---------------------------------------------------------------- */
+#injectLogList { display: flex; flex-direction: column; margin-top: 12px; }
+.inj-item { padding-top: 14px; margin-top: 14px; border-top: 1px dashed var(--m3-sys-color-outline-variant); }
+.inj-item:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
+.inj-item-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; margin-bottom: 2px; }
+.inj-item-title { font-weight: 700; font-size: 13px; }
+.inj-item-time { font-size: 12px; color: var(--m3-sys-color-outline); }
+.inj-item-actions { font-size: 12px; color: var(--m3-status-green); }
+.inj-item-umo { font-size: 12px; color: var(--m3-sys-color-outline); margin-bottom: 4px; word-break: break-all; }
+.inj-item-label { font-size: 12px; font-weight: 600; color: var(--m3-sys-color-on-surface); margin: 10px 0 4px; }
+.inj-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--m3-sys-color-surface-container);
+  border: 1px solid var(--m3-sys-color-divider);
+  border-radius: var(--m3-radius-small);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
 /* ==========================================================================
    Responsive
    ========================================================================== */

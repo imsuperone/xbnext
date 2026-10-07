@@ -11,6 +11,7 @@ name 规范成小写，两者不一致时 bridge 会打偏）::
     GET  /astrbot_plugin_xbnext/profiles       —— 列出全部用户档案
     POST /astrbot_plugin_xbnext/profile_save   —— 写一份档案（全空即删除）
     POST /astrbot_plugin_xbnext/profile_delete —— 删一份档案
+    GET  /astrbot_plugin_xbnext/inject_log     —— 最近 10 轮提示词注入记录（P16）
 
 注册方式对齐 AstrNa 与本机三个参考插件：``context.register_web_api``；
 旧版 AstrBot 没有该方法时**静默跳过**，不影响插件主体功能。
@@ -26,7 +27,7 @@ from typing import Any, Dict
 # 注意：本模块自身就是 ``xbnext.web`` 包，``from . import`` 只能取到
 # ``xbnext.web`` 自己，跨层取常量必须写两个点 ``from .. import``。
 from .. import HOOK_PRIORITY, PLUGIN_NAME, __version__
-from .. import switches
+from .. import inject_log, switches
 from ..config import SCHEMA
 
 
@@ -128,6 +129,13 @@ async def handle_profile_delete(runtime: Any, payload: Any) -> Dict[str, Any]:
     return {"ok": True, "data": data}
 
 
+async def handle_inject_log(runtime: Any) -> Dict[str, Any]:
+    """``GET inject_log``：最近 10 轮的提示词注入记录（永远 ok）。"""
+    await _prepare(runtime)
+    items = await inject_log.load(getattr(runtime, "kv", None))
+    return {"ok": True, "data": {"items": items}}
+
+
 def register_web_api(context: Any, runtime: Any) -> bool:
     """注册 XBNEXT 的 Web API；不可用时返回 ``False``。"""
     register = getattr(context, "register_web_api", None)
@@ -204,6 +212,13 @@ def register_web_api(context: Any, runtime: Any) -> bool:
     async def profile_delete() -> Any:
         return await _profile_post(handle_profile_delete)
 
+    async def inject_log_route() -> Any:
+        try:
+            result = await handle_inject_log(runtime)
+            return _ok(result.get("data"), astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
@@ -211,6 +226,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/profiles", profiles, ["GET"], "XBNEXT 用户档案列表")
         register(f"{base}/profile_save", profile_save, ["POST"], "XBNEXT 写入用户档案")
         register(f"{base}/profile_delete", profile_delete, ["POST"], "XBNEXT 删除用户档案")
+        register(f"{base}/inject_log", inject_log_route, ["GET"], "XBNEXT 提示词注入记录")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True
@@ -223,5 +239,6 @@ __all__ = [
     "handle_profiles",
     "handle_profile_save",
     "handle_profile_delete",
+    "handle_inject_log",
     "PROFILE_KEY",
 ]

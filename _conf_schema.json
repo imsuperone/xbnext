@@ -60,8 +60,8 @@
   "reply_history_limit": {
     "type": "int",
     "description": "每会话保留的回复记录数",
-    "hint": "单个会话最多保留多少条'回给谁'记录，超出按先进先出淘汰。默认 200。",
-    "default": 200,
+    "hint": "单个会话最多保留多少条'回给谁'记录，超出按先进先出淘汰。默认 50。",
+    "default": 50,
     "collapsed": true,
     "condition": { "enable_reply_attribution": true }
   },
@@ -86,6 +86,12 @@
     "default": 600,
     "collapsed": true,
     "condition": { "enable_user_profile": true }
+  },
+  "enable_recall_cancel": {
+    "type": "bool",
+    "description": "撤回取消请求",
+    "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段。只掐请求本身，bot 已经发出去的回复不会跟着撤回。默认开启。",
+    "default": true
   },
   "debug_log": {
     "type": "bool",

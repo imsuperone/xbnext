@@ -204,21 +204,24 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
   一次，热装的插件永远收不到；不兜底就会一直显示"未加载"、档案报"还没就绪"
   （真机首轮发现的根因，见 `aidoc/README` 交付记录）。
 - 档案三端点的载荷（**分群字段 `group`**，P11 起）：
-  - `GET profiles` → `[{platform, group, uid, profile:{name,facts,style}, updated}]`
+  - `GET profiles` → `[{platform, group, uid, profile:{name,facts}, updated}]`
     （`group` 为空串 = 私聊 / 升级前的未分群旧数据）
-  - `POST profile_save` → `{platform, group, uid, name, facts, style}`，
-    **三字段整体替换**，全空即删整份；`platform` / `uid` 缺失直接 `ok:false`；
+  - `POST profile_save` → `{platform, group, uid, name, facts}`，
+    **字段整体替换**，全空即删整份；`platform` / `uid` 缺失直接 `ok:false`；
     编辑时改了范围再带 `prev_group`（旧群号），服务端写新键后删旧键
   - `POST profile_delete` → `{platform, group, uid}`（只删这个范围）
+  - `GET inject_log` → `{items: [{ts, umo, actions, prompt, parts, images}]}`
+    （P16 · 最近 10 轮提示词注入记录，`aidoc/01` R7；永远 `ok:true`，
+    空记录回 `items: []`）
 
 ## 5. 页签规划（首版实际落地 5 个）
 
 | 页签 | `data-tab` | 内容 | 后端 |
 | :--- | :--- | :--- | :--- |
-| 功能开关 | `tab-switches` | 4 张卡：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入，每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
+| 功能开关 | `tab-switches` | **5 张卡**：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入 / 撤回取消请求（P16），每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、表情表自动更新（开关 + 更新时间输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
-| 用户档案 | `tab-profile` | 按「平台 · 群」**分组分类**列出全部档案（分组标题 + `platform / uid` + 称呼/自述/口吻摘要）、行内编辑/删除、新建、可改「群号」挪群、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
-| 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道 | `state` |
+| 用户档案 | `tab-profile` | 按「平台 · 群」**分组分类**列出全部档案（分组标题 + `platform / uid` + 称呼/自述摘要）、行内编辑/删除、新建、可改「群号」挪群、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
+| 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道、**「提示词注入记录」入口卡片**（P16，点按钮拉最近 10 轮，textContent 渲染） | `state` + `GET inject_log` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
 > **§5 决策记录（真机首轮反馈后修订）**：
@@ -228,7 +231,7 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
 >   定位改为**管理视角**（列出全部档案、群聊里一眼分清谁是谁），与
 >   `/xbnext profile` 指令（自助视角：谁发指令改谁的）**并存**，两端写同一份
 >   数据。身份校验仍由后端把关：`platform` / `uid` 必填，字段白名单只认
->   称呼 / 自述 / 口吻，全部经 `store.normalize()` 的 `sanitize` 清洗。
+>   称呼 / 自述，全部经 `store.normalize()` 的 `sanitize` 清洗。
 > - **AstrBot 的插件 KV 没有"按键遍历"**（只有 `get/put/delete_kv_data`），
 >   所以列表能力靠自建索引键 `xbnext:profile:index`（成员记号
 >   `platform|gid|uid`；私聊与旧数据是 `platform|uid`，`list_all()` 两种都解析）

@@ -193,6 +193,7 @@ class TestMainSmoke(unittest.TestCase):
             "enable_face_translate",
             "enable_reply_attribution",
             "enable_user_profile",
+            "enable_recall_cancel",
         })
         # AstrNa 共存整套已移除，状态里不该再出现这个键
         self.assertNotIn("astrna", status)
@@ -200,7 +201,7 @@ class TestMainSmoke(unittest.TestCase):
 
         lines = plugin.runtime.status_lines()
         self.assertTrue(any("XBNEXT" in x for x in lines))
-        self.assertEqual(len(lines), 6)  # 标题 + 4 个功能 + KV
+        self.assertEqual(len(lines), 7)  # 标题 + 5 个功能 + KV
         self.assertFalse(any("AstrNa" in x for x in lines))
 
         asyncio.run(plugin.terminate())
@@ -218,6 +219,15 @@ class TestMainSmoke(unittest.TestCase):
         self.assertIn("已失效", req.prompt, "失效图片应改写成中文说明")
         # 默认只开 R2/R3：没有表情片段就不注入，历史保持干净
         self.assertEqual(req.extra_user_content_parts, [])
+
+        # P16 · 注入记录：这轮跑完必须留一条（KV 无后端时也进内存缓存）
+        from xbnext import inject_log
+
+        items = asyncio.run(inject_log.load(plugin.runtime.kv))
+        self.assertEqual(len(items), 1, "每轮 LLM 请求都该记一条注入记录")
+        self.assertIn("已失效", items[0]["prompt"], "记录里应是清洗后的正文")
+        self.assertTrue(items[0]["actions"], "本轮 quote 清洗有动作")
+        self.assertEqual(items[0]["umo"], "aiocqhttp:GroupMessage:1")
 
         asyncio.run(plugin.after_message_sent(event))  # 不能抛
         asyncio.run(plugin.terminate())

@@ -35,7 +35,7 @@
   读写只精确命中本 scope、不跨群回退；回执抬头标范围（`群 123456` / `私聊`），
   群里没有档案但有旧数据时补一行迁移提示。另有 WebUI「用户档案」页签
   （管理视角，**按「平台 · 群」分组分类**展示，编辑可改群号挪群）：
-  `GET /profiles` 列出全部、`POST /profile_save` 写（三字段整体替换，
+  `GET /profiles` 列出全部、`POST /profile_save` 写（字段整体替换，
   全空即删，带 `group` / `prev_group`）、`POST /profile_delete` 删，
   列表能力靠自建索引键 `xbnext:profile:index` 维护（AstrBot 插件 KV 没有按键遍历，
   记号 `platform|gid|uid`，旧记号 `platform|uid` 照常解析）
@@ -47,12 +47,24 @@
   右下角通知与母版同款（类型图标 / 1.2s 去重 / 长文本自适应时长 / 点击复制 /
   上限 4 条 / `aria-live`）；深浅色**默认跟随系统**（`ui_theme_mode` 留空），
   主题色在写入成功与回滚两条路径都会重新套用
+- **撤回取消请求**（`enable_recall_cancel`，默认开）：撤回触发消息后取消这条
+  消息的在飞 LLM 请求 —— 早期钩子登记 `message_id → pipeline 任务`
+  （`add_done_callback` 自动摘表，登记表天然有界），撤回 notice（aiocqhttp
+  转成 `message_str=""` 的 dict 事件）查表 `task.cancel()`；`CancelledError`
+  是 `BaseException`，沿途 `except Exception` 全拦不住，直穿
+  `scheduler.execute` 到 EventBus（`task.cancelled()` 静默 return），
+  **不弹报错、不发错误回执**；只掐请求本身，已发出的回复不跟着撤
+- **提示词注入记录**（用户拍板「运行状态最下面加入口」）：每轮请求收尾把
+  「清洗后 prompt + parts 注入段 + 动作汇总 + 图片张数」存插件 KV
+  `xbnext:inject_log`（最近 **10 轮**、新在前，截断 正文 8000 / 段 4000 /
+  24 段，重启不丢）；WebUI「运行状态」页签底部新增「提示词注入记录」卡片，
+  `GET /inject_log` 拉取、`textContent` 渲染（模型输出绝不 innerHTML）
 - 插件入口 `main.py`（薄壳，仅转发钩子）+ `metadata.yaml` + `_conf_schema.json`
 - `xbnext/` 运行时包：`runtime` 调度中心、`context` 请求上下文、
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**424 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**475 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 
@@ -154,6 +166,14 @@
   （活跃序，对标 AstrNa 的 300 取 **200**）：每次落库把会话提到最前，
   超限从尾部把**最久没活跃的会话连数据带索引一起删**；`clear` 同步摘
   索引，坏索引自愈、limit 写坏回落默认值（`touch_session`）
+- **回复指向每会话默认记录数 200 → 50**（用户拍板「默认改50」）：
+  schema `reply_history_limit` 默认值、hint、WebUI 行文案与代码
+  fallback（`store.DEFAULT_LIMIT`）同步改 50；全局会话上限 200 不变
+- **用户档案「口吻」字段删除**（用户拍板「可以删除，记得删除相关代码」）：
+  字段白名单（`FIELDS` / `FIELD_LABELS` / 别名表）、渲染
+  （`希望的相处方式：…`）、菜单 / README / WebUI 表单与摘要 / `web_save`
+  payload 全部移除；旧数据里的 `style` 读取路径一律过滤、下次写入被
+  `normalize` 顺手清掉；再发 `口吻 …` 走"未知字段"报错（测试看护断言）
 
 ### Notes
 

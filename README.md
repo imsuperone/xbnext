@@ -23,6 +23,7 @@ XBNEXT 解决 AstrBot 使用过程中的四个实际问题，并附带一个控�
 | `face_update_time` | 表情表每天更新时间（`HH:MM`，默认 `04:30`；首次启动约 1 分钟后先拉一次） | `04:30` |
 | `enable_reply_attribution` | 回复指向索引（R1） | ❌ 关 |
 | `enable_user_profile` | 用户档案注入（R4） | ❌ 关 |
+| `enable_recall_cancel` | 撤回取消请求（撤回触发消息 → 掐掉在飞 LLM 请求） | ✅ 开 |
 
 > 纯修正类（R2/R3）默认开，因为它们修的是明确 bug，不开启反而留着 bug；
 > 新增行为类（R1/R4）默认关，由用户自行决定是否开启。
@@ -38,6 +39,7 @@ astrbot_plugin_xbnext/
 │  ├─ runtime.py           调度中心：按固定顺序调用功能
 │  ├─ context.py           RequestContext（单次请求上下文）
 │  ├─ injector.py          唯一注入出口（temp part + sanitize）
+│  ├─ inject_log.py        注入记录（KV 环形 10 轮，WebUI 运行状态入口读）
 │  ├─ switches.py          开关对账 + WebUI 配置写入
 │  ├─ storage.py           插件 KV 封装
 │  ├─ config.py            配置读取（schema 默认值回退）
@@ -46,7 +48,8 @@ astrbot_plugin_xbnext/
 │  │  ├─ quote/            R2 引用占位清洗（service.py 纯逻辑）
 │  │  ├─ face/             R3 QQ 表情翻译（service + data.py 权威表情表 + updater.py 自动更新）
 │  │  ├─ attribution/      R1 回复指向索引（service.py 注入文案 + store.py 索引）
-│  │  └─ profile/          R4 用户档案（service.py 指令语法 + store.py 存储）
+│  │  ├─ profile/          R4 用户档案（service.py 指令语法 + store.py 存储）
+│  │  └─ recall/           R6 撤回取消请求（早期钩子登记在飞任务，撤回即掐）
 │  └─ web/                 WebUI 后端 API
 ├─ pages/manager/          WebUI 前端
 ├─ tests/                  单测（不依赖 astrbot）
@@ -64,7 +67,6 @@ astrbot_plugin_xbnext/
 | `/xbnext profile` | 查看自己的档案 |
 | `/xbnext profile 称呼 小明` | 改称呼（别名：名字 / 昵称；`称呼:小明`、`称呼=小明` 也认） |
 | `/xbnext profile 自述 <内容>` | 改自述（别名：信息 / 描述） |
-| `/xbnext profile 口吻 <内容>` | 改相处方式（别名：风格 / 语气） |
 | `/xbnext profile 称呼 小明 自述 学生` | 一次改多条（分隔符可混写） |
 | `/xbnext profile 称呼:` | 删掉单个字段（字段名后跟分隔符且留空 = 删除该字段） |
 | `/xbnext profile 清空` | 删除自己的全部档案 |

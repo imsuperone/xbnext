@@ -34,6 +34,8 @@ AstrBot 目前存在若干长期问题（详见 `01-需求与根因.md`），XBN
 | R3 | QQ 表情不识别 | QQ 自带 emoji（face/mface）发给 bot，bot 看不懂 | ✅ 已实现（**AstrNa 未做，属空白区**） |
 | R4 | 认人差 → 用户档案 | 用户自定义对自己的设定，bot 读取档案库了解用户，而非自行臆测 | ✅ 已实现 |
 | R5 | WebUI | 前端 UI 完全仿照 xbdoc / xbimg / xbbot_beta 的风格与工程结构 | ✅ 已实现 |
+| R6 | 撤回取消请求 | 用户撤回触发消息后，把正在飞的 LLM 请求掐掉，不白烧、不答已撤回的话 | ✅ 已实现（P16，纯插件侧） |
+| R7 | 提示词注入可见 | 管理员要能看到每轮实际注入了什么提示词（调试"为什么没生效"） | ✅ 已实现（P16，KV + WebUI 入口） |
 
 **不做**：xbdoc / xbimg / xbbot_beta 的原有功能（文档记忆、消息转图、游戏系统等）一概不要，
 只保留它们的**UI 设计语言与工程骨架**，功能位填 XBNEXT 自己的。
@@ -94,6 +96,7 @@ astrbot_plugin_xbnext/
 │  ├─ runtime.py              调度中心
 │  ├─ context.py              RequestContext
 │  ├─ injector.py             唯一注入出口
+│  ├─ inject_log.py           P16 注入记录（KV 环形 10 轮）
 │  ├─ switches.py             开关对账 + WebUI 配置写入
 │  ├─ storage.py              插件 KV 封装
 │  ├─ config.py               配置读取（schema 默认值回退）
@@ -103,7 +106,8 @@ astrbot_plugin_xbnext/
 │  │  ├─ quote/               R2 引用占位清洗
 │  │  ├─ face/                R3 QQ 表情翻译
 │  │  ├─ attribution/         R1 回复指向索引
-│  │  └─ profile/             R4 用户档案
+│  │  ├─ profile/             R4 用户档案
+│  │  └─ recall/              R6 撤回取消请求
 │  └─ web/                    WebUI 后端 API
 ├─ pages/manager/             R5 WebUI（index.html / style.css / api.js / app.js）
 └─ tests/                     单测（unittest，不依赖 astrbot）
@@ -161,7 +165,8 @@ astrbot_plugin_xbnext/
 > **P5 交付内容**：新增 `commands.py`（`split()` 纯函数，兜住 AstrBot 剥前缀的
 > 三种形态 —— 完整形式 / 只剥根命令 / 根命令与子命令都剥掉；解析思路照抄本机
 > xbdoc 真机跑过的实现）+ `profile/service.py`（指令语法白名单：字段只认
-> 称呼/自述/口吻，其余一律报错；`merge()` 保证改一个字段不抹掉其它字段）。
+> 称呼/自述，其余一律报错；`merge()` 保证改一个字段不抹掉其它字段）。
+> 「口吻/style」字段已随 P16 移除（旧数据下次写入自动清掉）。
 > `Feature` 加可选 `command` 属性，`runtime.handle_command` 统一分发，
 > `main.py` 只多一个静态 `@xbnext.command("profile")` 转发（AstrBot 类加载期
 > 扫描，子命令必须静态写在那里）。**档案与开关解耦**：开关只决定喂不喂给模型，
@@ -377,6 +382,34 @@ astrbot_plugin_xbnext/
 > 文档同步：`01` R1（红线第四档 + 实现第四档 + store 双上限）、
 > CHANGELOG Fixed。菜单不动。单测 **424 → 444**（bot 分支 ×4 +
 > 输出面清洗 ×10 + 会话上限 ×5 + 装饰钩子优先级看护 ×1）。
+>
+> **P16 · 用户拍板四件一批**（未打 tag）：
+> ① **回复指向每会话默认记录数 200 → 50** —— schema
+> `reply_history_limit` / hint / WebUI 文案 / 代码 fallback
+> （`store.DEFAULT_LIMIT`）同步改；全局会话上限 200 不变。
+> ② **撤回取消请求**（`enable_recall_cancel`，默认开，R6）——
+> 新功能 `features/recall/`：早期钩子对每条消息登记
+> `message_id → pipeline 任务`（`add_done_callback` 自动摘表），
+> 撤回 notice（aiocqhttp 把 `group_recall` / `friend_recall` 转成
+> `message_str=""` 的 dict 事件，同一早期钩子收到）查表
+> `task.cancel()`；`CancelledError` 是 BaseException 直穿
+> `except Exception` 到 EventBus（`task.cancelled()` 静默 return），
+> 不弹报错；落在钩子窗口会被 `call_event_hook` 吞成一条 ERROR 日志
+> （极小概率，接受）。**只掐请求本身**，bot 已发出的回复不撤（二期）。
+> ③ **用户档案「口吻」字段删除** —— 白名单 / 别名 / 渲染 / 菜单 /
+> README / WebUI 表单与摘要 / `web_save` payload 全删；旧数据 `style`
+> 读取一律过滤、下次写入被 `normalize` 清掉；`口吻 …` 走未知字段报错
+> （测试看护）。
+> ④ **提示词注入记录**（R7）—— `xbnext/inject_log.py`：每轮收尾存
+> 「清洗后 prompt + parts 注入段 + 动作 + 图片数」进 KV
+> `xbnext:inject_log`（10 轮新在前，截断 8000/4000/24 段，重启不丢）；
+> `GET /inject_log` + WebUI 运行状态页签底部入口卡片（textContent
+> 渲染防注入）；KV 不可用降级内存缓存、仅 debug_log 才吭声。
+> 文档同步：CHANGELOG（Added ×2 + Fixed ×2）、`01`（R6/R7 节 +
+> R1 默认值 + R4 白名单）、`02`（持久化表 + 结构树）、`04`（端点 +
+> 档案两字段）、README（开关表 + 结构树）、菜单不动。
+> 单测 **444 → 475**（口吻看护 ×1 + recall ×18 + inject_log ×10 +
+> web 端点 ×2；默认值改动只动文档/schema，无专门用例）。
 
 ---
 

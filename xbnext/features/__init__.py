@@ -25,6 +25,7 @@ from .attribution import AttributionFeature
 from .face import FaceFeature
 from .profile import ProfileFeature
 from .quote import QuoteFeature
+from .recall import RecallFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
@@ -32,6 +33,7 @@ FEATURES: Tuple[Feature, ...] = (
     FaceFeature(),
     AttributionFeature(),
     ProfileFeature(),
+    RecallFeature(),
 )
 
 
