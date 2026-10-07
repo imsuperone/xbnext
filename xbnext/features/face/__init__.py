@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..base import Feature
 from . import service, updater
@@ -152,6 +152,10 @@ class FaceFeature(Feature):
         except Exception:  # noqa: BLE001  跨 loop / 已关 loop 的任务取消失败不追
             pass
         # 绝不 await：任务可能属于另一个已关闭的事件循环
+
+    def stats(self) -> Dict[str, Any]:
+        """状态卡数据源（P17 · D）：内置/补充条数 + 上次更新时间（只读）。"""
+        return updater.stats(self._updated_at)
 
     def _should_pull(self, runtime: Any) -> bool:
         """门禁：R3 开启且 ``face_auto_update`` 开着才允许拉取。"""

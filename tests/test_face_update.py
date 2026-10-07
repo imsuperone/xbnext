@@ -472,5 +472,48 @@ class TestPullOnce(unittest.TestCase):
         self.assertEqual(log.of("info"), [])
 
 
+class TestStats(unittest.TestCase):
+    """状态卡统计（P17 · D）：updater 纯函数 + FaceFeature.stats + build_state。"""
+
+    def test_pure_stats_defaults(self):
+        updater.set_overlay(None)
+        try:
+            s = updater.stats(None)
+            self.assertEqual(s["builtin"], len(data.QQ_FACE_ALL))
+            self.assertEqual(s["overlay"], 0)
+            self.assertIsNone(s["updated_at"])
+        finally:
+            updater.set_overlay(None)
+
+    def test_overlay_count_and_timestamp_passthrough(self):
+        updater.set_overlay({"999999001": "测试表情"})
+        try:
+            s = updater.stats("  2026-10-07T04:30:00  ")
+            self.assertEqual(s["overlay"], 1)
+            self.assertEqual(s["updated_at"], "2026-10-07T04:30:00")
+            self.assertIsNone(updater.stats(123)["updated_at"])  # 非字符串 → None
+        finally:
+            updater.set_overlay(None)
+
+    def test_feature_stats_reads_instance_timestamp(self):
+        feat = FaceFeature()
+        self.assertIsNone(feat.stats()["updated_at"])
+        feat._updated_at = "2026-10-06T04:30:00"
+        st = feat.stats()
+        self.assertEqual(st["updated_at"], "2026-10-06T04:30:00")
+        self.assertEqual(st["builtin"], len(data.QQ_FACE_ALL))
+
+    def test_build_state_includes_face(self):
+        """走真实 runtime 的 get_feature 路径；enabled 取 schema 默认值。"""
+        from xbnext.web import build_state
+
+        payload = build_state(make_rt())
+        face = payload["face"]
+        self.assertEqual(face["builtin"], len(data.QQ_FACE_ALL))
+        self.assertTrue(face["enabled"])  # enable_face_translate 默认开
+        self.assertEqual(face["overlay"], len(updater.get_overlay()))
+        self.assertIn("updated_at", face)
+
+
 if __name__ == "__main__":
     unittest.main()

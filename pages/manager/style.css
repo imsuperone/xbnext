@@ -919,6 +919,21 @@ code {
   overflow-y: auto;
 }
 
+/* 长段默认折叠（P17 · C）：预览约 6 行，点「展开全部」看全文（仍 240px 内滚） */
+.inj-pre.is-clamped { max-height: 7em; overflow-y: hidden; }
+.inj-toggle {
+  display: block;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--m3-sys-color-outline-variant);
+  border-radius: var(--m3-radius-small);
+  background: var(--m3-sys-color-surface-container);
+  color: var(--m3-sys-color-on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+.inj-toggle:hover { border-color: var(--m3-sys-color-outline); }
+
 /* ==========================================================================
    Responsive
    ========================================================================== */

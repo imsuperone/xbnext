@@ -226,6 +226,22 @@ class BuildStateTest(unittest.TestCase):
         self.assertEqual(data["config"]["face_format"], "[表情:{name}]")
         self.assertIs(data["config"]["enable_quote_clean"], True)
 
+    def test_face_stats_present(self):
+        """状态卡（P17·D）：FakeRuntime 没有 get_feature → 走纯函数兜底路径。"""
+        from xbnext.features.face import updater as fu
+        from xbnext.features.face.data import QQ_FACE_ALL
+
+        fu.set_overlay(None)
+        try:
+            data = build_state(FakeRuntime())
+            face = data["face"]
+            self.assertEqual(face["builtin"], len(QQ_FACE_ALL))
+            self.assertEqual(face["overlay"], 0)
+            self.assertIsNone(face["updated_at"])
+            self.assertTrue(face["enabled"])  # schema 默认开
+        finally:
+            fu.set_overlay(None)
+
 
 class ProfileEndpointTest(unittest.TestCase):
     """档案端点的边界：runtime 缺功能、以及懒初始化兜底。"""

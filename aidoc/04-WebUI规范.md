@@ -197,7 +197,10 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
   保证"页面上看到的 = 实际存下来的"。
 - `GET state` 一次性回填全部：`version/loaded/features/kv_usable`
   + `config`（全 schema 键当前值）+ `schema`（type/condition/default）
-  + `hook_priority` + `writable_keys`。**唯一真相源在服务端，页面不留本地副本。**
+  + `hook_priority` + `writable_keys`
+  + `face`（`{builtin, overlay, updated_at, enabled}` —— 表情表状态卡，
+  P17；`FaceFeature.stats()` 只读组装，失败回落全零不拖垮状态页）。
+  **唯一真相源在服务端，页面不留本地副本。**
   （早期载荷里的 `astrna` 字段已随「AstrNa 共存」整套移除。）
 - **`state` / `profiles` / `profile_save` / `profile_delete` 进门都先
   `await runtime.ensure_loaded()`** —— `on_astrbot_loaded` 只在核心启动收尾广播
@@ -221,7 +224,7 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
 | 功能开关 | `tab-switches` | **5 张卡**：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入 / 撤回取消请求（P16），每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、表情表自动更新（开关 + 更新时间输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
 | 用户档案 | `tab-profile` | 按「平台 · 群」**分组分类**列出全部档案（分组标题 + `platform / uid` + 称呼/自述摘要）、行内编辑/删除、新建、可改「群号」挪群、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
-| 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道、**「提示词注入记录」入口卡片**（P16，点按钮拉最近 10 轮，textContent 渲染） | `state` + `GET inject_log` |
+| 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道、**「表情表」状态卡**（P17：内置/补充条数 + 上次更新时间，未启用/停更新时给提示）、**「提示词注入记录」入口卡片**（P16，点按钮拉最近 10 轮，textContent 渲染；P17 起超 300 字的段默认折叠，「展开全部」看全文） | `state` + `GET inject_log` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
 > **§5 决策记录（真机首轮反馈后修订）**：

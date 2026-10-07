@@ -466,6 +466,35 @@
       $("st_kv").style.color = st.kv_usable ? "var(--m3-status-green)" : "var(--m3-status-amber)";
     }
     if ($("st_channel")) $("st_channel").textContent = API.channel() === "bridge" ? "Plugin Page Bridge" : "HTTP 直连";
+
+    // 表情表统计（P17·D）
+    var face = st.face || {};
+    if ($("st_face_builtin")) {
+      $("st_face_builtin").textContent =
+        (face.builtin == null ? "—" : face.builtin) + " 条";
+    }
+    if ($("st_face_overlay")) {
+      $("st_face_overlay").textContent =
+        (face.overlay == null ? "—" : face.overlay) + " 条";
+    }
+    if ($("st_face_updated")) {
+      var faceUpd = "从未更新";
+      if (face.updated_at) {
+        try { faceUpd = new Date(face.updated_at).toLocaleString(); }
+        catch (e) { faceUpd = face.updated_at; }
+      }
+      $("st_face_updated").textContent = faceUpd;
+    }
+    if ($("st_face_note")) {
+      var faceNote = "";
+      if (!face.enabled) {
+        faceNote = "⚠️「QQ 表情翻译」未启用 —— 不翻译，表也不再自动更新。";
+      } else if (st.config && !st.config.face_auto_update) {
+        faceNote = "ℹ️ 自动更新已关（face_auto_update）—— 表停在当前版本。";
+      }
+      $("st_face_note").textContent = faceNote;
+      $("st_face_note").style.display = faceNote ? "" : "none";
+    }
   }
 
   function loadState() {
@@ -489,6 +518,23 @@
    * 提示词注入记录（P16：运行状态底部入口）
    * 全部走 textContent 渲染（mkEl）—— prompt 是模型输出，绝不 innerHTML。
    * ====================================================================== */
+  // 超过这个长度默认折叠，点「展开全部」看全文（P17·C）
+  var INJ_CLAMP_CHARS = 300;
+
+  function appendClamped(parent, text) {
+    var clamped = text.length > INJ_CLAMP_CHARS;
+    var pre = mkEl("pre", clamped ? "inj-pre is-clamped" : "inj-pre", text);
+    parent.appendChild(pre);
+    if (!clamped) return;
+    var btn = mkEl("button", "inj-toggle", "展开全部");
+    btn.setAttribute("type", "button");
+    btn.addEventListener("click", function () {
+      var nowClamped = pre.classList.toggle("is-clamped");
+      btn.textContent = nowClamped ? "展开全部" : "收起";
+    });
+    parent.appendChild(btn);
+  }
+
   function renderInjectLog(items) {
     var box = $("injectLogList");
     if (!box) return;
@@ -518,10 +564,10 @@
       var parts = Array.isArray(it.parts) ? it.parts : [];
       parts.forEach(function (p, i) {
         card.appendChild(mkEl("div", "inj-item-label", "注入段 " + (i + 1)));
-        card.appendChild(mkEl("pre", "inj-pre", String(p)));
+        appendClamped(card, String(p));
       });
       card.appendChild(mkEl("div", "inj-item-label", "正文 prompt（清洗后）"));
-      card.appendChild(mkEl("pre", "inj-pre", String(it.prompt || "（空）")));
+      appendClamped(card, String(it.prompt || "（空）"));
       box.appendChild(card);
     });
   }

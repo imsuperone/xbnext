@@ -29,6 +29,7 @@ from typing import Any, Dict
 from .. import HOOK_PRIORITY, PLUGIN_NAME, __version__
 from .. import inject_log, switches
 from ..config import SCHEMA
+from ..features.face import updater as face_updater
 
 
 def _ok(data: Any, astrbot_web: Any) -> Any:
@@ -67,6 +68,7 @@ def build_state(runtime: Any) -> Dict[str, Any]:
     }
     data["hook_priority"] = HOOK_PRIORITY
     data["writable_keys"] = list(switches.WRITABLE_KEYS)
+    data["face"] = _face_stats(runtime)
     return data
 
 
@@ -93,12 +95,37 @@ async def handle_setting(runtime: Any, payload: Any) -> Dict[str, Any]:
 #: 档案功能的配置键（WebUI 档案页签经 runtime 找到对应 Feature）
 PROFILE_KEY = "enable_user_profile"
 
+#: 表情翻译功能的配置键（状态卡读启用态与 :meth:`FaceFeature.stats`）
+FACE_KEY = "enable_face_translate"
+
 
 def _profile_feature(runtime: Any) -> Any:
     feat = runtime.get_feature(PROFILE_KEY) if hasattr(runtime, "get_feature") else None
     if feat is None:
         raise RuntimeError("用户档案功能未注册")
     return feat
+
+
+def _face_stats(runtime: Any) -> Dict[str, Any]:
+    """``GET state`` 的表情表统计（P17 · D）；任何失败回落到空统计。"""
+    data: Dict[str, Any] = {"builtin": 0, "overlay": 0, "updated_at": None}
+    try:
+        feat = runtime.get_feature(FACE_KEY) if hasattr(runtime, "get_feature") else None
+        if feat is not None and hasattr(feat, "stats"):
+            data.update(feat.stats())
+        else:
+            data.update(face_updater.stats(None))
+    except Exception:  # noqa: BLE001  状态页不许被统计失败拖垮
+        pass
+    enabled = False
+    try:
+        conf = getattr(runtime, "conf", None)
+        if conf is not None:
+            enabled = bool(conf.enabled(FACE_KEY))
+    except Exception:  # noqa: BLE001
+        enabled = False
+    data["enabled"] = enabled
+    return data
 
 
 async def _prepare(runtime: Any) -> None:

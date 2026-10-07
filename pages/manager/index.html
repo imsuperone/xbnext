@@ -316,6 +316,17 @@
         </div>
 
         <div class="m3-card">
+          <h2 class="card-title">表情表</h2>
+          <p class="card-desc">QQ 表情翻译的对照表：内置表随版本发布，补充表每天从权威源自动拉缺口。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">内置表</span><span class="kv-v" id="st_face_builtin">—</span></div>
+            <div class="kv-row"><span class="kv-k">自动补充</span><span class="kv-v" id="st_face_overlay">—</span></div>
+            <div class="kv-row"><span class="kv-k">上次更新</span><span class="kv-v" id="st_face_updated">—</span></div>
+          </div>
+          <span class="field-hint" id="st_face_note" style="display:none"></span>
+        </div>
+
+        <div class="m3-card">
           <h2 class="card-title">提示词注入记录</h2>
           <p class="card-desc">最近 10 轮（新在前）实际发给模型的内容：清洗后的正文（prompt）+ 本轮注入的各段（引用块 / 表情 / 指向说明 / 档案）。存插件 KV，重启后还能看。</p>
           <div class="pf-actions">

@@ -288,6 +288,21 @@ def added_since(prev: Iterable[int], current: Optional[Mapping[int, str]] = None
         return 0
 
 
+def stats(updated_at: Optional[str]) -> Dict[str, Any]:
+    """状态卡只读统计（P17 · D）：内置表条数 / overlay 条数 / 上次更新时间。
+
+    ``updated_at`` 由功能实例传入（它记得 KV 恢复与每次成功更新）；
+    overlay 直接读运行时模块状态 —— 页面拿到的永远是"当前生效"的值。
+    非字符串 / 空白 ⇒ ``None``（前端显示"从未更新"）。
+    """
+    ts = updated_at.strip() if isinstance(updated_at, str) else ""
+    return {
+        "builtin": len(QQ_FACE_ALL),
+        "overlay": len(_overlay),
+        "updated_at": ts or None,
+    }
+
+
 __all__ = [
     "QFACE_INDEX_URL",
     "DEFAULT_UPDATE_TIME",
@@ -308,4 +323,5 @@ __all__ = [
     "overlay_to_stored",
     "updated_at_from_stored",
     "added_since",
+    "stats",
 ]
