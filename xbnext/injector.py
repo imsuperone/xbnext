@@ -67,12 +67,42 @@ def strip_xbnext(text: Any) -> str:
     """清掉文本里残留的 ``<xbnext>`` 标记（兜底）。
 
     正常情况下注入走 temp part 不会落库；一旦模型输出或历史里混进了标记，
-    用这个函数洗掉，避免后续解析把它当成结构。
+    用这个函数洗掉，避免后续解析把它当成结构。**只剥标记、保留内容** ——
+    给 store 入库清洗用。
     """
     if not isinstance(text, str) or not text:
         return text if isinstance(text, str) else ""
     try:
         return _TAG_ANY_RE.sub("", text).strip()
+    except Exception:  # noqa: BLE001
+        return text
+
+
+#: 整块注入体 ``<xbnext>...</xbnext>``；开标记未闭合时吞到结尾（防半截泄漏）
+_XBNEXT_BLOCK_RE = re.compile(
+    r"<\s*xbnext\s*>.*?(?:<\s*/\s*xbnext\s*>|$)", re.IGNORECASE | re.DOTALL
+)
+
+
+def clean_output(text: Any) -> str:
+    """**输出面清洗**：把模型复述出来的 ``<xbnext>`` 注入体整块剥掉。
+
+    与 :func:`strip_xbnext`（只剥标记、**保留内容**）分工不同：模型原样
+    吐出来的整块就是注入体本身，应当**整体删除**。先按整块删，再兜底删
+    零散标记（孤立开/闭标签、半截标签）。
+
+    由 ``runtime.handle_decorating_result``（``on_decorating_result`` 发送前）
+    调用 —— 必须排在消息转图插件（xbimg）之前，否则标记会被渲染进卡片图，
+    详见该方法 docstring。**只删自己命名空间的标记，不碰其它内容。**
+    """
+    if not isinstance(text, str) or not text:
+        return text if isinstance(text, str) else ""
+    if "<" not in text:
+        return text
+    try:
+        out = _XBNEXT_BLOCK_RE.sub("", text)
+        out = _TAG_ANY_RE.sub("", out)
+        return out.strip()
     except Exception:  # noqa: BLE001
         return text
 
@@ -146,4 +176,12 @@ def wrap(body: str, title: str = "") -> str:
     return f"<xbnext>\n{body}\n</xbnext>"
 
 
-__all__ = ["TAG", "sanitize", "strip_xbnext", "make_temp_part", "inject_text", "wrap"]
+__all__ = [
+    "TAG",
+    "sanitize",
+    "strip_xbnext",
+    "clean_output",
+    "make_temp_part",
+    "inject_text",
+    "wrap",
+]

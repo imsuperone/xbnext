@@ -8,17 +8,26 @@
 - 可选的历史发言人标记；
 - **不发明新的标记协议**，说明一律写成人类可读中文。
 
-KV 结构（一个会话一份，前缀由 ``KV`` 统一加）::
+KV 结构（一个会话一份 + 一个全局会话索引，前缀由 ``KV`` 统一加）::
 
     xbnext:reply_targets:<umo>  ->  {"items": [{...}, ...]}   # 新的在前
+    xbnext:reply_targets:index  ->  [umo, ...]                # 活跃序（新回复在前）
+
+全局索引给"会话数"封顶（AstrNa 是 300 会话 LRU，我们取 200）：只有 bot
+**真回复过**的会话才进索引，超限时从尾部把最久没活跃的会话**连数据带索引
+一起删** —— AstrBot 插件 KV 没有按键遍历，不建索引就没法给上限。
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_LIMIT = 200
+#: 全局会话数上限（对标 AstrNa 的 300，我们取 200）
+DEFAULT_SESSION_LIMIT = 200
+#: 全局会话索引键（活跃序，新回复在前）
+INDEX_KEY = "reply_targets:index"
 
 #: 每条记录保留的字段（**只存元数据，绝不存对话原文**）
 FIELDS = ("target_id", "target_name", "scope", "message_id", "hash", "ts")
@@ -50,6 +59,25 @@ def push_item(items: List[Dict[str, Any]], item: Dict[str, Any], limit: int = DE
     return out
 
 
+def touch_session(sessions: Any, umo: str, limit: int = DEFAULT_SESSION_LIMIT) -> Tuple[List[str], List[str]]:
+    """把 ``umo`` 提到索引最前（活跃序）；超限从尾部挤出待删除的会话。
+
+    返回 ``(新索引列表, 被挤出待删除的 umo 列表)``。坏数据（非列表 /
+    非字符串项 / 空串）顺手清掉 —— 索引被写坏过就当没有，自愈优先。
+    """
+    if not isinstance(sessions, list):
+        sessions = []
+    out = [s for s in sessions if isinstance(s, str) and s and s != umo]
+    out.insert(0, umo)
+    try:
+        cap = max(1, int(limit or DEFAULT_SESSION_LIMIT))
+    except Exception:  # noqa: BLE001
+        cap = DEFAULT_SESSION_LIMIT
+    if len(out) > cap:
+        return out[:cap], out[cap:]
+    return out, []
+
+
 def lookup(items: Any, *, message_id: Any = "", text_hash: str = "") -> Optional[Dict[str, Any]]:
     """按 message_id 优先、hash 兜底查记录；查不到返回 ``None``。
 
@@ -76,12 +104,22 @@ def lookup(items: Any, *, message_id: Any = "", text_hash: str = "") -> Optional
 
 
 class ReplyTargetStore:
-    """回复指向索引的 KV 读写封装。"""
+    """回复指向索引的 KV 读写封装（每会话条数 + 全局会话数双上限）。"""
 
-    def __init__(self, kv: Any, limit: int = DEFAULT_LIMIT, logger: Any = None):
+    def __init__(
+        self,
+        kv: Any,
+        limit: int = DEFAULT_LIMIT,
+        logger: Any = None,
+        session_limit: int = DEFAULT_SESSION_LIMIT,
+    ):
         self._kv = kv
         self._limit = max(1, int(limit or DEFAULT_LIMIT))
         self._log = logger
+        try:
+            self._session_limit = max(1, int(session_limit or DEFAULT_SESSION_LIMIT))
+        except Exception:  # noqa: BLE001
+            self._session_limit = DEFAULT_SESSION_LIMIT
 
     def _key(self, umo: str) -> str:
         return f"reply_targets:{umo or 'default'}"
@@ -97,17 +135,24 @@ class ReplyTargetStore:
             return []
 
     async def push(self, umo: str, item: Dict[str, Any]) -> bool:
-        """写入一条记录（写穿）。"""
+        """写入一条记录（写穿），并顺手维护全局会话索引（超限淘汰）。"""
         try:
             clean = normalize_item(item)
             if not clean:
                 return False
             items = await self.load(umo)
             items = push_item(items, clean, limit=self._limit)
-            return await self._kv.set(self._key(umo), {"items": items})
+            if not await self._kv.set(self._key(umo), {"items": items}):
+                return False
         except Exception as exc:  # noqa: BLE001
             self._warn(f"写入回复索引失败 {umo}: {exc}")
             return False
+        # 索引维护是 best-effort：主数据已落盘，索引炸了不能回头报写入失败
+        try:
+            await self._touch_session(umo)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"维护回复会话索引失败 {umo}: {exc}")
+        return True
 
     async def find(
         self, umo: str, *, message_id: Any = "", text_hash: str = ""
@@ -116,11 +161,42 @@ class ReplyTargetStore:
         return lookup(await self.load(umo), message_id=message_id, text_hash=text_hash)
 
     async def clear(self, umo: str) -> bool:
-        """清空一个会话的索引。"""
+        """清空一个会话的索引，并把它从全局会话索引里一并摘掉。"""
         try:
-            return await self._kv.delete(self._key(umo))
-        except Exception:  # noqa: BLE001
+            ok = await self._kv.delete(self._key(umo))
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"删除回复索引失败 {umo}: {exc}")
             return False
+        try:
+            sessions = [s for s in await self._load_sessions() if s != umo]
+            await self._save_sessions(sessions)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"同步回复会话索引失败 {umo}: {exc}")
+        return ok
+
+    # ------------------------------------------------------------------
+    # 全局会话索引（活跃序）
+    # ------------------------------------------------------------------
+    async def _touch_session(self, umo: str) -> None:
+        """把会话提到索引最前；超限时删掉最久没活跃会话的整份数据。"""
+        sessions, evicted = touch_session(
+            await self._load_sessions(), umo, self._session_limit
+        )
+        await self._save_sessions(sessions)
+        for old in evicted:
+            try:
+                await self._kv.delete(self._key(old))
+            except Exception as exc:  # noqa: BLE001
+                self._warn(f"淘汰过期回复会话失败 {old}: {exc}")
+
+    async def _load_sessions(self) -> Any:
+        try:
+            return await self._kv.get_list(INDEX_KEY)
+        except Exception:  # noqa: BLE001
+            return []
+
+    async def _save_sessions(self, sessions: List[str]) -> None:
+        await self._kv.set(INDEX_KEY, sessions)
 
     def _warn(self, message: str) -> None:
         method = getattr(self._log, "warning", None)
@@ -133,9 +209,12 @@ class ReplyTargetStore:
 
 __all__ = [
     "DEFAULT_LIMIT",
+    "DEFAULT_SESSION_LIMIT",
+    "INDEX_KEY",
     "FIELDS",
     "normalize_item",
     "push_item",
+    "touch_session",
     "lookup",
     "ReplyTargetStore",
 ]

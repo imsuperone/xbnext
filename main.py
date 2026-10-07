@@ -70,6 +70,18 @@ class XbnextPlugin(Star):
         """记录 bot 本轮回复 → 供回复指向功能落库。"""
         await self.runtime.handle_message_sent(event)
 
+    @filter.on_decorating_result(priority=999999)
+    async def on_decorating_result(self, event: AstrMessageEvent) -> None:
+        """发送前剥掉模型复述的 ``<xbnext>`` 注入体（输出面清洗）。
+
+        优先级必须**高于消息转图插件 xbimg 的 99999** —— core 按
+        ``-priority`` 排序（数字越大越先执行），xbimg 跑完会把整段文本
+        渲染成图片并丢弃所有 ``Plain``，我们排在它后面就再也够不着文本，
+        清洗等于空做。我们只删自己命名空间的标记（纯减法），排最前对
+        包括 xbimg 在内的所有下游都无害。
+        """
+        await self.runtime.handle_decorating_result(event)
+
     # ------------------------------------------------------------------
     # 指令
     # ------------------------------------------------------------------

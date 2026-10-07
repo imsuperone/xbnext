@@ -356,6 +356,27 @@ astrbot_plugin_xbnext/
 > （补 `称呼:` 行）、`01` R4 语法条目、CHANGELOG Fixed。
 > 单测 **408 → 424**（classify 宽容矩阵 + `change_summary` + handle_command
 > 删单字段/全删/范围标签只出现一次）。
+>
+> **真机第八轮反馈 + AstrNa 对照项（P15，未打 tag）**：三件事一批修掉。
+> ① **引用 bot 自己的旧回复被当成"别人的话"** —— `build_hint` 缺
+> 「引用者 = bot 自己」分支，bot 的旧消息（core 把引用原文再塞一遍 +
+> 旧消息本就在会话历史里）被归进 `TAIL`「以上是不同的人」，模型对着自家
+> 旧回复评头论足、冷落当前新消息。加第四档 `TAIL_BOT_QUOTED` + 行尾
+> `（即你自己的旧回复）`：`self_id` **只比 ID 不比昵称**，取不到不判、
+> 回落 `TAIL`。
+> ② **输出面清洗落点**（对照④）：`injector.clean_output()` 整块删注入体
+> + 兜底删零散标记（未闭合开标记吞到结尾防半截泄漏），
+> `runtime.handle_decorating_result()` 挂
+> `@filter.on_decorating_result(priority=999999)` —— **抢在消息转图插件
+> xbimg（99999）之前**（core 按 `-priority` 降序执行；xbimg 跑完把文本
+> 渲成图、丢弃全部 `Plain`，排它后面清洗等于空做、标记会被画进卡片图），
+> 只认 `Plain`（类型名 + `text` 属性判定），清完变空的组件从链里摘掉。
+> ③ **回复指向全局会话上限**（对照⑤）：`reply_targets:index` 活跃序索引，
+> 上限 **200**（AstrNa 是 300），超限把最久没活跃的会话连数据带索引一起删；
+> `clear` 同步摘索引，坏索引自愈、limit 写坏回落默认（`touch_session`）。
+> 文档同步：`01` R1（红线第四档 + 实现第四档 + store 双上限）、
+> CHANGELOG Fixed。菜单不动。单测 **424 → 444**（bot 分支 ×4 +
+> 输出面清洗 ×10 + 会话上限 ×5 + 装饰钩子优先级看护 ×1）。
 
 ---
 

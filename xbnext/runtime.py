@@ -31,7 +31,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Dict, List
 
-from . import commands, features
+from . import commands, features, injector
 from .config import Config
 from .context import RequestContext
 from .storage import KV
@@ -192,6 +192,56 @@ class XbnextRuntime:
                 await self._invoke(feat.on_message_sent, ctx)
             except Exception as exc:  # noqa: BLE001
                 self._warn(f"{feat.key} 记录回复失败：{exc!r}")
+
+    async def handle_decorating_result(self, event: Any) -> None:
+        """发送前输出面清洗（``on_decorating_result`` 钩子）。
+
+        模型偶尔会把注入用的 ``<xbnext>`` 注入体原样复述出来 —— 请求面已有
+        清洗（quote_clean / injector.sanitize），**输出面此前没有落点**
+        （AstrNa 对照④）。这里在 core 发出消息链之前，把纯文本组件的
+        注入体整块剥掉（``injector.clean_output``）。
+
+        三个约定：
+
+        - 只认 ``Plain``（按**类型名 + ``text`` 属性**判定，不 import core
+          内部类，测试也好造假件）；图片、卡片等其它组件一律不碰；
+        - 必须排在消息转图插件（xbimg, priority=99999）**之前** ——
+          它会把整段文本渲染成图片后 ``result.chain = new_chain`` 丢掉所有
+          Plain，我们晚一步就只能对着图片干瞪眼。优先级写在 ``main.py``；
+        - 异常自吞：清洗失败绝不能挡住发消息。
+        """
+        try:
+            result = event.get_result()
+        except Exception:  # noqa: BLE001
+            return
+        chain = getattr(result, "chain", None)
+        if not chain:
+            return
+        changed = False
+        emptied: List[Any] = []
+        for comp in list(chain):
+            if type(comp).__name__ != "Plain":
+                continue
+            text = getattr(comp, "text", None)
+            if not isinstance(text, str) or "<" not in text:
+                continue
+            cleaned = injector.clean_output(text)
+            if cleaned == text:
+                continue
+            comp.text = cleaned
+            changed = True
+            if not cleaned:
+                emptied.append(comp)
+        if not changed:
+            return
+        # 清完变空的组件从链里摘掉 —— core 对空链会跳过发送，
+        # 比发出一条空消息干净
+        for comp in emptied:
+            try:
+                chain.remove(comp)
+            except ValueError:  # noqa: BLE001
+                pass
+        self._info("输出面清洗：已剥除模型复述的 <xbnext> 注入体")
 
     # ==================================================================
     # 外挂点

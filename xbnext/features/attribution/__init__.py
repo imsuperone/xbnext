@@ -311,14 +311,16 @@ class AttributionFeature(Feature):
             except Exception as exc:  # noqa: BLE001
                 ctx.note(f"reply_attribution 引用匹配失败：{exc!r}")
 
+        sid = self_id_of(event)
         note = service.build_hint(
             current=sender_of(event),
             quoted=quoted_sender(event),
-            ats=at_targets(event, self_id_of(event)),
+            ats=at_targets(event, sid),
             history=history,
             depth=depth,
             now=int(time.time()),
             matched=matched,
+            self_id=sid,
         )
         if not note:
             ctx.note("reply_attribution 无需说明（没有可区分的三方信息）")

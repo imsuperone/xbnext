@@ -57,6 +57,18 @@ TAIL_SELF_QUOTED = (
     "那些话不是当前发言人说的。不要把任何一方的立场、问题或结论安到另一方头上。"
 )
 
+#: 被引用者是 bot 自己时挂在行尾的标注（真机第八轮：引用 bot 旧回复的场景）
+BOT_MARK = "（即你自己的旧回复）"
+
+#: 引用的是 bot 自己的旧回复（真机第八轮：原来没有这个分支，bot 自己的
+#: 旧消息被归进「以上是不同的人」，模型把"自己发过的内容"当成别人的话
+#: 认真回应 —— 评图、聊旧话题，冷落当前发言人的新消息）
+TAIL_BOT_QUOTED = (
+    "注意：被引用的那条是你自己之前的回复 —— 那是你发过的内容，不是别人的话；"
+    "内容你已经知道，不要再重复描述或评价它。"
+    "本轮重心是当前发言人这条新消息，先回应他说的内容。"
+)
+
 #: 自引用时挂在被引用者行尾的标注
 SELF_MARK = "（即当前发言人本人）"
 
@@ -148,6 +160,7 @@ def build_hint(
     depth: int = 3,
     now: Any = 0,
     matched: Optional[Dict[str, Any]] = None,
+    self_id: Any = "",
 ) -> str:
     """拼出注入用的三方说明；**没有需要区分的信息时返回 ``""``**。
 
@@ -158,9 +171,13 @@ def build_hint(
     :param depth: 最多回溯几条
     :param now: 当前时间戳，用于「N 分钟前」
     :param matched: 当前引用的消息恰好命中 store 记录时的那条
+    :param self_id: bot 自己的 ID —— 用于识别「被引用的是 bot 自己的旧回复」
+        （只比对 ID；拿不到就不判，绝不靠昵称猜）
 
-    **同人 / 异人分支**（真机第二轮反馈：同人引用自己仍被写成「以上是不同的人」）：
+    **同人 / 异人 / 自引 bot 分支**（真机第二轮 + 第八轮反馈）：
 
+    - 被引用者是 bot 自己 ⇒ :data:`TAIL_BOT_QUOTED` + :data:`BOT_MARK`
+      （优先级最高 —— 那是 bot 发过的内容，不是"别人的话"）；
     - 所有已知身份都等于当前发言人 ⇒ :data:`TAIL_SAME`；
     - 被引用者是本人、但列表里还有别人 ⇒ :data:`TAIL_SELF_QUOTED`，
       并在被引用者行尾挂 :data:`SELF_MARK`；
@@ -197,12 +214,21 @@ def build_hint(
     )
     #: 自引：被引用者就是当前发言人（无论列表里还有没有别人）
     self_quoted = bool(current_key) and quoted_known and key_of(quoted) == current_key
+    #: 引用 bot 自己的旧回复：只比 ID，取不到 self_id 就不判
+    quoted_is_bot = bool(self_id) and quoted_known and str(
+        quoted[0] or ""
+    ) == str(self_id)
 
     lines: List[str] = [TITLE]
     if current_known:
         lines.append(f"- 当前发言人：{who(current)}")
     if quoted_known:
-        mark = SELF_MARK if self_quoted else ""
+        if quoted_is_bot:
+            mark = BOT_MARK
+        elif self_quoted:
+            mark = SELF_MARK
+        else:
+            mark = ""
         lines.append(f"- 本轮被引用消息的发送者：{who(quoted)}{mark}")
     if at_list:
         lines.append(f"- 本轮被 @ 的对象：{'、'.join(who(a) for a in at_list)}")
@@ -214,7 +240,9 @@ def build_hint(
     if hist_lines:
         lines.append(f"- 你最近 {len(hist_lines)} 次回复的对象（新的在前）：")
         lines.extend(hist_lines)
-    if same_all:
+    if quoted_is_bot:
+        lines.append(TAIL_BOT_QUOTED)
+    elif same_all:
         lines.append(TAIL_SAME)
     elif self_quoted:
         lines.append(TAIL_SELF_QUOTED)
@@ -230,7 +258,9 @@ __all__ = [
     "TAIL",
     "TAIL_SAME",
     "TAIL_SELF_QUOTED",
+    "TAIL_BOT_QUOTED",
     "SELF_MARK",
+    "BOT_MARK",
     "rel_time",
     "who",
     "key_of",

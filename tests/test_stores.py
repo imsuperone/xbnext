@@ -112,6 +112,75 @@ class TestReplyTargetStore(unittest.TestCase):
         self.assertEqual(run(store.load("umo1")), [])
 
 
+class TestReplyTargetSessionCap(unittest.TestCase):
+    """⑤ 全局会话上限：最久没活跃的连数据带索引一起删（活跃序 LRU）。"""
+
+    def _make(self, session_limit=2):
+        kv = KV(owner=FakeKV(), prefix="xbnext")
+        return attr_store.ReplyTargetStore(kv, session_limit=session_limit), kv
+
+    def _push(self, store, umo, target="t1"):
+        return run(
+            store.push(umo, {"message_id": f"m-{umo}", "hash": f"h-{umo}",
+                             "target_id": target})
+        )
+
+    def test_touch_session_moves_to_front_and_evicts_tail(self):
+        out, evicted = attr_store.touch_session(["a", "b", "c"], "a", 2)
+        self.assertEqual(out, ["a", "b"])
+        self.assertEqual(evicted, ["c"])
+
+    def test_push_beyond_cap_deletes_oldest_session_data(self):
+        store, kv = self._make(session_limit=2)
+        self._push(store, "umoA")
+        self._push(store, "umoB")
+        self._push(store, "umoC")
+
+        # A 被挤出：整份数据删掉（load 已读不回旧记录），索引只剩 C/B
+        self.assertEqual(run(store.load("umoA")), [])
+        index = run(kv.get_list(attr_store.INDEX_KEY))
+        self.assertEqual(index, ["umoC", "umoB"])
+
+    def test_recently_active_session_survives_eviction(self):
+        store, kv = self._make(session_limit=2)
+        self._push(store, "umoA")
+        self._push(store, "umoB")
+        self._push(store, "umoA")   # A 复活到最前
+        self._push(store, "umoC")   # 这次挤出的是 B
+
+        self.assertEqual(run(store.load("umoA"))[0]["target_id"], "t1")
+        self.assertEqual(run(store.load("umoB")), [])
+        # 索引是活跃序（新的在前）：C 最后回复排最前
+        index = run(kv.get_list(attr_store.INDEX_KEY))
+        self.assertEqual(index, ["umoC", "umoA"])
+
+    def test_clear_removes_session_from_index(self):
+        store, kv = self._make()
+        self._push(store, "umoA")
+        self._push(store, "umoB")
+        run(store.clear("umoA"))
+
+        index = run(kv.get_list(attr_store.INDEX_KEY))
+        self.assertEqual(index, ["umoB"])
+
+    def test_index_tolerance_and_bad_limit_fallback(self):
+        """索引被写坏（非列表 / 混进坏项）→ 自愈；limit 坏 → 回落默认值。"""
+        out, evicted = attr_store.touch_session("junk", "a", 2)
+        self.assertEqual(out, ["a"])
+        self.assertEqual(evicted, [])
+
+        out, evicted = attr_store.touch_session([1, "b", "", "c"], "a", 2)
+        self.assertEqual(out, ["a", "b"])
+        self.assertEqual(evicted, ["c"])
+
+        out, evicted = attr_store.touch_session(
+            [str(i) for i in range(205)], "0", "junk"
+        )
+        self.assertEqual(len(out), attr_store.DEFAULT_SESSION_LIMIT)
+        self.assertEqual(len(evicted), 5)
+        self.assertEqual(out[0], "0")
+
+
 # ---------------------------------------------------------------------------
 # R4 用户档案
 # ---------------------------------------------------------------------------

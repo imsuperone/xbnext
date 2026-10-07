@@ -210,6 +210,45 @@ class TestSamePersonBranch(unittest.TestCase):
         self.assertNotIn(service.TAIL, out)
         self.assertIn(service.SELF_MARK, out)
 
+    def test_quoting_bot_is_own_reply(self):
+        """引用 bot 自己的旧回复 → BOT 标注 + TAIL_BOT_QUOTED（真机第八轮）。"""
+        out = service.build_hint(
+            current=("1", "A"), quoted=("bot", "薇拉"), self_id="bot"
+        )
+        self.assertIn(service.BOT_MARK, out)
+        self.assertIn(service.TAIL_BOT_QUOTED, out)
+        self.assertNotIn(service.SELF_MARK, out)
+        self.assertNotIn(service.TAIL, out)
+        self.assertNotIn(service.TAIL_SAME, out)
+
+    def test_quoting_bot_with_history_still_bot_tail(self):
+        """带着回复历史（会话里多段 bot 旧消息）时，尾注仍是"那是你自己的"。"""
+        history = [{"target_id": "1", "target_name": "A", "ts": 5}]
+        out = service.build_hint(
+            current=("1", "A"),
+            quoted=("bot", "薇拉"),
+            history=history,
+            depth=3,
+            now=100,
+            self_id="bot",
+        )
+        self.assertIn(service.TAIL_BOT_QUOTED, out)
+        self.assertNotIn(service.TAIL, out)
+
+    def test_bot_judged_by_id_not_nickname(self):
+        """只比 ID：昵称撞车也不能判成 bot 自己（不猜红线）。"""
+        out = service.build_hint(
+            current=("1", "A"), quoted=("2", "薇拉"), self_id="bot"
+        )
+        self.assertNotIn(service.BOT_MARK, out)
+        self.assertNotIn(service.TAIL_BOT_QUOTED, out)
+
+    def test_missing_self_id_falls_back_conservative(self):
+        """取不到 self_id → 不判 bot，保守回落 TAIL。"""
+        out = service.build_hint(current=("1", "A"), quoted=("bot", "薇拉"))
+        self.assertNotIn(service.TAIL_BOT_QUOTED, out)
+        self.assertIn(service.TAIL, out)
+
     def test_history_all_self_is_same_person(self):
         history = [{"target_id": "1", "target_name": "A", "ts": 1}]
         out = service.build_hint(current=("1", "A"), history=history, depth=3, now=100)

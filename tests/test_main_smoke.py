@@ -76,6 +76,7 @@ def _install_astrbot_stub() -> None:
         on_astrbot_loaded=_decorator,
         on_llm_request=_decorator,
         after_message_sent=_decorator,
+        on_decorating_result=_decorator,
         event_message_type=_decorator,
         EventMessageType=types.SimpleNamespace(
             ALL="all", GROUP_MESSAGE="group", PRIVATE_MESSAGE="private"
@@ -136,6 +137,7 @@ class TestMainSmoke(unittest.TestCase):
             "on_llm_request",
             "on_astrbot_loaded",
             "after_message_sent",
+            "on_decorating_result",
             "xbnext",
         ):
             self.assertTrue(hasattr(cls, name), f"缺少钩子 {name}")
@@ -156,6 +158,18 @@ class TestMainSmoke(unittest.TestCase):
             idx = source.index(deco)
             tail = source[idx : idx + len(deco) + 120]
             self.assertIn("priority=HOOK_PRIORITY", tail, f"{deco} 未使用统一 priority")
+
+    def test_decorating_hook_beats_xbimg(self):
+        """输出面清洗**故意**不跟其余钩子共用优先级 —— 必须抢在 xbimg 之前。
+
+        消息转图插件 xbimg 挂 ``priority=99999``，跑完会把整段文本渲染成
+        图片并丢弃所有 ``Plain``；我们排它后面清洗就是空做（标记会被画进
+        卡片图）。core 降序执行 ⇒ 我们用 999999 稳压它一头。
+        """
+        source = (_ROOT / "main.py").read_text(encoding="utf-8")
+        idx = source.index("@filter.on_decorating_result(")
+        tail = source[idx : idx + 160]
+        self.assertIn("priority=999999", tail)
 
     def test_single_command_entry_registered(self):
         """单指令入口（xbdoc/xbimg 同款）：handler 可调用，且不挂子命令句柄。"""
