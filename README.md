@@ -24,9 +24,12 @@ XBNEXT 解决 AstrBot 使用过程中的四个实际问题，并附带一个控�
 | `enable_reply_attribution` | 回复指向索引（R1） | ❌ 关 |
 | `enable_user_profile` | 用户档案注入（R4） | ❌ 关 |
 | `enable_recall_cancel` | 撤回取消请求（撤回触发消息 → 掐掉在飞 LLM 请求 + 连带撤回已发回复） | ✅ 开 |
+| `enable_image_slim` | 历史图片瘦身（R8，历史旧图换占位，省输入 token） | ❌ 关 |
+| `enable_token_usage` | Token 用量展示（R9，回复末尾显示 输入/输出/缓存） | ❌ 关 |
+| `token_usage_umos` | 显示 token 用量的会话名单（逗号分隔 UMO，需 `enable_token_usage` 开；留空 = 不显示） | 空 |
 
 > 纯修正类（R2/R3）默认开，因为它们修的是明确 bug，不开启反而留着 bug；
-> 新增行为类（R1/R4）默认关，由用户自行决定是否开启。
+> 新增行为类（R1/R4/R8/R9）默认关，由用户自行决定是否开启。
 
 ## 目录结构
 

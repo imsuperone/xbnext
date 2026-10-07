@@ -1,0 +1,165 @@
+# -*- coding: utf-8 -*-
+"""Token 用量展示（纯逻辑）。
+
+三件事：
+
+1. **取数** :func:`pick_usage` —— 优先读核心 agent runner 的整轮累计
+   （``_ACTIVE_AGENT_RUNNERS``，含工具循环的多次调用；私有表，惰性
+   import、拿不到就回落），再回落到钩子实参 ``resp.usage``；
+   两条路都要求 provider 真回报了 usage，**全 0 不显示**；
+2. **暂存** :func:`get_extra` / :func:`set_extra` —— ``on_llm_response``
+   写进 ``event`` extras，``on_decorating_result`` 读走即焚（核心
+   ``astr_agent_hooks`` 同款中转姿势）；
+3. **格式与名单** :func:`format_line` / :func:`parse_umos` /
+   :func:`in_whitelist`。
+
+除惰性 import 外不碰 astrbot —— 单测直接跑。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+#: event extras 里暂存本轮用量的键（发完即焚）
+EXTRA_KEY = "_xb_token_usage"
+
+#: UMO 名单分隔符：中文/英文逗号、顿号、分号（换行走 str.splitlines）
+_SPLIT_MARKERS = ("，", ",", "、", ";", "；")
+
+
+def parse_umos(text: Any) -> List[str]:
+    """把配置里的会话名单文本拆成列表（逗号 / 顿号 / 分号 / 换行）。"""
+    if isinstance(text, (list, tuple)):
+        return [str(item).strip() for item in text if str(item).strip()]
+    if not isinstance(text, str) or not text.strip():
+        return []
+    raw = text
+    for marker in _SPLIT_MARKERS:
+        raw = raw.replace(marker, "\n")
+    return [chunk.strip() for chunk in raw.splitlines() if chunk.strip()]
+
+
+def in_whitelist(text: Any, umo: Any) -> bool:
+    """``umo`` 是否在名单里（名单空 / umo 空 ⇒ ``False``，纯白名单语义）。"""
+    if not umo:
+        return False
+    return str(umo) in parse_umos(text)
+
+
+def extract_usage(obj: Any) -> Optional[Dict[str, int]]:
+    """从 ``TokenUsage`` 形状的对象取三列；空对象 / 全 0 ⇒ ``None``。"""
+    if obj is None:
+        return None
+
+    def _num(name: str) -> int:
+        try:
+            return int(getattr(obj, name, 0) or 0)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    try:  # ``.input`` 是属性（= input_other + input_cached）
+        total_input = int(obj.input or 0)
+    except Exception:  # noqa: BLE001
+        total_input = _num("input_other") + _num("input_cached")
+    vals = {
+        "input": total_input,
+        "cached": _num("input_cached"),
+        "output": _num("output"),
+    }
+    if vals["input"] or vals["cached"] or vals["output"]:
+        return vals
+    return None
+
+
+def _runner_usage(event: Any) -> Optional[Dict[str, int]]:
+    """核心 agent runner 的整轮累计用量；私有表，任何失败返回 ``None``。"""
+    try:
+        from astrbot.core.pipeline.process_stage.follow_up import (  # noqa: PLC0415
+            _ACTIVE_AGENT_RUNNERS,
+        )
+
+        umo = getattr(event, "unified_msg_origin", None)
+        if not umo:
+            return None
+        runner = _ACTIVE_AGENT_RUNNERS.get(umo)
+        stats = getattr(runner, "stats", None)
+        return extract_usage(getattr(stats, "token_usage", None))
+    except Exception:  # noqa: BLE001  单测环境没有 astrbot，走回落
+        return None
+
+
+def pick_usage(event: Any, resp: Any) -> Optional[Tuple[str, Dict[str, int]]]:
+    """选本轮展示用的用量：``(kind, vals)``；``kind`` 决定叠加策略。
+
+    - ``"stats"`` —— runner 整轮累计（已含所有工具循环调用），直接覆盖；
+    - ``"sum"``   —— 单次调用 ``resp.usage``，同轮多次到达时累加。
+
+    provider 没回报 usage / 三列全 0 ⇒ ``None``（不显示 0/0/0 误导人）。
+    """
+    vals = _runner_usage(event)
+    if vals:
+        return "stats", vals
+    vals = extract_usage(getattr(resp, "usage", None))
+    if vals:
+        return "sum", vals
+    return None
+
+
+def get_extra(event: Any, key: str) -> Any:
+    """读 ``event`` extras（无此能力 / 抛异常 ⇒ ``None``）。"""
+    try:
+        getter = getattr(event, "get_extra", None)
+        if callable(getter):
+            return getter(key)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def set_extra(event: Any, key: str, value: Any) -> None:
+    """写 ``event`` extras（无此能力 / 抛异常 ⇒ 静默）。"""
+    try:
+        setter = getattr(event, "set_extra", None)
+        if callable(setter):
+            setter(key, value)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def merge_extra(prev: Any, kind: str, vals: Dict[str, int]) -> Dict[str, int]:
+    """把新用量并进已暂存的：``stats`` 覆盖，``sum`` 累加。"""
+    if isinstance(prev, dict) and prev.get("kind") == kind == "sum":
+        merged: Dict[str, int] = {"kind": "sum"}
+        for name in ("input", "cached", "output"):
+            try:
+                merged[name] = int(prev.get(name, 0) or 0) + int(vals.get(name, 0) or 0)
+            except Exception:  # noqa: BLE001
+                merged[name] = int(vals.get(name, 0) or 0)
+        return merged
+    return {"kind": kind, **vals}
+
+
+def format_line(vals: Dict[str, int]) -> str:
+    """拼展示行：``📊 本轮 token：输入 1,234 · 输出 567 · 缓存 800``。"""
+    try:
+        inp = int(vals.get("input", 0) or 0)
+        out = int(vals.get("output", 0) or 0)
+        cached = int(vals.get("cached", 0) or 0)
+    except Exception:  # noqa: BLE001
+        return ""
+    if not (inp or out or cached):
+        return ""
+    return f"📊 本轮 token：输入 {inp:,} · 输出 {out:,} · 缓存 {cached:,}"
+
+
+__all__ = [
+    "EXTRA_KEY",
+    "parse_umos",
+    "in_whitelist",
+    "extract_usage",
+    "pick_usage",
+    "get_extra",
+    "set_extra",
+    "merge_extra",
+    "format_line",
+]

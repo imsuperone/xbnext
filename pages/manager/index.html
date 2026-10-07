@@ -141,6 +141,32 @@
             </label>
           </div>
         </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">历史图片瘦身</h2>
+              <p class="card-desc">把对话历史里较旧消息携带的图片换成文字占位，大幅减少输入 token（一张截图动辄几千 token）。最近 6 条消息的原图保留，当轮刚发的图不受影响。改写类功能，默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_image_slim" data-key="enable_image_slim" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">Token 用量展示</h2>
+              <p class="card-desc">回复末尾追加一行本轮 token 用量（输入 / 输出 / 缓存），仅对「行为微调」里指定名单内的会话显示。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_token_usage" data-key="enable_token_usage" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
       </section>
 
       <!-- ==================== Tab 2: 行为微调 ==================== -->
@@ -222,6 +248,16 @@
             <label class="form-label">单人档案最大字数</label>
             <input type="number" class="m3-input" id="inp_user_profile_max_chars" data-key="user_profile_max_chars" min="50" max="5000" />
             <span class="field-hint">超过这个字数的档案会被截断后再注入，防止个别超长档案挤占上下文。默认 600。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">Token 用量展示（R9）</h2>
+          <p class="card-desc">仅在「Token 用量展示」开启时生效。</p>
+          <div class="form-group">
+            <label class="form-label">显示的会话名单</label>
+            <input type="text" class="m3-input" id="inp_token_usage_umos" data-key="token_usage_umos" placeholder="aiocqhttp:GroupMessage:123456" />
+            <span class="field-hint">每项填一个会话 UMO（<code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔；留空 = 任何会话都不显示。</span>
           </div>
         </div>
 

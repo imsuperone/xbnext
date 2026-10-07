@@ -65,6 +65,16 @@ class XbnextPlugin(Star):
         """按固定顺序调用各功能：清洗在前、注入在后。"""
         await self.runtime.handle_llm_request(event, req)
 
+    @filter.on_llm_response(priority=HOOK_PRIORITY)
+    async def on_llm_response(self, event: AstrMessageEvent, resp: Any) -> None:
+        """LLM 响应到达 → 把本轮 token 用量暂存进 event extras（R9）。
+
+        只转发；取数与白名单判定在 ``runtime.handle_llm_response``。
+        注解用 ``Any``：不同 core 版本导出的 ``LLMResponse`` 位置不一，
+        入口不为类型注解赌模块路径。
+        """
+        await self.runtime.handle_llm_response(event, resp)
+
     @filter.after_message_sent(priority=HOOK_PRIORITY)
     async def after_message_sent(self, event: AstrMessageEvent) -> None:
         """记录 bot 本轮回复 → 供回复指向功能落库。"""

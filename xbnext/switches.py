@@ -19,11 +19,13 @@ from .config import SCHEMA, Config
 
 #: XBNEXT 功能总开关（顺序 = 注入执行顺序，与 features 注册表一致）
 FEATURE_KEYS = (
+    "enable_image_slim",  # R8 历史图片瘦身
     "enable_quote_clean",  # R2 quote_clean
     "enable_face_translate",  # R3 face_translate
     "enable_reply_attribution",  # R1 reply_attribution
     "enable_user_profile",  # R4 user_profile
     "enable_recall_cancel",  # 撤回取消请求（P16/P17：掐请求 + 连带撤回复）
+    "enable_token_usage",  # R9 token 用量展示
 )
 
 

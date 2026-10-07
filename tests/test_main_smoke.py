@@ -75,6 +75,7 @@ def _install_astrbot_stub() -> None:
     event.filter = types.SimpleNamespace(
         on_astrbot_loaded=_decorator,
         on_llm_request=_decorator,
+        on_llm_response=_decorator,
         after_message_sent=_decorator,
         on_decorating_result=_decorator,
         event_message_type=_decorator,
@@ -135,6 +136,7 @@ class TestMainSmoke(unittest.TestCase):
         for name in (
             "on_adapter_message",
             "on_llm_request",
+            "on_llm_response",
             "on_astrbot_loaded",
             "after_message_sent",
             "on_decorating_result",
@@ -152,6 +154,7 @@ class TestMainSmoke(unittest.TestCase):
         for deco in (
             "@filter.event_message_type(",
             "@filter.on_llm_request(",
+            "@filter.on_llm_response(",
             "@filter.after_message_sent(",
             "@filter.on_astrbot_loaded(",
         ):
@@ -189,11 +192,13 @@ class TestMainSmoke(unittest.TestCase):
 
         status = plugin.runtime.status()
         self.assertEqual(set(status["features"]), {
+            "enable_image_slim",
             "enable_quote_clean",
             "enable_face_translate",
             "enable_reply_attribution",
             "enable_user_profile",
             "enable_recall_cancel",
+            "enable_token_usage",
         })
         # AstrNa 共存整套已移除，状态里不该再出现这个键
         self.assertNotIn("astrna", status)
@@ -201,7 +206,7 @@ class TestMainSmoke(unittest.TestCase):
 
         lines = plugin.runtime.status_lines()
         self.assertTrue(any("XBNEXT" in x for x in lines))
-        self.assertEqual(len(lines), 7)  # 标题 + 5 个功能 + KV
+        self.assertEqual(len(lines), 9)  # 标题 + 7 个功能 + KV
         self.assertFalse(any("AstrNa" in x for x in lines))
 
         asyncio.run(plugin.terminate())

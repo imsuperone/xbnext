@@ -93,6 +93,26 @@
     "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；如果 bot 已经把回复发出去了，会连带把回复一并撤回（aiocqhttp 下生效）。默认开启。",
     "default": true
   },
+  "enable_image_slim": {
+    "type": "bool",
+    "description": "历史图片瘦身（R8）",
+    "hint": "开启后，XBNEXT 会在每轮请求前把对话历史里较旧消息携带的图片换成文字占位（最近 6 条消息的原图保留），大幅减少输入 token —— 一张截图动辄几千 token，越老的图对模型越没用。当前轮刚发的图片不受影响；瘦身结果随核心落历史自动保持。属于改写类功能，默认关闭。",
+    "default": false
+  },
+  "enable_token_usage": {
+    "type": "bool",
+    "description": "Token 用量展示（R9）",
+    "hint": "开启后，XBNEXT 会在回复末尾追加一行本轮 token 用量（输入 / 输出 / 缓存），且仅对下方名单内的会话显示。provider 没回报用量时不显示；DeepSeek 类端点核心不解析其缓存字段，缓存列可能恒为 0。默认关闭。",
+    "default": false
+  },
+  "token_usage_umos": {
+    "type": "string",
+    "description": "显示 token 用量的会话名单",
+    "hint": "每项填一个会话 UMO（格式如 aiocqhttp:GroupMessage:群号），多个用逗号、顿号或换行分隔；只有名单内的会话会在回复末尾显示用量。留空 = 任何会话都不显示。仅在「Token 用量展示」开启时生效。",
+    "default": "",
+    "collapsed": true,
+    "condition": { "enable_token_usage": true }
+  },
   "debug_log": {
     "type": "bool",
     "description": "输出调试日志",

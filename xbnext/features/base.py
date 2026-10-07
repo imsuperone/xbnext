@@ -50,6 +50,10 @@ class Feature:
     #: 只有需要在 core 判定「空消息」之前改写 ``event.message_str`` 的
     #: 功能才打开（目前只有 R3 纯表情补写）
     uses_adapter_hook: bool = False
+    #: 是否关心 ``on_llm_response``（收本轮 token 用量，R9）
+    uses_llm_response_hook: bool = False
+    #: 是否关心 ``on_decorating_result``（发消息前往结果链补内容，R9）
+    uses_decorating_hook: bool = False
     #: 可选：对外暴露的子指令名（``/xbnext <command>``）；空串表示没有指令
     command: str = ""
 
@@ -89,6 +93,20 @@ class Feature:
 
     def on_message_sent(self, ctx: Any) -> Any:
         """bot 回复发出后调用（仅 ``uses_sent_hook=True`` 的功能）。"""
+
+    def on_llm_response(self, ctx: Any, resp: Any) -> Any:
+        """LLM 响应到达（仅 ``uses_llm_response_hook=True`` 的功能）。
+
+        :param ctx: 上下文（此阶段 ``req`` 为 ``None``）
+        :param resp: 核心 ``LLMResponse``；``resp.usage`` 是本轮用量
+        """
+
+    def on_decorating_result(self, ctx: Any) -> Any:
+        """结果装饰阶段（仅 ``uses_decorating_hook=True`` 的功能）。
+
+        发送前最后的改写窗口：普通回复追加进 ``result.chain``；流式
+        收尾时改链没人发，功能应自行 ``event.send``。
+        """
 
     # ------------------------------------------------------------------
     # 元信息

@@ -11,10 +11,14 @@
    按固定顺序执行（见 aidoc/02-架构设计.md §2）::
 
        1. 开关判定              每个功能进门前先 ctx.enabled(key)，关着就直接跳过
-       2. quote_clean           先清垃圾（后面的注入不再看见脏内容）
-       3. face_translate        表情翻译
-       4. reply_attribution     回复指向三方说明
-       5. user_profile          当前发言人档案（最后注入，不会被本插件自己清洗掉）
+       2. image_slim            历史旧图换占位（R8，省输入 token）
+       3. quote_clean           先清垃圾（后面的注入不再看见脏内容）
+       4. face_translate        表情翻译
+       5. reply_attribution     回复指向三方说明
+       6. user_profile          当前发言人档案（最后注入，不会被本插件自己清洗掉）
+
+   （recall 走适配器早期钩子、tokenline 走 ``on_llm_response`` +
+   ``on_decorating_result``，都不在这条主链里。）
 
 理由：**清洗在前、注入在后**；档案放最后 ⇒ 它绝不会被本插件的清洗删掉。
 
@@ -128,6 +132,7 @@ class XbnextRuntime:
                 prompt_before = ctx.prompt()
                 urls_before = self._image_url_count(req)
                 parts_before = ctx.parts_cleaned
+                slim_before = ctx.slimmed_images
                 await self._invoke(feat.on_llm_request, ctx)
             except Exception as exc:  # noqa: BLE001  单功能失败不许拖垮请求
                 self._warn(f"{feat.key} 执行失败：{exc!r}")
@@ -139,6 +144,8 @@ class XbnextRuntime:
                 acts.append("改写正文")
             if ctx.parts_cleaned > parts_before:
                 acts.append(f"清洗{ctx.parts_cleaned - parts_before}块")
+            if ctx.slimmed_images > slim_before:
+                acts.append(f"瘦历史图{ctx.slimmed_images - slim_before}张")
             urls_after = self._image_url_count(req)
             if urls_after != urls_before:
                 acts.append(f"清图{urls_before}→{urls_after}")
@@ -159,6 +166,31 @@ class XbnextRuntime:
         except Exception as exc:  # noqa: BLE001
             if self.conf.bool("debug_log"):
                 self._debug(f"注入记录失败：{exc!r}")
+
+    async def handle_llm_response(self, event: Any, resp: Any) -> None:
+        """``on_llm_response`` 钩子：把本轮用量交给关心它的功能（R9）。
+
+        只有标了 ``uses_llm_response_hook`` 的功能会被调用；用量取数、
+        白名单判定都在功能自己（``tokenline``）。单功能失败只记警告，
+        钩子本身绝不冒泡 —— core 会把异常变成发给用户的消息。
+        """
+        try:
+            await self.ensure_loaded()
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"用量钩子初始化失败：{exc!r}")
+            return
+        ctx = RequestContext(event=event, req=None, conf=self.conf, runtime=self)
+        for feat in self.features:
+            try:
+                if not getattr(feat, "uses_llm_response_hook", False):
+                    continue
+                if not ctx.enabled(feat.key):
+                    continue
+                result = feat.on_llm_response(ctx, resp)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001
+                self._warn(f"{feat.key} 记录用量失败：{exc!r}")
 
     async def handle_adapter_message(self, event: Any) -> None:
         """适配器早期钩子（``event_message_type(ALL)``）。
@@ -205,54 +237,68 @@ class XbnextRuntime:
                 self._warn(f"{feat.key} 记录回复失败：{exc!r}")
 
     async def handle_decorating_result(self, event: Any) -> None:
-        """发送前输出面清洗（``on_decorating_result`` 钩子）。
+        """发送前输出面处理（``on_decorating_result`` 钩子）。
 
         模型偶尔会把注入用的 ``<xbnext>`` 注入体原样复述出来 —— 请求面已有
         清洗（quote_clean / injector.sanitize），**输出面此前没有落点**
         （AstrNa 对照④）。这里在 core 发出消息链之前，把纯文本组件的
-        注入体整块剥掉（``injector.clean_output``）。
+        注入体整块剥掉（``injector.clean_output``）；随后把接力棒交给
+        标了 ``uses_decorating_hook`` 的功能（R9 token 用量行）。
 
-        三个约定：
+        约定：
 
         - 只认 ``Plain``（按**类型名 + ``text`` 属性**判定，不 import core
           内部类，测试也好造假件）；图片、卡片等其它组件一律不碰；
         - 必须排在消息转图插件（xbimg, priority=99999）**之前** ——
           它会把整段文本渲染成图片后 ``result.chain = new_chain`` 丢掉所有
           Plain，我们晚一步就只能对着图片干瞪眼。优先级写在 ``main.py``；
-        - 异常自吞：清洗失败绝不能挡住发消息。
+        - 清洗在前、功能行在后 —— 功能追加的内容不会被自己剥掉；
+        - 异常自吞：处理失败绝不能挡住发消息。
         """
         try:
             result = event.get_result()
         except Exception:  # noqa: BLE001
-            return
-        chain = getattr(result, "chain", None)
-        if not chain:
-            return
+            result = None
+        chain = getattr(result, "chain", None) if result is not None else None
         changed = False
         emptied: List[Any] = []
-        for comp in list(chain):
-            if type(comp).__name__ != "Plain":
-                continue
-            text = getattr(comp, "text", None)
-            if not isinstance(text, str) or "<" not in text:
-                continue
-            cleaned = injector.clean_output(text)
-            if cleaned == text:
-                continue
-            comp.text = cleaned
-            changed = True
-            if not cleaned:
-                emptied.append(comp)
-        if not changed:
-            return
-        # 清完变空的组件从链里摘掉 —— core 对空链会跳过发送，
-        # 比发出一条空消息干净
-        for comp in emptied:
+        if chain:
+            for comp in list(chain):
+                if type(comp).__name__ != "Plain":
+                    continue
+                text = getattr(comp, "text", None)
+                if not isinstance(text, str) or "<" not in text:
+                    continue
+                cleaned = injector.clean_output(text)
+                if cleaned == text:
+                    continue
+                comp.text = cleaned
+                changed = True
+                if not cleaned:
+                    emptied.append(comp)
+            if changed:
+                # 清完变空的组件从链里摘掉 —— core 对空链会跳过发送，
+                # 比发出一条空消息干净
+                for comp in emptied:
+                    try:
+                        chain.remove(comp)
+                    except ValueError:  # noqa: BLE001
+                        pass
+
+        # 功能行（R9 token 用量等）：清洗之后、xbimg 之前
+        ctx = RequestContext(event=event, req=None, conf=self.conf, runtime=self)
+        for feat in self.features:
             try:
-                chain.remove(comp)
-            except ValueError:  # noqa: BLE001
-                pass
-        self._info("输出面清洗：已剥除模型复述的 <xbnext> 注入体")
+                if not getattr(feat, "uses_decorating_hook", False):
+                    continue
+                if not ctx.enabled(feat.key):
+                    continue
+                await self._invoke(feat.on_decorating_result, ctx)
+            except Exception as exc:  # noqa: BLE001
+                self._warn(f"{feat.key} 输出面处理失败：{exc!r}")
+
+        if changed:
+            self._info("输出面清洗：已剥除模型复述的 <xbnext> 注入体")
 
     # ==================================================================
     # 外挂点
