@@ -28,6 +28,17 @@ class CmdEvent(FakeEvent):
         self.message_str = message_str
 
 
+class GroupEvent(CmdEvent):
+    """群聊事件：带群号（``get_group_id``），分群指令测试用。"""
+
+    def __init__(self, message_str="", gid="111", **kw):
+        super().__init__(message_str, **kw)
+        self._gid = gid
+
+    def get_group_id(self):
+        return self._gid
+
+
 def make_feature():
     feat = ProfileFeature()
 
@@ -153,6 +164,54 @@ class TestDescribe(unittest.TestCase):
         facts = "甲" * (DEFAULT_MAX_LEN["facts"] + 50)
         out = service.describe({"facts": facts})
         self.assertLessEqual(out.count("甲"), DEFAULT_MAX_LEN["facts"])
+
+
+class TestReplyFormatting(unittest.TestCase):
+    """回复排版红线（真机反馈「/xbnext 系列回复都乱」）。"""
+
+    def test_no_markdown_stars(self):
+        """QQ 纯文本不渲染 markdown，``**关闭**`` 这类星号原样显示像乱码。"""
+        out = service.describe({"name": "小明"}, extra=["当前状态：档案注入是关闭的。"])
+        self.assertNotIn("**", out)
+
+    def test_usage_no_column_alignment(self):
+        """帮助行不许用空格做列对齐 —— QQ 是非等宽字体，对齐即乱。"""
+        out = service.describe({})
+        self.assertNotRegex(out, r"\S {3,}\S")  # 行内连续 3 个空格
+        self.assertNotIn("\n  /xbnext", out)  # 帮助行不再缩进对齐
+
+    def test_scope_label_header(self):
+        self.assertIn(
+            "你的档案（群 123456）：", service.describe({"name": "x"}, scope="群 123456")
+        )
+        self.assertIn("（私聊）", service.describe({}, scope="私聊"))
+
+    def test_usage_false_skips_help_block(self):
+        """设置回执不再重复"维护方式"帮助块（刚用过指令的人不需要）。"""
+        out = service.describe({"name": "小明"}, scope="私聊", usage=False)
+        self.assertIn("称呼：小明", out)
+        self.assertNotIn("维护方式", out)
+        self.assertNotIn("/xbnext profile", out)
+
+    def test_extras_separated_by_blank_line(self):
+        out = service.describe({}, extra=["当前状态：x"])
+        self.assertIn("\n\n当前状态：x", out)
+
+    def test_scope_label(self):
+        self.assertEqual(service.scope_label("123456"), "群 123456")
+        self.assertEqual(service.scope_label(""), "私聊")
+        self.assertEqual(service.scope_label(None), "私聊")
+        self.assertEqual(service.scope_label("  7  "), "群 7")
+
+    def test_status_line_has_no_stars(self):
+        """状态行原病灶：``**关闭**`` 星号原样出现在 QQ 里。"""
+        feat = ProfileFeature()
+        line = " ".join(feat._status_line(Config({"enable_user_profile": False})))
+        self.assertNotIn("**", line)
+        self.assertIn("关闭", line)
+        on = " ".join(feat._status_line(Config({"enable_user_profile": True})))
+        self.assertIn("档案已开启", on)
+        self.assertNotIn("**", on)
 
 
 class TestRender(unittest.TestCase):
@@ -323,6 +382,128 @@ class TestHandleCommand(unittest.TestCase):
         self.assertIn("还没就绪", out)
 
 
+class TestSpeakerScope(unittest.TestCase):
+    """``_speaker`` 要返回 ``(platform, gid, uid)`` —— gid 是分群维度。"""
+
+    def test_no_group_is_private(self):
+        self.assertEqual(
+            ProfileFeature._speaker(CmdEvent()), ("aiocqhttp", "", "10001")
+        )
+
+    def test_group_id_from_get_group_id(self):
+        self.assertEqual(
+            ProfileFeature._speaker(GroupEvent(gid="123")),
+            ("aiocqhttp", "123", "10001"),
+        )
+
+    def test_group_id_from_message_obj(self):
+        ev = CmdEvent()
+        ev.message_obj = SimpleNamespace(
+            group_id="456", sender=SimpleNamespace(user_id="9")
+        )
+        self.assertEqual(
+            ProfileFeature._speaker(ev), ("aiocqhttp", "456", "9")
+        )
+
+    def test_zero_none_group_is_private(self):
+        self.assertEqual(ProfileFeature._speaker(GroupEvent(gid="0"))[1], "")
+        self.assertEqual(ProfileFeature._speaker(GroupEvent(gid="None"))[1], "")
+
+    def test_group_from_unified_msg_origin(self):
+        ev = CmdEvent()
+        ev.unified_msg_origin = "aiocqhttp/GroupMessage/789"
+        self.assertEqual(ProfileFeature._speaker(ev)[1], "789")
+
+    def test_no_event_is_all_empty(self):
+        self.assertEqual(ProfileFeature._speaker(None), ("", "", ""))
+
+
+class TestGroupScopedCommand(unittest.TestCase):
+    """档案按群隔离：一个群里改的档案，别的群和私聊都读不到。"""
+
+    @staticmethod
+    def _set(gid, name):
+        feat = make_feature()
+        run(feat.handle_command(GroupEvent(gid=gid), ["称呼", name], Config({})))
+        return feat
+
+    def test_set_and_view_scoped_per_group(self):
+        feat = make_feature()
+        conf = Config({})
+        out = run(feat.handle_command(GroupEvent(gid="111"), ["称呼", "A群小明"], conf))
+        self.assertIn("群 111", out)  # 回执抬头必须标范围
+        run(feat.handle_command(GroupEvent(gid="222"), ["称呼", "B群小明"], conf))
+
+        view_a = run(feat.handle_command(GroupEvent(gid="111"), [], conf))
+        self.assertIn("A群小明", view_a)
+        self.assertNotIn("B群小明", view_a)
+        self.assertIn("（群 111）", view_a)
+
+        view_b = run(feat.handle_command(GroupEvent(gid="222"), [], conf))
+        self.assertIn("B群小明", view_b)
+
+        view_p = run(feat.handle_command(CmdEvent(), [], conf))
+        self.assertIn("还没有填写档案", view_p)
+        self.assertIn("（私聊）", view_p)
+
+    def test_delete_only_touches_own_group(self):
+        feat = self._set("111", "A群小明")
+        run(feat.handle_command(GroupEvent(gid="222"), ["称呼", "B群小明"], Config({})))
+        out = run(feat.handle_command(GroupEvent(gid="111"), ["清空"], Config({})))
+        self.assertIn("已清空", out)
+        self.assertIn("群 111", out)
+        gone = run(feat.handle_command(GroupEvent(gid="111"), [], Config({})))
+        self.assertIn("还没有填写档案", gone)
+        kept = run(feat.handle_command(GroupEvent(gid="222"), [], Config({})))
+        self.assertIn("B群小明", kept)
+
+    def test_set_reply_skips_usage_block(self):
+        feat = make_feature()
+        out = run(feat.handle_command(GroupEvent(gid="111"), ["称呼", "小明"], Config({})))
+        self.assertIn("已更新", out)
+        self.assertNotIn("维护方式", out)
+
+    def test_legacy_profile_gets_migration_hint(self):
+        """旧数据零迁移落在私聊范围；群里查看时给一行提示，不自动回退读取。"""
+        feat = make_feature()
+        run(feat._store.set("aiocqhttp", "10001", {"name": "旧称呼"}))
+
+        view = run(feat.handle_command(GroupEvent(gid="111"), [], Config({})))
+        self.assertIn("还没有填写档案", view)
+        self.assertIn("未分群", view)
+
+        private = run(feat.handle_command(CmdEvent(), [], Config({})))
+        self.assertIn("旧称呼", private)  # 私聊直接读到旧档案
+        self.assertNotIn("未分群", private)
+
+        # 群里设过之后，提示消失（本群有自己的档案了）
+        run(feat.handle_command(GroupEvent(gid="111"), ["称呼", "新称呼"], Config({})))
+        view2 = run(feat.handle_command(GroupEvent(gid="111"), [], Config({})))
+        self.assertIn("新称呼", view2)
+        self.assertNotIn("未分群", view2)
+
+
+class TestGroupScopedInjection(unittest.TestCase):
+    """注入按发言时所在的群取档案。"""
+
+    def test_injection_reads_only_current_group(self):
+        feat = make_feature()
+        run(feat.handle_command(GroupEvent(gid="111"), ["称呼", "A群小明"], Config({})))
+
+        ctx = make_ctx(event=GroupEvent(gid="111"))
+        run(feat.on_llm_request(ctx))
+        self.assertEqual(ctx.injected, 1)
+        self.assertIn("A群小明", ctx.req.extra_user_content_parts[0].text)
+
+        other = make_ctx(event=GroupEvent(gid="222"))
+        run(feat.on_llm_request(other))
+        self.assertEqual(other.injected, 0, "别的群不能读到群 111 的档案")
+
+        private = make_ctx()
+        run(feat.on_llm_request(private))
+        self.assertEqual(private.injected, 0, "私聊不能读到群档案")
+
+
 class TestRuntimeHandleCommand(unittest.TestCase):
     @staticmethod
     def _runtime():
@@ -356,6 +537,43 @@ class TestRuntimeHandleCommand(unittest.TestCase):
         self.assertIn("已更新", out)
         view = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
         self.assertIn("称呼：小红", view)
+
+    def test_execute_failure_returns_friendly_text(self):
+        """异常兜底：给用户友好文案，repr/异常内容只进日志（不许泄露）。"""
+        rt = self._runtime()
+        feat = get_feature_by_command("profile")
+        original = feat.__dict__.get("handle_command")
+
+        async def boom(*a, **k):
+            raise ValueError("内部秘密细节")
+
+        feat.handle_command = boom
+        try:
+            out = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        finally:
+            if original is None:
+                feat.__dict__.pop("handle_command", None)
+            else:
+                feat.handle_command = original
+        self.assertIn("执行出错", out)
+        self.assertIn("稍后再试", out)
+        self.assertNotIn("内部秘密细节", out)
+        self.assertNotIn("ValueError", out)
+
+    def test_parse_failure_returns_friendly_text(self):
+        rt = self._runtime()
+        original = commands.split
+
+        def broken(*a, **k):
+            raise ValueError("解析秘密")
+
+        commands.split = broken
+        try:
+            out = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        finally:
+            commands.split = original
+        self.assertIn("没看懂", out)
+        self.assertNotIn("解析秘密", out)
 
 
 class TestProfileStoreIndex(unittest.TestCase):
@@ -413,6 +631,67 @@ class TestProfileStoreIndex(unittest.TestCase):
         self.assertEqual(rows[0]["profile"]["name"], "小明")
 
 
+class TestGroupScopedStore(unittest.TestCase):
+    """分群存储：键/记号带群维度，scope 之间互不串、删一个不伤别的。"""
+
+    @staticmethod
+    def _store():
+        return ProfileStore(KV(owner=FakeKV()), logger=None)
+
+    def test_key_shape(self):
+        from xbnext.features.profile.store import key_of
+
+        self.assertEqual(
+            key_of("aiocqhttp", "10001", "123"), "profile:aiocqhttp:123:10001"
+        )
+        self.assertEqual(key_of("aiocqhttp", "10001", ""), "profile:aiocqhttp:10001")
+        self.assertEqual(key_of("aiocqhttp", "10001", None), "profile:aiocqhttp:10001")
+        self.assertEqual(
+            key_of("aiocqhttp", "10001", " 123 "), "profile:aiocqhttp:123:10001"
+        )
+        # 群号里的 | 会撑爆索引记号，必须剥掉
+        self.assertEqual(
+            key_of("aiocqhttp", "10001", "1|2"), "profile:aiocqhttp:12:10001"
+        )
+
+    def test_scopes_are_isolated(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "A群小明"}, "111"))
+        run(st.set("aiocqhttp", "10001", {"name": "B群小明"}, "222"))
+        run(st.set("aiocqhttp", "10001", {"name": "私聊小明"}))
+        self.assertEqual(run(st.get("aiocqhttp", "10001", "111"))["name"], "A群小明")
+        self.assertEqual(run(st.get("aiocqhttp", "10001", "222"))["name"], "B群小明")
+        self.assertEqual(run(st.get("aiocqhttp", "10001"))["name"], "私聊小明")
+        self.assertEqual(run(st.get("aiocqhttp", "10001", "333")), {}, "没设过的群不能串")
+
+    def test_list_rows_carry_group_and_parse_legacy_token(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "群档案"}, "111"))
+        run(st.set("aiocqhttp", "20002", {"name": "旧档案"}))  # 老键形 = 未分群
+        rows = {r["uid"]: r for r in run(st.list_all())}
+        self.assertEqual(rows["10001"]["group"], "111")
+        self.assertEqual(rows["20002"]["group"], "")
+        tokens = run(st._kv.get_list("profile:index"))
+        self.assertIn("aiocqhttp|111|10001", tokens)
+        self.assertIn("aiocqhttp|20002", tokens)
+
+    def test_delete_only_touches_own_scope(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "群档案"}, "111"))
+        run(st.set("aiocqhttp", "10001", {"name": "私聊档案"}))
+        self.assertTrue(run(st.delete("aiocqhttp", "10001", "111")))
+        self.assertEqual(run(st.get("aiocqhttp", "10001", "111")), {})
+        self.assertEqual(run(st.get("aiocqhttp", "10001"))["name"], "私聊档案")
+        self.assertEqual(len(run(st.list_all())), 1)
+
+    def test_stale_group_token_is_pruned(self):
+        st = self._store()
+        run(st.set("aiocqhttp", "10001", {"name": "x"}, "111"))
+        run(st._kv.delete("profile:aiocqhttp:111:10001"))
+        self.assertEqual(run(st.list_all()), [])
+        self.assertEqual(run(st._kv.get_list("profile:index")), [])
+
+
 class TestProfileWebApi(unittest.TestCase):
     """WebUI 档案页签的后端：列表 / 写入 / 删除。"""
 
@@ -441,6 +720,33 @@ class TestProfileWebApi(unittest.TestCase):
         feat = make_feature()
         with self.assertRaises(ValueError):
             run(feat.web_save({"name": "小明"}))
+
+    def test_save_with_group_and_move(self):
+        """带 group 保存 = 分群写入；改 group（带 prev_group）= 挪群不留重复行。"""
+        feat = make_feature()
+        saved = run(feat.web_save(
+            {"platform": "aiocqhttp", "uid": "5", "group": "111", "name": "群档案"}))
+        self.assertEqual(saved["group"], "111")
+        rows = run(feat.web_list())
+        self.assertEqual(rows[0]["group"], "111")
+
+        run(feat.web_save(
+            {"platform": "aiocqhttp", "uid": "5", "group": "222",
+             "prev_group": "111", "name": "群档案"}))
+        rows = run(feat.web_list())
+        self.assertEqual(len(rows), 1, "挪群后旧范围不能留重复行")
+        self.assertEqual(rows[0]["group"], "222")
+        self.assertEqual(run(feat._store.get("aiocqhttp", "5", "111")), {})
+
+    def test_delete_with_group_only_touches_that_scope(self):
+        feat = make_feature()
+        run(feat.web_save(
+            {"platform": "aiocqhttp", "uid": "6", "group": "111", "name": "x"}))
+        run(feat.web_save({"platform": "aiocqhttp", "uid": "6", "name": "x"}))
+        run(feat.web_delete({"platform": "aiocqhttp", "uid": "6", "group": "111"}))
+        rows = run(feat.web_list())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["group"], "", "私聊那份不能被群删除误伤")
 
     def test_delete_without_identity_is_rejected(self):
         feat = make_feature()

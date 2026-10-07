@@ -640,16 +640,22 @@
   }
 
   /* ========================================================================
-   * 用户档案页签
+   * 用户档案页签（按「平台 · 群」分组分类展示 —— 分群之后不分类又会乱）
    * ====================================================================== */
   var pfRows = [];
-  var pfCurrent = null;   // {platform, uid, isNew}
+  var pfCurrent = null;   // {platform, uid, group, isNew}
 
   function mkEl(tag, cls, text) {
     var el = document.createElement(tag);
     if (cls) el.className = cls;
     if (text != null) el.textContent = String(text);
     return el;
+  }
+
+  /** 范围标签：群号 → 「群 123456」，没有群号 → 「私聊 / 未分群」。 */
+  function pfScopeLabel(group) {
+    var g = String(group == null ? "" : group).trim();
+    return g ? "群 " + g : "私聊 / 未分群";
   }
 
   function m3Btn(cls, text) {
@@ -727,7 +733,37 @@
       box.appendChild(pfNote("还没有任何档案 —— 在群里发 /xbnext profile 称呼 小明，或点右上角「新建档案」。"));
       return;
     }
-    pfRows.forEach(function (row) { box.appendChild(pfRowEl(row)); });
+    // 分组分类：按「平台 · 群」分桶，每桶一个分组标题
+    var buckets = [];
+    var byKey = {};
+    pfRows.forEach(function (row) {
+      var platform = String(row.platform || "unknown");
+      var group = String(row.group || "").trim();
+      var key = platform + "|" + group;
+      var b = byKey[key];
+      if (!b) {
+        b = byKey[key] = { platform: platform, group: group, rows: [] };
+        buckets.push(b);
+      }
+      b.rows.push(row);
+    });
+    buckets.sort(function (a, b) {
+      if (a.platform !== b.platform) return a.platform < b.platform ? -1 : 1;
+      if (!a.group !== !b.group) return a.group ? 1 : -1;  // 私聊 / 未分群排最前
+      if (a.group === b.group) return 0;
+      var na = /^\d+$/.test(a.group);
+      var nb = /^\d+$/.test(b.group);
+      if (na && nb) return Number(a.group) - Number(b.group);
+      return a.group < b.group ? -1 : 1;
+    });
+    buckets.forEach(function (b) {
+      var head = mkEl("div", "pf-group-head");
+      head.appendChild(mkEl("span", "pf-group-title",
+        b.platform + " · " + pfScopeLabel(b.group)));
+      head.appendChild(mkEl("span", "pf-group-count", b.rows.length + " 份"));
+      box.appendChild(head);
+      b.rows.forEach(function (row) { box.appendChild(pfRowEl(row)); });
+    });
   }
 
   function pfLoad(silent) {
@@ -759,11 +795,14 @@
     pfCurrent = {
       platform: String((row && row.platform) || ""),
       uid: String((row && row.uid) || ""),
+      group: String((row && row.group) || "").trim(),
       isNew: !!isNew
     };
     var p = (row && row.profile) || {};
     if ($("pfPlatform")) { $("pfPlatform").value = pfCurrent.platform; $("pfPlatform").disabled = !isNew; }
     if ($("pfUid")) { $("pfUid").value = pfCurrent.uid; $("pfUid").disabled = !isNew; }
+    // 群号始终可改：改了等于把档案挪到另一个范围（保存时带 prev_group 删旧键）
+    if ($("pfGroup")) $("pfGroup").value = pfCurrent.group;
     if ($("pfName")) $("pfName").value = p.name || "";
     if ($("pfFacts")) $("pfFacts").value = p.facts || "";
     if ($("pfStyle")) $("pfStyle").value = p.style || "";
@@ -784,21 +823,29 @@
   function pfSave() {
     var platform = $("pfPlatform") ? $("pfPlatform").value.trim() : "";
     var uid = $("pfUid") ? $("pfUid").value.trim() : "";
+    var group = $("pfGroup") ? $("pfGroup").value.trim() : "";
     if (!platform || !uid) { toast("请填写平台与用户 ID", "bad"); return; }
     var btn = $("pfSaveBtn");
     if (btn) btn.disabled = true;
-    API.profileSave({
+    var payload = {
       platform: platform,
+      group: group,
       uid: uid,
       name: $("pfName") ? $("pfName").value : "",
       facts: $("pfFacts") ? $("pfFacts").value : "",
       style: $("pfStyle") ? $("pfStyle").value : ""
-    }).then(function (res) {
+    };
+    // 编辑已有档案时带上原范围：挪群后服务端会删掉旧键，不留重复行
+    var wasNew = !pfCurrent || pfCurrent.isNew;
+    if (!wasNew) payload.prev_group = pfCurrent.group || "";
+    API.profileSave(payload).then(function (res) {
       var deleted = res && res.deleted;
-      toast(deleted ? "档案已清空（三个字段都为空）" : "档案已保存", "ok");
-      if (pfCurrent && !pfCurrent.isNew) pfOpen({ platform: platform, uid: uid, profile: (res && res.profile) || {} }, false);
-      else if (deleted) pfClose();
-      else pfOpen({ platform: platform, uid: uid, profile: (res && res.profile) || {} }, false);
+      var label = pfScopeLabel(group);
+      toast(deleted ? "档案已清空（" + label + "，三个字段都为空）"
+                    : "档案已保存（" + label + "）", "ok");
+      var back = { platform: platform, group: group, uid: uid, profile: (res && res.profile) || {} };
+      if (wasNew && deleted) pfClose();
+      else pfOpen(back, false);
       return pfLoad(true);
     }).catch(function (e) {
       toast("保存失败：" + (e && e.message ? e.message : e), "bad");
@@ -808,10 +855,13 @@
   }
 
   function pfDelete(row) {
-    API.profileDelete({ platform: row.platform, uid: row.uid }).then(function () {
-      toast("已删除 " + row.platform + "/" + row.uid + " 的档案", "ok");
+    var group = String(row.group || "").trim();
+    var label = pfScopeLabel(group);
+    API.profileDelete({ platform: row.platform, group: group, uid: row.uid }).then(function () {
+      toast("已删除 " + row.platform + " · " + label + " · " + row.uid + " 的档案", "ok");
       if (pfCurrent && !pfCurrent.isNew &&
-          pfCurrent.platform === row.platform && pfCurrent.uid === row.uid) pfClose();
+          pfCurrent.platform === row.platform && pfCurrent.uid === row.uid &&
+          pfCurrent.group === group) pfClose();
       return pfLoad(true);
     }).catch(function (e) {
       toast("删除失败：" + (e && e.message ? e.message : e), "bad");
@@ -831,7 +881,7 @@
         if (delBtn.textContent === "确认删除") {
           clearTimeout(delTimer);
           delBtn.textContent = "删除这份档案";
-          pfDelete({ platform: pfCurrent.platform, uid: pfCurrent.uid });
+          pfDelete({ platform: pfCurrent.platform, uid: pfCurrent.uid, group: pfCurrent.group });
           return;
         }
         delBtn.textContent = "确认删除";

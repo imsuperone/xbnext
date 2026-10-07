@@ -218,14 +218,16 @@ class XbnextRuntime:
         try:
             sub, args = commands.split(str(getattr(event, "message_str", "") or ""))
         except Exception as exc:  # noqa: BLE001
-            return f"指令解析失败：{exc!r}"
+            # 兜底文案给人看，repr 只进日志（真机反馈：回复里出现 Python repr 很乱）
+            self._warn(f"指令解析失败：{exc!r}")
+            return "指令没看懂，请换种写法：/xbnext status 或 /xbnext profile"
         # AstrBot 可能已把 "xbnext profile" 一并剥掉 → 把 sub 当第一个参数回填
         if sub != name:
             args = ([sub] if sub else []) + args
 
         feat = features.get_feature_by_command(name)
         if feat is None:
-            return f"没有 /xbnext {name} 这个子指令。"
+            return f"没有 /xbnext {name} 这个子指令。可用子指令：status、profile。"
         handler = getattr(feat, "handle_command", None)
         if not callable(handler):
             return f"/xbnext {name} 没有实现处理逻辑。"
@@ -233,7 +235,7 @@ class XbnextRuntime:
             result = await handler(event, args, self.conf)
         except Exception as exc:  # noqa: BLE001
             self._warn(f"/xbnext {name} 执行失败：{exc!r}")
-            return f"指令执行失败：{exc!r}"
+            return f"/xbnext {name} 执行出错（已记录日志），请稍后再试。"
         return str(result or "")
 
     # ==================================================================

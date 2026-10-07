@@ -76,7 +76,7 @@
   "enable_user_profile": {
     "type": "bool",
     "description": "用户档案注入（R4）",
-    "hint": "开启后，XBNEXT 会在每轮请求里注入当前发言人的自助档案，让 bot 按档案理解用户而不是乱猜。档案按不可信输入清洗后注入，且不写入会话历史。属于新增行为，默认关闭；关闭时仍然可以用 /xbnext profile 查看和维护档案。",
+    "hint": "开启后，XBNEXT 会在每轮请求里注入当前发言人的自助档案，让 bot 按档案理解用户而不是乱猜。档案按群隔离（同一个人在不同群各一份，私聊单独一份），按不可信输入清洗后注入，且不写入会话历史。属于新增行为，默认关闭；关闭时仍然可以用 /xbnext profile 查看和维护档案。",
     "default": false
   },
   "user_profile_max_chars": {

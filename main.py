@@ -19,8 +19,12 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star
 
 from .xbnext import HOOK_PRIORITY, PLUGIN_NAME, __version__
+from .xbnext import commands
 from .xbnext.runtime import XbnextRuntime
 from .xbnext.web import register_web_api
+
+#: 裸发 ``/xbnext``（或带这些词）时回菜单；其余子命令一律静默交给子指令
+ROOT_HELP_WORDS = ("", "help", "h", "?", "？", "菜单", "帮助")
 
 
 class XbnextPlugin(Star):
@@ -74,8 +78,23 @@ class XbnextPlugin(Star):
     # 指令
     # ------------------------------------------------------------------
     @filter.command_group("xbnext")
-    def xbnext(self) -> None:
-        """XBNEXT 指令组根节点（新增子指令写在这里，逻辑放功能里）。"""
+    async def xbnext(self, event: AstrMessageEvent) -> None:
+        """XBNEXT 指令组根节点（新增子指令写在这里，逻辑放功能里）。
+
+        裸发 ``/xbnext`` / ``/xbnext help`` 时回一份菜单；子指令命中时本函数
+        保持静默（不抢子指令的回复）。部分 AstrBot 版本还会自己抛"参数不足"
+        指令树，两条通路互不冲突（能走到这里的就回我们的菜单）。
+        """
+        sub, _ = commands.split(str(getattr(event, "message_str", "") or ""))
+        if sub not in ROOT_HELP_WORDS:
+            return
+        await event.send(
+            event.plain_result(
+                "XBNEXT 子指令：\n"
+                "/xbnext status —— 各功能开关与 KV 状态\n"
+                "/xbnext profile —— 查看 / 修改 / 清空你的档案（按群分开存）"
+            )
+        )
 
     @xbnext.command("status")
     async def xbnext_status(self, event: AstrMessageEvent) -> None:

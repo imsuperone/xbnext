@@ -261,6 +261,32 @@ astrbot_plugin_xbnext/
 > 补自动更新开关与更新时间卡。② `stopped event propagation` 归责查证：
 > xbnext 没有 `stop_event`，是指令回复 CommandResult STOP 的正常归责，
 > 不改代码仅文档化。单测 **319 → 351**。
+>
+> **真机第四轮反馈修复（P11，未打 tag）**：用户两条指令 ——
+> 「/xbnext 系列回复都乱，弄好之后推送」+「用户档案也分群，那个页面也弄好
+> 分类，不然也会很乱」。两件事都做完：——
+> ① **回复乱的 5 处病灶**：`_status_line` 的 `**关闭**` markdown 星号在 QQ
+> 纯文本里原样显示 → 去掉；`service.describe` 帮助块用空格做列对齐（非等宽
+> 字体必乱）→ 改成单行式「改一个字段：/xbnext profile 称呼 小明」+
+> 「删除档案：/xbnext profile 清空」；`extra` 与帮助块之间补空行；
+> `runtime.handle_command` 的 `{exc!r}` repr 兜底泄露 → 改友好文案
+> （repr 只进日志）；设置回执不再重复"维护方式"帮助块（`describe(usage=False)`）。
+> ② **裸 `/xbnext`**：AstrBot 新版 core 对指令组精确匹配会自己抛
+> "参数不足+指令树"，旧版则会静默漏给 LLM —— 根节点 `xbnext()` 补菜单回复，
+> 但只在子命令是空/help 时开口（`ROOT_HELP_WORDS`），子指令命中一律静默，
+> 两条通路互不冲突。③ **档案按群分**：键改
+> `profile:<platform>:<gid>:<uid>`（群聊）/ 保持老键形（私聊 + 升级前旧数据，
+> 零迁移）；`_speaker` 返回 `(platform, gid, uid)`，取群号照抄本机 xbimg
+> 已验证的多重兼容（`get_group_id` → `message_obj.group_id` → umo 群段，
+> `None`/`0` 视为私聊）；读写**只精确读本 scope、不跨群回退**（回退会让
+> 清空失效）；群里查看若本群无档案但存在旧数据，回执补一行"未分群旧档案"
+> 迁移提示（`_legacy_hint`，只提示不回退）；回执抬头全部带范围标签
+> `（群 123456）` / `（私聊）`。④ **WebUI 档案页分类**：索引记号扩成
+> `platform|gid|uid`（旧 `platform|uid` 照常解析 → group=""），
+> `list_all` 行带 `group`；前端 `pfRender` 按「平台 · 群」分桶渲染分组标题
+> （私聊/未分群排最前、群号按数值升序），编辑器新增可改的"群号"输入
+> （改群号 = 挪群，payload 带 `prev_group`，服务端写新键后删旧键不留重复行）。
+> 单测 **351 → 379**。
 
 ---
 

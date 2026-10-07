@@ -9,16 +9,22 @@
 
 - **入口**：``/xbnext profile``（查看 / 设置 / 清空）—— **与开关无关**，
   开关关着也照样能维护档案（写 KV），只是不喂给模型；
-- **存**：插件 KV ``xbnext:profile:<platform>:<uid>``；
-- **读**：每轮按当前发言人取出，``render`` 成平铺中文，过 ``sanitize`` 后以
-  **temp part** 注入（不写历史）。
+- **存**：按**会话范围分群**（真机反馈「用户档案也分群」）——
+  群聊 ``xbnext:profile:<platform>:<gid>:<uid>``（同一个人在不同群是
+  不同的档案），私聊 / 升级前的旧数据 ``xbnext:profile:<platform>:<uid>``
+  （老键形保持不变，旧档案零迁移，私聊即"未分群"档案）；
+- **读**：每轮按当前发言人 + 所在群取出，``render`` 成平铺中文，过
+  ``sanitize`` 后以 **temp part** 注入（不写历史）。**只精确读本 scope，
+  不跨群回退** —— 回退会让"清空"失效，档案又乱了。
 
 注入永远排在最后（order=50），保证不会被本插件自己的清洗删掉。
 
 **档案页签**：WebUI 有独立的「用户档案」页签（``tab-profile``），按
-``platform|uid`` 列出全部档案、可查可改可删；因为 AstrBot 的插件 KV 没有
-"按键遍历"能力，成员表靠 ``profile:index`` 自己维护（见 ``store.INDEX_KEY``）。
-指令入口与页签**并存**：群里靠 ``/xbnext profile`` 自助维护，控制台做管理。
+「平台 · 群」分组分类列出全部档案、可查可改可删；因为 AstrBot 的插件 KV
+没有"按键遍历"能力，成员表靠 ``profile:index`` 自己维护（见
+``store.INDEX_KEY``，记号 ``platform|gid|uid``，旧记号 ``platform|uid``
+照常解析）。指令入口与页签**并存**：群里靠 ``/xbnext profile`` 自助维护，
+控制台做管理。
 """
 
 from __future__ import annotations
@@ -63,22 +69,22 @@ class ProfileFeature(Feature):
 
     # -- 钩子 ---------------------------------------------------------
     async def on_llm_request(self, ctx) -> None:
-        """取出当前发言人的档案，清洗后注入。"""
+        """取出当前发言人**所在群**的档案，清洗后注入。"""
         if self._store is None:
             return
-        platform, uid = self._speaker(ctx.event)
+        platform, gid, uid = self._speaker(ctx.event)
         if not uid:
             ctx.note("user_profile 跳过（取不到发言人的 uid）")
             return
         try:
-            profile = await self._store.get(platform, uid)
+            profile = await self._store.get(platform, uid, gid)
         except Exception as exc:  # noqa: BLE001
             ctx.note(f"user_profile 读取失败：{exc!r}")
             return
         max_chars = ctx.conf.int("user_profile_max_chars", 600)
         body = render(profile, max_chars=max_chars)
         if not body:
-            ctx.note(f"user_profile 无档案 {platform}/{uid}")
+            ctx.note(f"user_profile 无档案 {platform}/{gid or 'private'}/{uid}")
             return
         note = f"{TITLE}\n{body}\n{TIPS}"
         if ctx.inject(note):
@@ -90,12 +96,16 @@ class ProfileFeature(Feature):
 
         **不看 ``enable_user_profile`` 开关** —— 开关只决定是否喂给模型，
         维护档案的入口必须一直可用（_conf_schema.json 的 hint 里明说了）。
+
+        **按群分档案**：读写都带当前会话的 gid（群聊=群号，私聊=空），
+        回执抬头标上范围（``群 123456`` / ``私聊``），用户一眼知道改的是哪份。
         """
         if self._store is None:
             return "档案存储还没就绪（插件可能正在加载），稍后再试。"
-        platform, uid = self._speaker(event)
+        platform, gid, uid = self._speaker(event)
         if not uid:
             return "读不到你的用户 ID，无法维护档案。"
+        label = service.scope_label(gid)
 
         try:
             action, updates = service.classify(args)
@@ -103,29 +113,40 @@ class ProfileFeature(Feature):
             return str(exc)
 
         if action == service.ACTION_VIEW:
-            profile = await self._store.get(platform, uid)
-            return service.describe(profile, extra=self._status_line(conf))
+            profile = await self._store.get(platform, uid, gid)
+            extra = self._status_line(conf)
+            if gid and not profile:
+                hint = await self._legacy_hint(platform, uid)
+                if hint:
+                    extra = extra + [hint]
+            return service.describe(profile, extra=extra, scope=label)
 
         if action == service.ACTION_DELETE:
-            ok = await self._store.delete(platform, uid)
+            ok = await self._store.delete(platform, uid, gid)
             if not ok:
                 return "删除失败（存储异常），请稍后再试。"
-            return "档案已清空。开关开着的话，下一轮起模型将不再读到你的档案。"
+            return (
+                f"档案已清空（{label}）。"
+                "开关开着的话，下一轮起模型就不再读到你的档案。"
+            )
 
         # ACTION_SET
         try:
-            existing = await self._store.get(platform, uid)
+            existing = await self._store.get(platform, uid, gid)
         except Exception:  # noqa: BLE001
             existing = {}
         merged = service.merge(existing, updates)
-        saved = await self._store.set(platform, uid, merged)
+        saved = await self._store.set(platform, uid, merged, gid)
         if not saved:
             return "写入失败（存储异常），请稍后再试。"
         labels = {"name": "称呼", "facts": "自述", "style": "口吻"}
         changed = "、".join(labels.get(k, k) for k in updates)
+        # 设置回执不重复"维护方式"帮助块（刚用过指令的人不需要再看一遍）
         return (
-            f"已更新你的档案（{changed}）。\n"
-            + service.describe(saved, extra=self._status_line(conf))
+            f"已更新你的档案（{changed}）· {label}。\n"
+            + service.describe(
+                saved, extra=self._status_line(conf), scope=label, usage=False
+            )
         )
 
     # -- WebUI 档案页签 -----------------------------------------------
@@ -140,6 +161,10 @@ class ProfileFeature(Feature):
 
         与指令 ``/xbnext profile 字段 内容`` 的合并语义不同 —— 页面上看到的
         就是完整的档案，所以按"所见即所存"处理；三个字段全空 = 删掉整份档案。
+
+        分群字段：``group``（群号，留空 = 私聊/未分群）。编辑时把档案从一个
+        群挪到另一个群，前端额外传 ``prev_group``（旧范围），服务端先写新键、
+        再删旧键 —— 不传的话会在索引里留下一条重复行。
         """
         if self._store is None:
             raise RuntimeError("档案存储还没就绪（插件可能正在加载），稍后再试")
@@ -149,21 +174,41 @@ class ProfileFeature(Feature):
         uid = str(payload.get("uid") or "").strip()
         if not platform or not uid:
             raise ValueError("缺少 platform 或 uid")
+        gid = store_mod.clean_gid(payload.get("group"))
+        prev = payload.get("prev_group", None)
+        prev_gid = store_mod.clean_gid(prev) if prev is not None else None
+
         raw = {
             "name": payload.get("name"),
             "facts": payload.get("facts"),
             "style": payload.get("style"),
         }
         if not store_mod.normalize(raw):
-            await self._store.delete(platform, uid)
-            return {"platform": platform, "uid": uid, "profile": {}, "deleted": True}
-        saved = await self._store.set(platform, uid, raw)
+            await self._store.delete(platform, uid, gid)
+            if prev_gid is not None and prev_gid != gid:
+                await self._store.delete(platform, uid, prev_gid)
+            return {
+                "platform": platform,
+                "group": gid,
+                "uid": uid,
+                "profile": {},
+                "deleted": True,
+            }
+        saved = await self._store.set(platform, uid, raw, gid)
         if not saved:
             raise RuntimeError("写入失败（存储异常）")
-        return {"platform": platform, "uid": uid, "profile": saved, "deleted": False}
+        if prev_gid is not None and prev_gid != gid:
+            await self._store.delete(platform, uid, prev_gid)
+        return {
+            "platform": platform,
+            "group": gid,
+            "uid": uid,
+            "profile": saved,
+            "deleted": False,
+        }
 
     async def web_delete(self, payload: Any) -> Dict[str, Any]:
-        """按 WebUI 操作删一份档案。"""
+        """按 WebUI 操作删一份档案（按 platform + group + uid 定位）。"""
         if self._store is None:
             raise RuntimeError("档案存储还没就绪（插件可能正在加载），稍后再试")
         if not isinstance(payload, dict):
@@ -172,14 +217,39 @@ class ProfileFeature(Feature):
         uid = str(payload.get("uid") or "").strip()
         if not platform or not uid:
             raise ValueError("缺少 platform 或 uid")
-        ok = await self._store.delete(platform, uid)
+        gid = store_mod.clean_gid(payload.get("group"))
+        ok = await self._store.delete(platform, uid, gid)
         if not ok:
             raise RuntimeError("删除失败（存储异常）")
-        return {"platform": platform, "uid": uid, "deleted": True}
+        return {"platform": platform, "group": gid, "uid": uid, "deleted": True}
 
     # -- 工具 ---------------------------------------------------------
+    async def _legacy_hint(self, platform: str, uid: str) -> str:
+        """本群没有档案、却存在升级前的未分群旧档案时，补一行迁移提示。
+
+        旧数据零迁移地落在"私聊"范围里，不提示的话用户会在群里
+        以为"档案丢了"。只在**查看**时提示，不自动回退读取 ——
+        回退会让"清空"失效（删了又冒出来）。
+        """
+        if self._store is None:
+            return ""
+        try:
+            legacy = await self._store.get(platform, uid)  # gid="" → 老键
+        except Exception:  # noqa: BLE001
+            return ""
+        if not legacy:
+            return ""
+        return (
+            "提示：你有一份未分群的旧档案（现在算在私聊范围），"
+            "本群要用请重新设置一次，或到 WebUI「用户档案」把它分到本群。"
+        )
+
     def _status_line(self, conf: Any) -> List[str]:
-        """给查看回执补一行"注入是否开启"，避免用户以为改完就生效。"""
+        """给查看回执补一行"注入是否开启"，避免用户以为改完就生效。
+
+        **纯文本回复，禁止 markdown 星号**（真机反馈：``**关闭**``
+        在 QQ 里原样显示成星号，看着像乱码）。
+        """
         try:
             enabled = conf.enabled(self.key) if conf is not None else None
         except Exception:  # noqa: BLE001
@@ -188,17 +258,23 @@ class ProfileFeature(Feature):
             return ["当前状态：档案已开启，每轮都会喂给模型。"]
         if enabled is False:
             return [
-                "当前状态：档案注入是**关闭**的 —— 档案照存，但模型读不到；"
+                "当前状态：档案注入是关闭的 —— 档案照存，但模型读不到；"
                 "要生效请在 WebUI 把「用户档案」打开。"
             ]
         return []
 
     @staticmethod
-    def _speaker(event: Any) -> Tuple[str, str]:
-        """返回 ``(platform, uid)``；取不到的位置留空串（不猜）。"""
+    def _speaker(event: Any) -> Tuple[str, str, str]:
+        """返回 ``(platform, gid, uid)``；取不到的位置留空串（不猜）。
+
+        ``gid`` = 所在群号（**分群维度**），私聊取不到时为 ``""``。
+        取群号按真机跑过的 xbimg 同款多重兼容顺序：
+        ``event.get_group_id()`` → ``message_obj.group_id`` →
+        ``unified_msg_origin`` 的群段；``"None"`` / ``"0"`` 视为没有。
+        """
         try:
             if event is None:
-                return "", ""
+                return "", "", ""
             uid = ""
             try:
                 sender = getattr(getattr(event, "message_obj", None), "sender", None)
@@ -216,6 +292,33 @@ class ProfileFeature(Feature):
                         if uid:
                             break
 
+            def _clean(value: Any) -> str:
+                text = str(value or "").strip()
+                return "" if text in ("None", "none", "0") else text
+
+            gid = ""
+            fn = getattr(event, "get_group_id", None)
+            if callable(fn):
+                try:
+                    gid = _clean(fn())
+                except Exception:  # noqa: BLE001
+                    gid = ""
+            if not gid:
+                try:
+                    mo = getattr(event, "message_obj", None)
+                    gid = _clean(getattr(mo, "group_id", "") if mo else "")
+                except Exception:  # noqa: BLE001
+                    gid = ""
+            if not gid:
+                # umo 形如 ``aiocqhttp/GroupMessage/123456``：群段兜底
+                parts = [
+                    p
+                    for p in str(getattr(event, "unified_msg_origin", "") or "").split("/")
+                    if p
+                ]
+                if len(parts) >= 3 and "group" in parts[1].lower():
+                    gid = _clean(parts[2])
+
             platform = ""
             fn = getattr(event, "get_platform_name", None)
             if callable(fn):
@@ -227,9 +330,9 @@ class ProfileFeature(Feature):
                 # 平台名取不到就从会话来源推，避免所有平台共用一份档案
                 umo = str(getattr(event, "unified_msg_origin", "") or "")
                 platform = umo.split("/")[0].strip()
-            return platform, uid
+            return platform, gid, uid
         except Exception:  # noqa: BLE001
-            return "", ""
+            return "", "", ""
 
 
 __all__ = ["ProfileFeature", "TITLE", "TIPS"]

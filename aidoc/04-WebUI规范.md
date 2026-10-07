@@ -203,11 +203,13 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
   `await runtime.ensure_loaded()`** —— `on_astrbot_loaded` 只在核心启动收尾广播
   一次，热装的插件永远收不到；不兜底就会一直显示"未加载"、档案报"还没就绪"
   （真机首轮发现的根因，见 `aidoc/README` 交付记录）。
-- 档案三端点的载荷：
-  - `GET profiles` → `[{platform, uid, profile:{name,facts,style}, updated}]`
-  - `POST profile_save` → `{platform, uid, name, facts, style}`，**三字段整体替换**，
-    全空即删整份；`platform` / `uid` 缺失直接 `ok:false`
-  - `POST profile_delete` → `{platform, uid}`
+- 档案三端点的载荷（**分群字段 `group`**，P11 起）：
+  - `GET profiles` → `[{platform, group, uid, profile:{name,facts,style}, updated}]`
+    （`group` 为空串 = 私聊 / 升级前的未分群旧数据）
+  - `POST profile_save` → `{platform, group, uid, name, facts, style}`，
+    **三字段整体替换**，全空即删整份；`platform` / `uid` 缺失直接 `ok:false`；
+    编辑时改了范围再带 `prev_group`（旧群号），服务端写新键后删旧键
+  - `POST profile_delete` → `{platform, group, uid}`（只删这个范围）
 
 ## 5. 页签规划（首版实际落地 5 个）
 
@@ -215,7 +217,7 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
 | :--- | :--- | :--- | :--- |
 | 功能开关 | `tab-switches` | 4 张卡：引用占位清洗 / QQ 表情翻译 / 回复指向索引 / 用户档案注入，每张 `.card-row-split` + `.m3-switch` | `state` 回填 + `setting` 写 `enable_*` |
 | 行为微调 | `tab-tuning` | 占位处理方式（分段）、失效图片路径（开关）、表情格式（输入）、表情表自动更新（开关 + 更新时间输入）、R1 两个整数、R4 整数、调试日志开关 | `setting` |
-| 用户档案 | `tab-profile` | 列出全部档案（`platform / uid` + 称呼/自述/口吻摘要）、行内编辑/删除、新建、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
+| 用户档案 | `tab-profile` | 按「平台 · 群」**分组分类**列出全部档案（分组标题 + `platform / uid` + 称呼/自述/口吻摘要）、行内编辑/删除、新建、可改「群号」挪群、两步确认删除 | `GET profiles` + `POST profile_save` / `profile_delete` |
 | 运行状态 | `tab-runtime` | 版本/加载/priority、KV 可用性与接口通道 | `state` |
 | 使用指南 | `tab-guide` | 指令表、新增功能 5 步、致谢与借鉴、**未做真机回归提示** | 静态 |
 
@@ -228,9 +230,14 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
 >   数据。身份校验仍由后端把关：`platform` / `uid` 必填，字段白名单只认
 >   称呼 / 自述 / 口吻，全部经 `store.normalize()` 的 `sanitize` 清洗。
 > - **AstrBot 的插件 KV 没有"按键遍历"**（只有 `get/put/delete_kv_data`），
->   所以列表能力靠自建索引键 `xbnext:profile:index`（成员记号 `platform|uid`）
+>   所以列表能力靠自建索引键 `xbnext:profile:index`（成员记号
+>   `platform|gid|uid`；私聊与旧数据是 `platform|uid`，`list_all()` 两种都解析）
 >   维护；每次 `set` 追加、`delete` 移除，`list_all()` 读到孤儿条目会顺手剔除
 >   （自愈），不会永远报幽灵档案。
+> - **档案页按「平台 · 群」分组分类（真机第四轮「页面也弄好分类」）**：
+>   `pfRender` 按 `platform|group` 分桶渲染分组标题（私聊 / 未分群排最前、
+>   群号数值升序），编辑器新增始终可改的「群号」输入 —— 改群号 = 挪群，
+>   payload 带 `prev_group` 由服务端删旧键，索引里不留重复行。
 > - **删除用两步确认**（按钮变成"确认删除"，3 秒超时还原）：iframe 沙箱里
 >   原生 `confirm()` 恒返回 false，与 xbdoc 的页内确认框是同一类问题，这里
 >   取更轻的实现。

@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """R4 · 用户档案存储。
 
-键：``xbnext:profile:<platform>:<uid>``（前缀由 :class:`~xbnext.storage.KV` 统一加）。
+键（前缀由 :class:`~xbnext.storage.KV` 统一加）::
+
+    xbnext:profile:<platform>:<gid>:<uid>   群聊（档案按群隔离：同一个人
+                                            在不同群可以是不同的档案）
+    xbnext:profile:<platform>:<uid>         私聊 / 升级前的旧数据（gid 为空
+                                            时保持老键形，旧档案零迁移可用）
 
 值::
 
@@ -36,8 +41,17 @@ DEFAULT_MAX_LEN = {"name": 32, "facts": 480, "style": 120}
 INDEX_KEY = "profile:index"
 
 
-def _token(platform: str, uid: Any) -> str:
-    """索引里的成员记号：``<platform>|<uid>``。"""
+def clean_gid(gid: Any) -> str:
+    """归一化群号：去空白、去掉会破坏索引记号的 ``|``；取不到返回 ``""``。"""
+    return str(gid or "").strip().replace("|", "")
+
+
+def _token(platform: str, uid: Any, gid: Any = "") -> str:
+    """索引里的成员记号：``<platform>|<gid>|<uid>``；gid 为空保持老格式
+    ``<platform>|<uid>``（私聊 / 升级前的旧数据，两种都能被 ``list_all`` 解析）。"""
+    gid = clean_gid(gid)
+    if gid:
+        return f"{platform or 'unknown'}|{gid}|{uid or 'unknown'}"
     return f"{platform or 'unknown'}|{uid or 'unknown'}"
 
 
@@ -95,8 +109,11 @@ def render(profile: Dict[str, Any], max_chars: int = 0) -> str:
         return ""
 
 
-def key_of(platform: str, uid: Any) -> str:
-    """拼出 KV 键（不含 ``xbnext:`` 前缀）。"""
+def key_of(platform: str, uid: Any, gid: Any = "") -> str:
+    """拼出 KV 键（不含 ``xbnext:`` 前缀）；gid 为空保持老键形（私聊）。"""
+    gid = clean_gid(gid)
+    if gid:
+        return f"profile:{platform or 'unknown'}:{gid}:{uid or 'unknown'}"
     return f"profile:{platform or 'unknown'}:{uid or 'unknown'}"
 
 
@@ -107,33 +124,35 @@ class ProfileStore:
         self._kv = kv
         self._log = logger
 
-    async def get(self, platform: str, uid: Any) -> Dict[str, Any]:
-        """读一份档案；异常返回 ``{}``。"""
+    async def get(self, platform: str, uid: Any, gid: Any = "") -> Dict[str, Any]:
+        """读一份档案（按 scope 精确读，**不做跨 scope 回退**）；异常返回 ``{}``。"""
         try:
-            data = await self._kv.get_dict(key_of(platform, uid))
+            data = await self._kv.get_dict(key_of(platform, uid, gid))
             return data if not is_empty(data) else {}
         except Exception as exc:  # noqa: BLE001
-            self._warn(f"读取档案失败 {platform}/{uid}: {exc}")
+            self._warn(f"读取档案失败 {platform}/{gid or 'private'}/{uid}: {exc}")
             return {}
 
-    async def set(self, platform: str, uid: Any, raw: Dict[str, Any]) -> Dict[str, Any]:
+    async def set(
+        self, platform: str, uid: Any, raw: Dict[str, Any], gid: Any = ""
+    ) -> Dict[str, Any]:
         """写一份档案（先 sanitize）；返回实际写入内容。"""
         try:
             profile = normalize(raw)
             if not profile:
                 return {}
-            await self._kv.set(key_of(platform, uid), profile)
-            await self._index_add(platform, uid)
+            await self._kv.set(key_of(platform, uid, gid), profile)
+            await self._index_add(platform, uid, gid)
             return profile
         except Exception as exc:  # noqa: BLE001
-            self._warn(f"写入档案失败 {platform}/{uid}: {exc}")
+            self._warn(f"写入档案失败 {platform}/{gid or 'private'}/{uid}: {exc}")
             return {}
 
-    async def delete(self, platform: str, uid: Any) -> bool:
-        """删除一份档案。"""
+    async def delete(self, platform: str, uid: Any, gid: Any = "") -> bool:
+        """删除一份档案（只删这个 scope，不影响其它群 / 私聊的同名档案）。"""
         try:
-            ok = await self._kv.delete(key_of(platform, uid))
-            await self._index_remove(platform, uid)
+            ok = await self._kv.delete(key_of(platform, uid, gid))
+            await self._index_remove(platform, uid, gid)
             return ok
         except Exception:  # noqa: BLE001
             return False
@@ -141,8 +160,11 @@ class ProfileStore:
     async def list_all(self) -> List[Dict[str, Any]]:
         """列出全部档案（WebUI 档案页签用）。
 
-        返回 ``[{"platform", "uid", "profile", "updated"}, ...]``，按更新时间倒序。
-        读索引 → 逐条回读 → 顺手把已不存在的成员从索引里剔除（自愈）。
+        返回 ``[{"platform", "group", "uid", "profile", "updated"}, ...]``，
+        按更新时间倒序。索引记号两种形态都能解析：
+        ``platform|gid|uid``（分群）与 ``platform|uid``（私聊 / 旧数据，
+        解析出 ``group=""``）。读索引 → 逐条回读 → 顺手把已不存在的成员
+        从索引里剔除（自愈）。
         """
         try:
             tokens = await self._kv.get_list(INDEX_KEY)
@@ -154,12 +176,16 @@ class ProfileStore:
         for token in tokens if isinstance(tokens, list) else []:
             if not isinstance(token, str) or "|" not in token:
                 continue
-            platform, uid = token.split("|", 1)
+            platform, rest = token.split("|", 1)
+            if "|" in rest:
+                gid, uid = rest.split("|", 1)
+            else:
+                gid, uid = "", rest  # 老记号：无群维度
             if not uid or token in seen:
                 continue
             seen.add(token)
             try:
-                data = await self._kv.get_dict(key_of(platform, uid))
+                data = await self._kv.get_dict(key_of(platform, uid, gid))
             except Exception:  # noqa: BLE001
                 continue
             if is_empty(data):
@@ -168,6 +194,7 @@ class ProfileStore:
             rows.append(
                 {
                     "platform": platform,
+                    "group": gid,
                     "uid": uid,
                     "profile": {f: data.get(f, "") for f in FIELDS},
                     "updated": int(data.get("updated") or 0),
@@ -179,16 +206,16 @@ class ProfileStore:
         return rows
 
     # -- 索引维护 -----------------------------------------------------
-    async def _index_add(self, platform: str, uid: Any) -> None:
-        token = _token(platform, uid)
+    async def _index_add(self, platform: str, uid: Any, gid: Any = "") -> None:
+        token = _token(platform, uid, gid)
         tokens = await self._kv.get_list(INDEX_KEY)
         if token in tokens:
             return
         tokens.append(token)
         await self._kv.set(INDEX_KEY, tokens)
 
-    async def _index_remove(self, platform: str, uid: Any) -> None:
-        token = _token(platform, uid)
+    async def _index_remove(self, platform: str, uid: Any, gid: Any = "") -> None:
+        token = _token(platform, uid, gid)
         tokens = await self._kv.get_list(INDEX_KEY)
         if token not in tokens:
             return
@@ -212,6 +239,7 @@ __all__ = [
     "normalize",
     "is_empty",
     "render",
+    "clean_gid",
     "key_of",
     "ProfileStore",
 ]

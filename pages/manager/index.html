@@ -232,7 +232,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">用户档案</h2>
-              <p class="card-desc">按「平台 / 用户 ID」列出全部已记录的自助档案，群聊里一眼分得清谁是谁。点「编辑」可直接改称呼、自述、口吻；群里用 <code>/xbnext profile</code> 维护的是同一份数据。</p>
+              <p class="card-desc">按「平台 · 群」分组分类列出全部已记录的自助档案：档案按群隔离，同一个人在不同群可以是不同的档案（留空群号 = 私聊 / 未分群）。点「编辑」可直接改称呼、自述、口吻；群里用 <code>/xbnext profile</code> 维护的是同一份数据。</p>
             </div>
             <div class="pf-actions">
               <button type="button" class="m3-btn secondary-btn" id="pfRefreshBtn">刷新</button>
@@ -255,9 +255,14 @@
             <input type="text" class="m3-input" id="pfPlatform" placeholder="aiocqhttp" autocomplete="off" />
           </div>
           <div class="form-group">
+            <label class="form-label" for="pfGroup">群号</label>
+            <input type="text" class="m3-input" id="pfGroup" placeholder="留空 = 私聊 / 未分群" autocomplete="off" />
+            <span class="field-hint">档案按群隔离：填群号则只在该群生效；编辑时改群号等于把档案挪到新群。历史数据没填群号，显示在「私聊 / 未分群」分组里。</span>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="pfUid">用户 ID</label>
             <input type="text" class="m3-input" id="pfUid" placeholder="2574644146" autocomplete="off" />
-            <span class="field-hint">平台 + 用户 ID 共同定位一份档案；新建时可手填，编辑已有档案时不可改。</span>
+            <span class="field-hint">平台 + 群号 + 用户 ID 共同定位一份档案；新建时可手填，编辑已有档案时平台与用户 ID 不可改。</span>
           </div>
           <div class="form-group">
             <label class="form-label" for="pfName">称呼</label>
@@ -316,7 +321,8 @@
             <div class="kv-row"><span class="kv-k">… 清空</span><span class="kv-v">删除自己的全部档案</span></div>
           </div>
           <span class="field-hint">档案与「用户档案」开关<strong>解耦</strong>：开关只决定喂不喂给模型，查看/设置/清空始终可用。字段只认上面三个，其余一律报错。</span>
-          <span class="field-hint">控制台的「用户档案」页签可以列出并编辑<strong>所有人</strong>的档案，与上面的指令写的是同一份数据。</span>
+          <span class="field-hint">档案<strong>按群隔离</strong>：同一个人在不同群各存一份，私聊单独一份；回执抬头会标出当前范围（<code>群 123456</code> / <code>私聊</code>）。</span>
+          <span class="field-hint">控制台的「用户档案」页签按「平台 · 群」分组分类列出并编辑<strong>所有人</strong>的档案，与上面的指令写的是同一份数据。</span>
         </div>
 
         <div class="m3-card">

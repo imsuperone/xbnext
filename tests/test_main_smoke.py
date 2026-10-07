@@ -227,6 +227,32 @@ class TestMainSmoke(unittest.TestCase):
         self.assertTrue(plugin.runtime._loaded)
         asyncio.run(plugin.terminate())
 
+    def test_root_group_menu_and_silence_on_subcommand(self):
+        """裸 ``/xbnext`` 回菜单；子指令命中时根节点必须静默（不抢回复）。"""
+        plugin = self.main.XbnextPlugin(context=None, config={})
+        sent = []
+
+        class Ev(FakeEvent):
+            def plain_result(self, text):
+                return text
+
+            async def send(self, result):
+                sent.append(result)
+
+        asyncio.run(plugin.xbnext(Ev(message_str="/xbnext")))
+        self.assertEqual(len(sent), 1)
+        self.assertIn("/xbnext status", sent[0])
+        self.assertIn("/xbnext profile", sent[0])
+
+        sent.clear()
+        asyncio.run(plugin.xbnext(Ev(message_str="/xbnext help")))
+        self.assertEqual(len(sent), 1, "help 也应回菜单")
+
+        for msg in ("/xbnext status", "/xbnext profile 称呼 小明"):
+            asyncio.run(plugin.xbnext(Ev(message_str=msg)))
+        self.assertEqual(len(sent), 1, "子指令场景根节点不得产生第二条回复")
+        asyncio.run(plugin.terminate())
+
     # -- 纯表情补写（真机第二轮：「表情是无效的」） --------------------
     def test_pure_face_message_is_rewritten(self):
         """``@bot + 纯表情`` 的 message_str 是空的 → 早期钩子必须补上。

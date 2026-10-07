@@ -148,8 +148,30 @@ def merge(existing: Any, updates: Dict[str, str]) -> Dict[str, str]:
     return merged
 
 
-def describe(profile: Any, extra: Iterable[str] = ()) -> str:
-    """渲染档案的查看回执（给人看的，不是给模型看的）。"""
+def scope_label(gid: Any) -> str:
+    """档案所属范围的中文标签：``群 123456`` / ``私聊``（回复里给用户看）。
+
+    分群之后用户必须一眼看出"我现在改的是哪一份档案"，否则又会乱。
+    """
+    text = str(gid or "").strip()
+    return f"群 {text}" if text else "私聊"
+
+
+def describe(
+    profile: Any,
+    extra: Iterable[str] = (),
+    scope: str = "",
+    usage: bool = True,
+) -> str:
+    """渲染档案的查看回执（给人看的，不是给模型看的）。
+
+    - ``scope``：范围标签（``群 123456`` / ``私聊``），空串不显示；
+    - ``usage``：是否带"维护方式"帮助块（设置/清空回执不再重复帮助，少刷屏）。
+
+    **排版红线**（真机反馈「/xbnext 系列回复都乱」）：
+    帮助行不许用空格做列对齐（QQ 是非等宽字体，对齐即乱），
+    不许出现 markdown 星号（纯文本消息不渲染 ``**``）。
+    """
     lines: List[str] = []
     if isinstance(profile, dict):
         for field in FIELDS:
@@ -161,19 +183,24 @@ def describe(profile: Any, extra: Iterable[str] = ()) -> str:
                 if len(text) > limit:
                     text = text[:limit] + "…"
                 lines.append(f"  {label}：{text}")
+    tag = f"（{scope}）" if scope else ""
     if lines:
-        body = "\n".join(["你的档案："] + lines)
+        body = "\n".join([f"你的档案{tag}："] + lines)
     else:
-        body = "你还没有填写档案。"
+        body = f"你还没有填写档案{tag}。"
 
-    help_lines = [
-        "",
-        "维护方式：",
-        "  /xbnext profile <称呼|自述|口吻> <内容>   改一个字段",
-        "  /xbnext profile 清空                     删除全部档案",
-    ]
-    help_lines.extend(str(item) for item in extra if item)
-    return body + "\n" + "\n".join(help_lines)
+    out: List[str] = [body]
+    if usage:
+        out += [
+            "",
+            "维护方式：",
+            f"改一个字段：/xbnext profile 称呼 小明（字段：{usable_keys()}）",
+            "删除档案：/xbnext profile 清空",
+        ]
+    extras = [str(item) for item in extra if item]
+    if extras:
+        out += [""] + extras
+    return "\n".join(out)
 
 
 __all__ = [
@@ -187,5 +214,6 @@ __all__ = [
     "parse_args",
     "classify",
     "merge",
+    "scope_label",
     "describe",
 ]

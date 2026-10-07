@@ -29,9 +29,15 @@
 - **R4 · 用户档案**（`enable_user_profile`，默认关）：`/xbnext profile` 指令
   （查看 / 设置 / 清空，字段白名单 + `merge` 保不抹其它字段），
   `on_llm_request` 按当前发言人注入；**档案与开关解耦**，开关只决定喂不喂给模型。
-  另有 WebUI「用户档案」页签（管理视角）：`GET /profiles` 列出全部、
-  `POST /profile_save` 写（三字段整体替换，全空即删）、`POST /profile_delete` 删，
-  列表能力靠自建索引键 `xbnext:profile:index` 维护（AstrBot 插件 KV 没有按键遍历）
+  **档案按群隔离**：键 `xbnext:profile:<platform>:<gid>:<uid>`（群聊），
+  私聊与升级前的旧数据保持老键形 `<platform>:<uid>`（零迁移），
+  读写只精确命中本 scope、不跨群回退；回执抬头标范围（`群 123456` / `私聊`），
+  群里没有档案但有旧数据时补一行迁移提示。另有 WebUI「用户档案」页签
+  （管理视角，**按「平台 · 群」分组分类**展示，编辑可改群号挪群）：
+  `GET /profiles` 列出全部、`POST /profile_save` 写（三字段整体替换，
+  全空即删，带 `group` / `prev_group`）、`POST /profile_delete` 删，
+  列表能力靠自建索引键 `xbnext:profile:index` 维护（AstrBot 插件 KV 没有按键遍历，
+  记号 `platform|gid|uid`，旧记号 `platform|uid` 照常解析）
 - **R5 · WebUI**（`pages/manager/`）：M3 Expressive 令牌、`.app-layout` /
   `.top-bar` / `.category-tabs-bar` / `.m3-card` / `.m3-switch`、取色盘、
   `data-boot` 防闪、`?v=` 缓存号；**5 个页签**（功能开关 / 行为微调 / 用户档案 /
@@ -45,7 +51,7 @@
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**351 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**379 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 
@@ -81,6 +87,14 @@
   `CONFIG.ui_accent_color` 的非空判断会让默认态下换主题丢掉派生色；改为
   无条件 `applyAccent()`，并在 `writeConfig()` 的写入成功与回滚两条路径都补
   `applyUiPref(key)`，保证「页面上看到的 = 实际存下来的」
+- **`/xbnext` 系列回复乱**（真机第四轮反馈）：5 处病灶一次修掉 ——
+  ① 状态行 `**关闭**` 的 markdown 星号在 QQ 纯文本里原样显示 → 去掉；
+  ② 查看回执的帮助块用空格做列对齐（非等宽字体必乱）→ 改单行式用法；
+  ③ `extra` 与帮助块之间缺空行 → 补；
+  ④ `handle_command` 异常兜底把 `{exc!r}` 原样回给用户 → 改友好文案，
+  repr 只进日志；
+  ⑤ 设置回执不再重复整段"维护方式"帮助块；
+  另给裸 `/xbnext` / `/xbnext help` 补根节点菜单回复（子指令命中时根节点静默）
 
 ### Notes
 

@@ -800,6 +800,29 @@ code {
  * ---------------------------------------------------------------- */
 .pf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 
+/* 分组标题：一行一个「平台 · 群」分类，把平铺列表切成可扫读的块 */
+.pf-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+.pf-list > .pf-group-head:first-child { margin-top: 0; }
+.pf-group-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--m3-sys-color-on-surface);
+  overflow-wrap: anywhere;
+}
+.pf-group-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--m3-sys-color-outline);
+  white-space: nowrap;
+}
+
 .pf-row {
   display: flex;
   align-items: center;
