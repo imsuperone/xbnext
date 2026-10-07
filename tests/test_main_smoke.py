@@ -5,7 +5,7 @@
 目的不是测 AstrBot，而是抓住纯本项目侧的接线错误：
 
 - 相对导入层级写错（compileall 查不出来）；
-- 装饰器用法与官方插件不一致（``@command_group`` 后必须能挂 ``.command``）；
+- 装饰器用法与官方插件不一致（``@filter.command`` 单指令入口必须能转发）；
 - runtime 装配 / 生命周期 / 一轮 ``on_llm_request`` 跑不通；
 - 指令与状态输出直接崩。
 
@@ -61,7 +61,8 @@ def _install_astrbot_stub() -> None:
 
     def _command_group(*args, **kwargs):
         def wrap(fn):
-            # 官方用法：@xbnext.command("status") —— 句柄必须能挂子命令
+            # AstrBot 也提供 command_group；本插件已改单指令（xbdoc/xbimg 同款），
+            # stub 保留它只为模拟完整 API 集合。
             def sub(*a, **k):
                 return _decorator(*a, **k)
 
@@ -156,10 +157,14 @@ class TestMainSmoke(unittest.TestCase):
             tail = source[idx : idx + len(deco) + 120]
             self.assertIn("priority=HOOK_PRIORITY", tail, f"{deco} 未使用统一 priority")
 
-    def test_command_group_has_subcommand_api(self):
-        """``@filter.command_group`` 返回的句柄必须能挂 ``.command``。"""
+    def test_single_command_entry_registered(self):
+        """单指令入口（xbdoc/xbimg 同款）：handler 可调用，且不挂子命令句柄。"""
         cls = self.main.XbnextPlugin
-        self.assertTrue(callable(getattr(cls.xbnext, "command", None)))
+        self.assertTrue(callable(getattr(cls, "xbnext", None)))
+        self.assertFalse(
+            hasattr(cls.xbnext, "command"),
+            "已改单指令分发，不应再是 command_group（不挂 .command 子命令句柄）",
+        )
 
     def test_instantiates_and_runs_lifecycle(self):
         plugin = self.main.XbnextPlugin(context=None, config={})
@@ -227,8 +232,8 @@ class TestMainSmoke(unittest.TestCase):
         self.assertTrue(plugin.runtime._loaded)
         asyncio.run(plugin.terminate())
 
-    def test_root_group_menu_and_silence_on_subcommand(self):
-        """裸 ``/xbnext`` 回菜单；子指令命中时根节点必须静默（不抢回复）。"""
+    def test_command_menu_and_dispatch_matrix(self):
+        """单指令分发矩阵：裸指令/help 回菜单、status 回状态、未知回提示。"""
         plugin = self.main.XbnextPlugin(context=None, config={})
         sent = []
 
@@ -239,18 +244,28 @@ class TestMainSmoke(unittest.TestCase):
             async def send(self, result):
                 sent.append(result)
 
-        asyncio.run(plugin.xbnext(Ev(message_str="/xbnext")))
-        self.assertEqual(len(sent), 1)
-        self.assertIn("/xbnext status", sent[0])
-        self.assertIn("/xbnext profile", sent[0])
-
-        sent.clear()
-        asyncio.run(plugin.xbnext(Ev(message_str="/xbnext help")))
-        self.assertEqual(len(sent), 1, "help 也应回菜单")
-
-        for msg in ("/xbnext status", "/xbnext profile 称呼 小明"):
+        def ask(msg):
+            del sent[:]
             asyncio.run(plugin.xbnext(Ev(message_str=msg)))
-        self.assertEqual(len(sent), 1, "子指令场景根节点不得产生第二条回复")
+            self.assertEqual(len(sent), 1, f"{msg!r} 必须恰好回一条")
+            return sent[0]
+
+        menu = ask("/xbnext")
+        self.assertIn("🧩【XBNEXT · 指令菜单】", menu)
+        self.assertIn("• /xbnext status", menu)
+        self.assertIn("• /xbnext profile 清空", menu)
+        self.assertNotIn("**", menu)
+        self.assertEqual(ask("/xbnext help"), menu, "help 应回同一份菜单")
+
+        status = ask("/xbnext status")
+        self.assertIn("XBNEXT v", status)
+        self.assertIn("KV：", status)
+
+        unknown = ask("/xbnext foo")
+        self.assertIn("未知子指令", unknown)
+        self.assertIn("「foo」", unknown)
+        self.assertNotIn("🧩【", unknown, "未知提示不应整份甩菜单")
+
         asyncio.run(plugin.terminate())
 
     # -- 纯表情补写（真机第二轮：「表情是无效的」） --------------------

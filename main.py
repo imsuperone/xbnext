@@ -4,9 +4,9 @@
 **薄壳原则**：本文件只负责把 AstrBot 钩子转发给 ``xbnext.runtime.XbnextRuntime``，
 不写任何业务逻辑。新增功能请改 ``xbnext/features/``，不要往这里堆代码。
 
-指令（``@filter.command*``）保留在这里，因为 AstrBot 的钩子扫描发生在类加载阶段，
-动态挂载子命令不可靠。**指令只做转发**，真正的逻辑在 ``xbnext/features/`` 或
-``xbnext/runtime.py``。
+指令（``@filter.command``）保留在这里 —— **单指令入口**（xbdoc / xbimg 同款）：
+``main.py::xbnext`` 只转发给 ``runtime.dispatch``，由它分发菜单 / 状态 /
+档案 / 未知提示，``main.py`` 不写任何指令分支。
 """
 
 from __future__ import annotations
@@ -19,12 +19,8 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star
 
 from .xbnext import HOOK_PRIORITY, PLUGIN_NAME, __version__
-from .xbnext import commands
 from .xbnext.runtime import XbnextRuntime
 from .xbnext.web import register_web_api
-
-#: 裸发 ``/xbnext``（或带这些词）时回菜单；其余子命令一律静默交给子指令
-ROOT_HELP_WORDS = ("", "help", "h", "?", "？", "菜单", "帮助")
 
 
 class XbnextPlugin(Star):
@@ -77,40 +73,16 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     # 指令
     # ------------------------------------------------------------------
-    @filter.command_group("xbnext")
+    @filter.command("xbnext")
     async def xbnext(self, event: AstrMessageEvent) -> None:
-        """XBNEXT 指令组根节点（新增子指令写在这里，逻辑放功能里）。
+        """XBNEXT 统一指令入口：``/xbnext [status|profile ...]``。
 
-        裸发 ``/xbnext`` / ``/xbnext help`` 时回一份菜单；子指令命中时本函数
-        保持静默（不抢子指令的回复）。部分 AstrBot 版本还会自己抛"参数不足"
-        指令树，两条通路互不冲突（能走到这里的就回我们的菜单）。
+        **单指令分发**（xbdoc / xbimg 同款）：菜单、状态、档案、未知提示
+        全部由 ``runtime.dispatch`` 自己回 —— 不走 AstrBot 指令组，
+        裸 ``/xbnext`` 不会落到 core 的「参数不足」指令树，打错的子指令
+        也不会漏给 LLM 乱答。词表与菜单文案在 ``xbnext/commands.py``。
         """
-        sub, _ = commands.split(str(getattr(event, "message_str", "") or ""))
-        if sub not in ROOT_HELP_WORDS:
-            return
-        await event.send(
-            event.plain_result(
-                "XBNEXT 子指令：\n"
-                "/xbnext status —— 各功能开关与 KV 状态\n"
-                "/xbnext profile —— 查看 / 修改 / 清空你的档案（按群分开存）"
-            )
-        )
-
-    @xbnext.command("status")
-    async def xbnext_status(self, event: AstrMessageEvent) -> None:
-        """查看 XBNEXT 各功能开关与 KV 可用性。"""
-        await event.send(
-            event.plain_result("\n".join(self.runtime.status_lines()))
-        )
-
-    @xbnext.command("profile")
-    async def xbnext_profile(self, event: AstrMessageEvent) -> None:
-        """维护自己的自助档案：``/xbnext profile [查看|清空|字段 内容]``。
-
-        与「用户档案」开关**无关** —— 开关只决定是否喂给模型，
-        档案的查看与维护入口始终可用。
-        """
-        reply = await self.runtime.handle_command("profile", event)
+        reply = await self.runtime.dispatch(event)
         if reply:
             await event.send(event.plain_result(reply))
 

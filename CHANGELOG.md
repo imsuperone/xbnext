@@ -51,7 +51,7 @@
   `injector` 统一注入出口、`switches` 开关对账与 WebUI 配置写入、
   `storage` 插件 KV 封装、`config` 配置读取、`commands` 指令文本解析
 - 功能注册表 `xbnext/features/`：一功能一目录，新增功能只需改一个文件
-- 单测 `tests/`（**379 条**，标准库 unittest，不依赖 astrbot）
+- 单测 `tests/`（**383 条**，标准库 unittest，不依赖 astrbot）
 
 ### Fixed
 
@@ -93,8 +93,14 @@
   ③ `extra` 与帮助块之间缺空行 → 补；
   ④ `handle_command` 异常兜底把 `{exc!r}` 原样回给用户 → 改友好文案，
   repr 只进日志；
-  ⑤ 设置回执不再重复整段"维护方式"帮助块；
-  另给裸 `/xbnext` / `/xbnext help` 补根节点菜单回复（子指令命中时根节点静默）
+  ⑤ 设置回执不再重复整段"维护方式"帮助块
+- **裸 `/xbnext` 的回执丑**（真机第五轮反馈）：从 `command_group` 改成
+  **单指令分发**（xbdoc / xbimg 同款形态）—— `main.py` 只挂
+  `@filter.command("xbnext")`，`runtime.dispatch` 统一分发：菜单 / 状态 /
+  档案 / 未知提示全部由插件自己回。根因是指令组形态下裸指令会被新版 core
+  抢答成「参数不足 + 指令树」技术树、旧版会把打错的子指令漏给 LLM；
+  菜单换成 xbdoc 分节 + xbimg 分隔线的精美排版（`commands.MENU`），
+  未知子指令回一句「❓ 未知子指令」提示（不再漏给 LLM 乱答）
 
 ### Notes
 

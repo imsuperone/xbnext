@@ -238,6 +238,37 @@ class XbnextRuntime:
             return f"/xbnext {name} 执行出错（已记录日志），请稍后再试。"
         return str(result or "")
 
+    async def dispatch(self, event: Any) -> str:
+        """``/xbnext ...`` 的**统一入口**（单指令分发，xbdoc / xbimg 同款形态）。
+
+        形态矩阵::
+
+            /xbnext           → 指令菜单（commands.MENU）
+            /xbnext help|菜单 → 同上
+            /xbnext status    → 状态行（别名：状态）
+            /xbnext profile…  → handle_command（档案子逻辑）
+            /xbnext <其它>    → 一句「未知子指令」提示
+
+        **全部由插件自己答**：不依赖 AstrBot 指令组的「参数不足」树
+        （旧版 core 上裸指令会漏给 LLM 乱答，新版会甩一脸技术树，
+        真机反馈「/xbnext 还是很丑」的根子就在这），打错的子指令
+        也不会再触发 LLM 乱回。
+        """
+        await self.ensure_loaded()
+        text = str(getattr(event, "message_str", "") or "")
+        try:
+            sub, _ = commands.split(text)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"指令解析失败：{exc!r}")
+            return "指令没看懂，请换种写法：/xbnext status 或 /xbnext profile"
+        if sub in commands.HELP_WORDS:
+            return commands.MENU
+        if sub in commands.STATUS_WORDS:
+            return "\n".join(self.status_lines())
+        if sub == "profile":
+            return await self.handle_command("profile", event)
+        return f"❓ 未知子指令「{sub}」，发送 /xbnext 可查看可用指令菜单。"
+
     # ==================================================================
     # 状态（/xbnext status 与 WebUI 共用）
     # ==================================================================

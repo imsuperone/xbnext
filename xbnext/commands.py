@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""指令文本解析（纯函数，不 import astrbot）。
+"""指令文本解析 + 菜单词表（纯函数，不 import astrbot）。
 
 AstrBot 的 command handler 拿到的 ``event.message_str`` 形态不固定：
 
@@ -10,6 +10,10 @@ AstrBot 的 command handler 拿到的 ``event.message_str`` 形态不固定：
 
 **逐个形态兜底**，保证总能取出 ``(子命令, 剩余参数)``。
 （解析思路照抄本机 ``xbdoc/main.py::doc_cmd``，那是真机跑过的实现。）
+
+另有 :data:`HELP_WORDS` / :data:`STATUS_WORDS` / :data:`MENU` ——
+单指令分发（``runtime.dispatch``）用的词表与菜单文案，
+排版照抄 xbdoc / xbimg 的成熟形态。
 """
 
 from __future__ import annotations
@@ -17,7 +21,31 @@ from __future__ import annotations
 import re
 from typing import List, Tuple
 
-__all__ = ["tokenize", "split"]
+__all__ = ["tokenize", "split", "HELP_WORDS", "STATUS_WORDS", "MENU"]
+
+#: 裸指令与帮助词：命中回菜单（``split`` 返回的 sub 已小写化）
+HELP_WORDS = ("", "help", "h", "?", "？", "菜单", "帮助")
+#: 状态子指令（含中文别名）
+STATUS_WORDS = ("status", "状态")
+
+#: 指令菜单 —— 排版照抄本机 xbdoc / xbimg（标题 + 分隔线 + 分节 + 圆点）。
+#: 真机反馈「/xbnext 还是很丑」后，从 3 行纯文本换成这个形态。
+MENU = (
+    "🧩【XBNEXT · 指令菜单】\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "\n"
+    "📊 状态\n"
+    "• /xbnext status — 各功能开关与 KV 可用性\n"
+    "\n"
+    "👤 用户档案（按群分开存）\n"
+    "• /xbnext profile — 查看我的档案\n"
+    "• /xbnext profile 称呼 小明 — 改称呼（别名：名字 / 昵称）\n"
+    "• /xbnext profile 自述 <内容> — 改自述（别名：信息 / 描述）\n"
+    "• /xbnext profile 口吻 <内容> — 改相处方式（别名：风格 / 语气）\n"
+    "• /xbnext profile 清空 — 删除我的档案\n"
+    "\n"
+    "💡 档案与「用户档案」开关解耦：关着开关也能查能改，只是不喂给模型。"
+)
 
 
 def tokenize(text: str) -> List[str]:

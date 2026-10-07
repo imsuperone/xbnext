@@ -59,6 +59,7 @@ astrbot_plugin_xbnext/
 
 | 指令 | 作用 |
 |:---|:---|
+| `/xbnext` | 查看指令菜单（`help` / `菜单` 同效） |
 | `/xbnext status` | 查看各功能开关与 KV 可用性 |
 | `/xbnext profile` | 查看自己的档案 |
 | `/xbnext profile 称呼 小明` | 改称呼（别名：名字 / 昵称；也支持 `称呼=小明`） |

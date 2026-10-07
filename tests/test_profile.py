@@ -576,6 +576,55 @@ class TestRuntimeHandleCommand(unittest.TestCase):
         self.assertNotIn("解析秘密", out)
 
 
+class TestDispatch(unittest.TestCase):
+    """单指令分发矩阵（xbdoc/xbimg 同款）：菜单 / 状态 / 档案 / 未知提示。
+
+    全部由插件自己回答 —— 不依赖 AstrBot 指令组的「参数不足」树，
+    打错的子指令也不会漏给 LLM 乱答。
+    """
+
+    @staticmethod
+    def _runtime():
+        rt = XbnextRuntime(config={}, kv_store=FakeKV(), logger=None)
+        run(rt.on_loaded())
+        return rt
+
+    def test_bare_and_help_words_return_menu(self):
+        rt = self._runtime()
+        menu = run(rt.dispatch(CmdEvent("/xbnext")))
+        self.assertIn("🧩【XBNEXT · 指令菜单】", menu)
+        self.assertIn("━━━━━━━━━━━━━━━━━━━━", menu)
+        self.assertIn("• /xbnext status", menu)
+        self.assertIn("• /xbnext profile 清空", menu)
+        # 排版红线：无 markdown 星号、无空格列对齐
+        self.assertNotIn("**", menu)
+        self.assertNotRegex(menu, r"\S {3,}\S")
+        for word in ("/xbnext help", "/xbnext h", "/xbnext 菜单", "/xbnext ?"):
+            self.assertEqual(run(rt.dispatch(CmdEvent(word))), menu, word)
+
+    def test_status_words(self):
+        rt = self._runtime()
+        out = run(rt.dispatch(CmdEvent("/xbnext status")))
+        self.assertIn("XBNEXT v", out)
+        self.assertIn("KV：", out)
+        self.assertEqual(run(rt.dispatch(CmdEvent("/xbnext 状态"))), out)
+
+    def test_profile_round_trip_via_dispatch(self):
+        rt = self._runtime()
+        out = run(rt.dispatch(CmdEvent("/xbnext profile 称呼 小明")))
+        self.assertIn("已更新", out)
+        view = run(rt.dispatch(CmdEvent("/xbnext profile")))
+        self.assertIn("称呼：小明", view)
+
+    def test_unknown_sub_gets_tip_not_menu(self):
+        rt = self._runtime()
+        out = run(rt.dispatch(CmdEvent("/xbnext foo")))
+        self.assertIn("未知子指令", out)
+        self.assertIn("「foo」", out)
+        self.assertIn("/xbnext 可查看", out)
+        self.assertNotIn("🧩【", out, "未知提示不应整份甩菜单")
+
+
 class TestProfileStoreIndex(unittest.TestCase):
     """档案页签要能列出全部档案，而 AstrBot 的 KV 没有"按键遍历"能力。"""
 

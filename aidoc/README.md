@@ -287,6 +287,27 @@ astrbot_plugin_xbnext/
 > （私聊/未分群排最前、群号按数值升序），编辑器新增可改的"群号"输入
 > （改群号 = 挪群，payload 带 `prev_group`，服务端写新键后删旧键不留重复行）。
 > 单测 **351 → 379**。
+>
+> **真机第五轮反馈修复（P12，未打 tag）**：「/xbnext 还是很丑啊，你去看看
+> 别的插件怎么弄的」。查证本机参考插件后发现关键差异 —— **xbdoc 与 xbimg
+> 都是单指令** `@filter.command(...)` + handler 内自己分发并回**精美菜单**
+> （标题 + `━━` 分隔线 + 分节 + 圆点 + emoji），而 xbnext 用的是
+> `command_group`：裸 `/xbnext` 会被新版 core 抢答成「参数不足 + 指令树」
+> 技术树、旧版会把打错的子指令漏给 LLM 乱答 —— 根节点补的菜单在新版上
+> 根本轮不到执行，所以用户看着"还是丑"。改法照抄参考插件：
+> ① `main.py` 换成单指令 `@filter.command("xbnext")`（从 core 源码
+> `CommandFilter.filter` 核实：裸指令、带参、未知子指令全部命中 handler，
+> 且 handler 只收 `event` 时多余 token 不会抛参数错误）；② 新增
+> `runtime.dispatch(event)` 统一分发：help 词 → `commands.MENU` 菜单、
+> `status/状态` → 状态行、`profile` → `handle_command`、其余 → 「❓ 未知
+> 子指令」一句提示（xbdoc 文案同款，不再整份甩菜单也不再漏给 LLM）；
+> ③ 菜单 `commands.MENU` 按 xbdoc 分节 + xbimg 分隔线排版
+> （🧩 标题 / 📊 状态 / 👤 用户档案 / 💡 开关解耦提示）；
+> ④ 原 `command_group` 根节点、`ROOT_HELP_WORDS`、`xbnext_status` /
+> `xbnext_profile` 子命令 handler 全部删除（逻辑收敛到 `dispatch`）。
+> 文档同步：aidoc/01/02/03 的指令形态说明改为单指令 + dispatch。
+> 单测 **379 → 383**（dispatch 矩阵：裸/help/状态/档案往返/未知提示 +
+> 菜单排版红线，smoke 的 command_group 断言改为单指令断言）。
 
 ---
 
