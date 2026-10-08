@@ -24,7 +24,6 @@ import re
 from pathlib import Path
 
 PLUGIN_NAME = "astrbot_plugin_xbnext"
-DISPLAY_NAME = "XBNEXT"
 KV_PREFIX = "xbnext"
 
 _METADATA_PATH = Path(__file__).resolve().parent.parent / "metadata.yaml"
@@ -61,7 +60,6 @@ HOOK_PRIORITY = 1000
 
 __all__ = [
     "PLUGIN_NAME",
-    "DISPLAY_NAME",
     "KV_PREFIX",
     "HOOK_PRIORITY",
     "__version__",

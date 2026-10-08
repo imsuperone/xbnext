@@ -18,8 +18,6 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-TAG = "xbnext"
-
 # 控制字符（保留 \t \n \r）→ 空格
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # 零宽 / 方向控制字符，肉眼看不见但会干扰模型
@@ -164,7 +162,6 @@ def inject_text(req: Any, text: str, text_part_cls: Any = None) -> bool:
 
 
 __all__ = [
-    "TAG",
     "sanitize",
     "strip_xbnext",
     "clean_output",

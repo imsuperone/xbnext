@@ -22,12 +22,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from ...injector import sanitize
-
-#: 一个人 = ``(id, 昵称)``，两者都可能为空，至少要有一个
-Person = Tuple[Any, Any]
 
 #: 昵称 / ID 的截断长度
 MAX_NAME = 32
@@ -256,7 +253,6 @@ def build_hint(
 
 
 __all__ = [
-    "Person",
     "MAX_NAME",
     "TITLE",
     "TAIL",

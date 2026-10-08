@@ -181,8 +181,6 @@ A/B 都没有的 ID 由源 C 补缺（{ncfill} 个）。
 
 **查不到怎么办**：``face_name()`` 返回 ``None`` → 调用方渲染成
 ``[表情:ID233]``，**宁可泄露 ID 也不瞎猜语义**（绝不静默丢弃）。
-
-> ``QQ_FACE_ALIAS`` 是给"自然语言→ID"的反查用的额外补充，与主表同源裁剪而来。
 """
 
 from __future__ import annotations
@@ -219,33 +217,12 @@ QQ_FACE_CODEPOINT: Dict[int, str] = {
 
     out.write("""#: 两表冲突记录（已按源 A 定稿，列出以便回溯核对）\nCONFLICTS = %r\n\n\n""" % (conflicts,))
 
-    out.write('''#: 自然语言别名 → 表情 ID（反查用；与主表同源，未新增记忆内容）
-QQ_FACE_ALIAS: Dict[str, int] = {
-''')
-
-    alias_lines = []
-    seen = {}
-    for k, v in sorted(classic.items(), key=lambda kv: kv[0]):
-        if v in seen:
-            continue
-        seen[v] = k
-        alias_lines.append("    %s: %d," % (_py(v), k))
-    out.write("\n".join(alias_lines))
-    out.write("\n}\n\n\n")
-
     out.write('''def face_name(code: object) -> Optional[str]:
     """按 ID 查表情中文名；查不到返回 ``None``（由调用方兜底，不猜）。"""
     try:
         return QQ_FACE_ALL.get(int(code))
     except Exception:  # noqa: BLE001
         return None
-
-
-def face_id(name: object) -> Optional[int]:
-    """按中文名反查 ID；查不到返回 ``None``。"""
-    if not isinstance(name, str) or not name:
-        return None
-    return QQ_FACE_ALIAS.get(name.strip("[]").strip())
 
 
 def mface_name(key: object) -> Optional[str]:
@@ -265,10 +242,8 @@ __all__ = [
     "QQ_FACE_EXT",
     "QQ_FACE_CODEPOINT",
     "QQ_FACE_ALL",
-    "QQ_FACE_ALIAS",
     "CONFLICTS",
     "face_name",
-    "face_id",
     "mface_name",
 ]
 ''')
