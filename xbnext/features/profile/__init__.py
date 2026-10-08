@@ -155,8 +155,19 @@ class ProfileFeature(Feature):
 
     @staticmethod
     def _cleared(label: str) -> str:
-        """清空回执（``/xbnext profile 清空`` 与「字段留空删光」共用）。"""
-        return f"档案已清空（{label}）。其它范围的档案不受影响。"
+        """清空回执（``/xbnext profile 清空`` 与「字段留空删光」共用）。
+
+        公告风：点清**谁的档案**（你的个人档案）+ **哪一份**（适用范围）。
+        老文案「档案已清空（群 xxx）」分不清清的是群档案还是个人档案
+        （真机回归反馈）。
+        """
+        if label.startswith("群"):
+            scope = f"本{label}"  # "群 123456" → "本群 123456"
+            rest = "你在其它群及私聊的个人档案不受影响"
+        else:
+            scope = label  # "私聊"
+            rest = "你在各群的个人档案不受影响"
+        return f"已清空你的个人档案（适用范围：{scope}）。{rest}。"
 
     # -- WebUI 档案页签 -----------------------------------------------
     async def web_list(self) -> List[Dict[str, Any]]:

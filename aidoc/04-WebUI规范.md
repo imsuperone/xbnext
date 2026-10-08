@@ -184,6 +184,8 @@ register(f"{base}/setting",        setting,        ["POST"], "写入配置项")
 register(f"{base}/profiles",       profiles,       ["GET"],  "用户档案列表")
 register(f"{base}/profile_save",   profile_save,   ["POST"], "写入用户档案")
 register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案")
+register(f"{base}/inject_log",     inject_log_route, ["GET"], "提示词注入记录")
+register(f"{base}/groups",         groups_route,   ["GET"],  "所在群列表（token 白名单，P20）")
 ```
 
 - 路由前缀必须用 **metadata.yaml 里保留大小写的插件名**：Plugin Page Bridge 按
@@ -214,6 +216,10 @@ register(f"{base}/profile_delete", profile_delete, ["POST"], "删除用户档案
     编辑时改了范围再带 `prev_group`（旧群号），服务端写新键后删旧键
   - `POST profile_delete` → `{platform, group, uid}`（只删这个范围）
   - `GET inject_log` → `{items: [{ts, umo, actions, prompt, parts, images}]}`
+  - `GET groups` → `[{group_id, group_name, umo}]`（P20：token 白名单
+    输入框旁「选择群聊」按钮的数据源；只认 aiocqhttp 实例拉
+    `get_group_list`，`umo` 用该实例平台 id 拼、与核心
+    `unified_msg_origin` 一致；全实例失败 → `ok:false` 带原因）
     （P16 · 最近 10 轮提示词注入记录，`aidoc/01` R7；永远 `ok:true`，
     空记录回 `items: []`）
 

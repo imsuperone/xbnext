@@ -210,6 +210,13 @@ class TestSamePersonBranch(unittest.TestCase):
         self.assertNotIn(service.TAIL, out)
         self.assertIn(service.SELF_MARK, out)
 
+    def test_bot_quoted_tail_is_soft(self):
+        """第九轮弱化：不抬「被引用」的显眼度 + 明令别点破引用。"""
+        self.assertNotIn("注意：", service.TAIL_BOT_QUOTED)  # 不再用「注意」开头
+        self.assertIn("不要在回复里点出", service.TAIL_BOT_QUOTED)  # 明说别点破
+        self.assertIn("不是别人的发言", service.TAIL_BOT_QUOTED)  # 第八轮：区分自己/别人
+        self.assertIn("当前发言人这条新消息", service.TAIL_BOT_QUOTED)  # 重心仍在新消息
+
     def test_quoting_bot_is_own_reply(self):
         """引用 bot 自己的旧回复 → BOT 标注 + TAIL_BOT_QUOTED（真机第八轮）。"""
         out = service.build_hint(

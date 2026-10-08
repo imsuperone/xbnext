@@ -485,7 +485,9 @@ class TestHandleCommand(unittest.TestCase):
         conf = Config({})
         run(feat.handle_command(CmdEvent(), ["称呼", "小明"], conf))
         out = run(feat.handle_command(CmdEvent(), ["称呼:"], conf))
-        self.assertIn("档案已清空", out)
+        self.assertIn("已清空你的个人档案", out)  # 公告风：点明主体是个人档案
+        self.assertIn("适用范围：私聊", out)  # 点明清的是哪一份
+        self.assertIn("不受影响", out)
         view = run(feat.handle_command(CmdEvent(), [], conf))
         self.assertIn("还没有填写档案", view)
 

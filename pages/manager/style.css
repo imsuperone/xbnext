@@ -934,6 +934,33 @@ code {
 }
 .inj-toggle:hover { border-color: var(--m3-sys-color-outline); }
 
+/* ------------------------------------------------------------------
+ * Token 白名单 · 群列表选择器（R9 一键填充）
+ * ---------------------------------------------------------------- */
+#tkGroupsBtn { margin-top: 8px; }
+.tk-groups-box {
+  margin-top: 10px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--m3-sys-color-divider);
+  border-radius: var(--m3-radius-medium, 12px);
+  background: var(--m3-sys-color-surface-container);
+  padding: 10px;
+  font-size: 13px;
+}
+.tk-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tk-group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
 /* ==========================================================================
    Responsive
    ========================================================================== */

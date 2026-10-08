@@ -217,6 +217,8 @@
     profileDelete: function (payload) { return postJson("profile_delete", payload); },
     /** 最近 10 轮提示词注入记录：injectLog() -> {items:[{ts,umo,actions,prompt,parts,images}]} */
     injectLog: function () { return getJson("inject_log", null); },
+    /** aiocqhttp 所在群列表（token 白名单一键填充）：groups() -> [{group_id, group_name, umo}] */
+    groups: function () { return getJson("groups", null); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

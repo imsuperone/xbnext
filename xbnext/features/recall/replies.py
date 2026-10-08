@@ -28,6 +28,7 @@ __all__ = [
     "record",
     "take",
     "abandon",
+    "has",
     "clear",
 ]
 
@@ -122,6 +123,24 @@ def abandon(trigger_id: str) -> List[str]:
     if pending or not ids:
         _entries.pop(trigger_id, None)
     return ids if pending else []
+
+
+def has(trigger_id: str) -> bool:
+    """非破坏性探查：这条触发消息是否还有可删/在途的回复（不摘表）。
+
+    撤回确认用：没有已记回复、也没有发送在飞 ⇒ 问了也没东西可取消，
+    跳过多余的询问（真机回归「自问自答」）。
+    """
+    if not trigger_id:
+        return False
+    now = time.time()
+    item = _entries.get(trigger_id)
+    if item is None:
+        return False
+    if now - item["ts"] > TTL_SECONDS:
+        _entries.pop(trigger_id, None)
+        return False
+    return bool(item["sending"] or item["ids"] or item["pending"])
 
 
 def clear() -> None:

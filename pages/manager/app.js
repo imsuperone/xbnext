@@ -1000,6 +1000,86 @@
   }
 
   /* ========================================================================
+   * Token 白名单 · 一键获取群列表（R9：手打 UMO 太难，点选自动拼）
+   * ====================================================================== */
+  function tkParseUmos(text) {
+    return String(text || "").split(/[,，、;；\n]/).map(function (s) {
+      return s.trim();
+    }).filter(Boolean);
+  }
+
+  function tkLoadGroups() {
+    var btn = $("tkGroupsBtn");
+    var box = $("tkGroupsBox");
+    if (!box) return;
+    box.hidden = false;
+    box.textContent = "正在拉取群列表…";
+    if (btn) btn.disabled = true;
+    API.groups().then(function (rows) {
+      if (btn) btn.disabled = false;
+      tkRenderGroups(box, rows || []);
+    }, function (e) {
+      if (btn) btn.disabled = false;
+      box.textContent = "获取失败：" + (e && e.message ? e.message : e);
+    });
+  }
+
+  function tkRenderGroups(box, rows) {
+    box.textContent = "";
+    if (!rows.length) {
+      box.textContent = "没拉到群列表（机器人可能没连上 OneBot / 不在任何群）。";
+      return;
+    }
+    var inp = $("inp_token_usage_umos");
+    var have = tkParseUmos(inp ? inp.value : "");
+    var list = document.createElement("div");
+    list.className = "tk-groups-list";
+    rows.forEach(function (g) {
+      var umo = String(g.umo || "");
+      var label = document.createElement("label");
+      label.className = "tk-group-row";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.setAttribute("data-umo", umo);
+      if (umo && have.indexOf(umo) >= 0) cb.checked = true;
+      var span = document.createElement("span");
+      span.textContent = (g.group_name || "未命名群") + "（" + (g.group_id || "") + "）";
+      label.appendChild(cb);
+      label.appendChild(span);
+      list.appendChild(label);
+    });
+    box.appendChild(list);
+    var addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "m3-btn primary-btn";
+    addBtn.textContent = "追加选中到名单";
+    addBtn.addEventListener("click", tkAppendSelected);
+    box.appendChild(addBtn);
+  }
+
+  function tkAppendSelected() {
+    var inp = $("inp_token_usage_umos");
+    if (!inp) return;
+    var have = tkParseUmos(inp.value);
+    var added = 0;
+    Array.prototype.forEach.call(
+      document.querySelectorAll("#tkGroupsBox input[type=checkbox]:checked"),
+      function (cb) {
+        var umo = cb.getAttribute("data-umo");
+        if (umo && have.indexOf(umo) < 0) { have.push(umo); added += 1; }
+      }
+    );
+    if (!added) { toast("没有新增的会话（选中的都已在名单里）", "bad"); return; }
+    inp.value = have.join("\n");
+    inp.dispatchEvent(new Event("change")); // 触发 initControls 的自动保存
+    toast("已追加 " + added + " 个会话并保存", "ok");
+  }
+
+  function initTokenline() {
+    if ($("tkGroupsBtn")) $("tkGroupsBtn").addEventListener("click", tkLoadGroups);
+  }
+
+  /* ========================================================================
    * 启动
    * ====================================================================== */
   function boot() {
@@ -1008,6 +1088,7 @@
     initAccent();
     initProfile();
     initInjectLog();
+    initTokenline();
     watchSystemTheme();
 
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);

@@ -271,6 +271,8 @@
             <label class="form-label">显示的会话名单</label>
             <input type="text" class="m3-input" id="inp_token_usage_umos" data-key="token_usage_umos" placeholder="aiocqhttp:GroupMessage:123456" />
             <span class="field-hint">每项填一个会话 UMO（<code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔；留空 = 任何会话都不显示。</span>
+            <button type="button" class="m3-btn secondary-btn" id="tkGroupsBtn">一键获取群列表</button>
+            <div id="tkGroupsBox" class="tk-groups-box" hidden></div>
           </div>
         </div>
 

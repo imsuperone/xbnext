@@ -499,6 +499,23 @@ class TestRepliesRegistry(unittest.TestCase):
         replies.begin("")
         self.assertEqual(replies.take("x"), ([], False))
 
+    def test_has_peeks_without_consuming(self):
+        """非破坏性探查：撤回确认拿它判断「有没有可取消的东西」。"""
+        self.assertFalse(replies.has("h1"))  # 查无此条
+        self.assertFalse(replies.has(""))  # 空 id
+        replies.begin("h1")
+        self.assertTrue(replies.has("h1"))  # 发送在飞
+        replies.record("h1", ["111"])
+        self.assertTrue(replies.has("h1"))  # 已记回复
+        self.assertEqual(replies.take("h1"), (["111"], False))  # 不受影响
+        self.assertFalse(replies.has("h1"))  # 取走即空
+
+    def test_has_false_when_only_empty_entry(self):
+        """有条目但没 id、没在飞、没补删标记 ⇒ 没东西可删，不算可取消。"""
+        replies.begin("h2")
+        replies.record("h2", [])  # 发送完成但没拿到 id
+        self.assertFalse(replies.has("h2"))
+
     def test_clear_empties_table(self):
         replies.begin("t5")
         replies.clear()

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 
 from conftest import _ROOT  # noqa: F401  保证 sys.path 已就位
 
@@ -19,6 +20,7 @@ from xbnext import switches
 from xbnext.config import SCHEMA, Config
 from xbnext.web import (
     build_state,
+    handle_groups,
     handle_inject_log,
     handle_profiles,
     handle_setting,
@@ -330,6 +332,93 @@ class InjectLogEndpointTest(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertEqual(len(out["data"]["items"]), 1)
         self.assertEqual(out["data"]["items"][0]["prompt"], "p")
+
+
+class _FakeClient:
+    """CQHttp 替身：记录 call_action；fail 模拟没连上 OneBot。"""
+
+    def __init__(self, rows=None, fail=False):
+        self.rows = rows or []
+        self.fail = fail
+        self.actions = []
+
+    async def call_action(self, action, **kw):
+        self.actions.append(action)
+        if self.fail:
+            raise RuntimeError("ws 未连接")
+        return self.rows
+
+
+class _FakeInst:
+    """平台实例替身：meta() + get_client()。"""
+
+    def __init__(self, name="aiocqhttp", pid="aiocqhttp", client=None):
+        self._name = name
+        self._pid = pid
+        self._client = client
+
+    def meta(self):
+        return SimpleNamespace(name=self._name, id=self._pid)
+
+    def get_client(self):
+        return self._client
+
+
+class _FakeContext:
+    def __init__(self, insts):
+        self.platform_manager = SimpleNamespace(platform_insts=insts)
+
+
+class GroupsEndpointTest(unittest.TestCase):
+    """GET groups（R9）：只认 aiocqhttp，用**实例 id** 拼 UMO。"""
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_builds_umos_with_instance_id(self):
+        client = _FakeClient(
+            rows=[
+                {"group_id": 123, "group_name": "一群"},
+                {"group_id": 456, "group_name": "二群"},
+                {"group_id": ""},  # 缺群号 → 跳过
+                "not-a-dict",
+            ]
+        )
+        ctx = _FakeContext([_FakeInst(pid="myqq", client=client)])
+        out = self._run(handle_groups(ctx))
+        self.assertTrue(out["ok"])
+        rows = out["data"]
+        self.assertEqual(len(rows), 2)
+        # 实例 id 不是 aiocqhttp 时不能写死 —— UMO 必须跟实例 id 走
+        self.assertEqual(rows[0]["umo"], "myqq:GroupMessage:123")
+        self.assertEqual(rows[0]["group_name"], "一群")
+        self.assertEqual(rows[1]["umo"], "myqq:GroupMessage:456")
+        self.assertEqual(client.actions, ["get_group_list"])
+
+    def test_skips_non_aiocqhttp(self):
+        client = _FakeClient(rows=[{"group_id": 1}])
+        ctx = _FakeContext([_FakeInst(name="telegram", pid="tg", client=client)])
+        out = self._run(handle_groups(ctx))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["data"], [])
+        self.assertEqual(client.actions, [])  # 不是 OneBot，压根没去调
+
+    def test_error_when_all_clients_fail(self):
+        ctx = _FakeContext([_FakeInst(client=_FakeClient(fail=True))])
+        out = self._run(handle_groups(ctx))
+        self.assertFalse(out["ok"])
+        self.assertIn("获取群列表失败", out["error"])
+        self.assertIn("ws 未连接", out["error"])
+
+    def test_no_instances_returns_empty_ok(self):
+        out = self._run(handle_groups(_FakeContext([])))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["data"], [])
+
+    def test_missing_context_is_ok_empty(self):
+        out = self._run(handle_groups(SimpleNamespace()))
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["data"], [])
 
 
 if __name__ == "__main__":

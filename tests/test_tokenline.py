@@ -319,5 +319,69 @@ class TestRuntimeDispatch(unittest.TestCase):
             asyncio.run(rt.terminate())
 
 
+# ==================================================================
+# /xbnext token 一键开关（R9 真机反馈：手打 UMO 太难）
+# ==================================================================
+class _SavableConf(dict):
+    """可落盘的配置对象（dict + save_config），apply_conf 走得通。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.saved = 0
+
+    def save_config(self):
+        self.saved += 1
+        return True
+
+
+class TestTokenCommand(unittest.TestCase):
+    """``/xbnext token``：只动本会话一条；总开关关着只提醒、不写配置。"""
+
+    def _rt(self, raw):
+        from xbnext.runtime import XbnextRuntime
+
+        return XbnextRuntime(config=raw, kv_store=FakeKV(), logger=None)
+
+    def test_toggle_on_then_off_only_touches_current(self):
+        raw = _SavableConf(
+            enable_token_usage=True,
+            token_usage_umos="aiocqhttp:GroupMessage:777",
+        )
+        rt = self._rt(raw)
+        ev = _Ev(umo="aiocqhttp:GroupMessage:9")
+        try:
+            out1 = asyncio.run(rt.handle_command("token", ev, []))
+            self.assertIn("已开启", out1)
+            self.assertIn("aiocqhttp:GroupMessage:9", raw["token_usage_umos"])
+            self.assertIn("aiocqhttp:GroupMessage:777", raw["token_usage_umos"])  # 别人的不动
+
+            out2 = asyncio.run(rt.handle_command("token", ev, []))
+            self.assertIn("已关闭", out2)
+            self.assertNotIn("GroupMessage:9", raw["token_usage_umos"])
+            self.assertIn("GroupMessage:777", raw["token_usage_umos"])
+            self.assertGreaterEqual(raw.saved, 2)  # 真的落盘了
+        finally:
+            asyncio.run(rt.terminate())
+
+    def test_master_off_reminds_without_writing(self):
+        raw = _SavableConf(token_usage_umos="")
+        rt = self._rt(raw)
+        ev = _Ev()
+        try:
+            out = asyncio.run(rt.handle_command("token", ev, []))
+            self.assertIn("总开关", out)
+            self.assertEqual(raw["token_usage_umos"], "")  # 一个字节没动
+            self.assertEqual(raw.saved, 0)
+        finally:
+            asyncio.run(rt.terminate())
+
+    def test_command_registered_in_registry(self):
+        from xbnext import features
+
+        feat = features.get_feature_by_command("token")
+        self.assertIsNotNone(feat)
+        self.assertEqual(feat.key, "enable_token_usage")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

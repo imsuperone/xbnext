@@ -12,6 +12,7 @@ name 规范成小写，两者不一致时 bridge 会打偏）::
     POST /astrbot_plugin_xbnext/profile_save   —— 写一份档案（全空即删除）
     POST /astrbot_plugin_xbnext/profile_delete —— 删一份档案
     GET  /astrbot_plugin_xbnext/inject_log     —— 最近 10 轮提示词注入记录（P16）
+    GET  /astrbot_plugin_xbnext/groups         —— aiocqhttp 所在群列表（R9 一键填白名单）
 
 注册方式对齐 AstrNa 与本机三个参考插件：``context.register_web_api``；
 旧版 AstrBot 没有该方法时**静默跳过**，不影响插件主体功能。
@@ -22,7 +23,7 @@ name 规范成小写，两者不一致时 bridge 会打偏）::
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 # 注意：本模块自身就是 ``xbnext.web`` 包，``from . import`` 只能取到
 # ``xbnext.web`` 自己，跨层取常量必须写两个点 ``from .. import``。
@@ -163,6 +164,59 @@ async def handle_inject_log(runtime: Any) -> Dict[str, Any]:
     return {"ok": True, "data": {"items": items}}
 
 
+async def handle_groups(context: Any) -> Dict[str, Any]:
+    """``GET groups``：机器人所在群列表（R9 · token 白名单一键填充）。
+
+    只认 **aiocqhttp（OneBot）** 平台实例：``get_client().call_action(
+    "get_group_list")`` 拉群列表，每项返回 ``{group_id, group_name, umo}``。
+
+    ``umo`` 用**该实例的平台 id** 拼（``{platform_id}:GroupMessage:{群号}``）
+    —— 与核心 ``unified_msg_origin`` 的拼法一致；平台 id 不一定是
+    ``aiocqhttp``（用户可在配置里改），写死会拼出永远匹配不上的 UMO。
+    """
+    try:
+        pm = getattr(context, "platform_manager", None)
+        insts: List[Any] = list(getattr(pm, "platform_insts", None) or [])
+    except Exception:  # noqa: BLE001
+        insts = []
+    groups: List[Dict[str, str]] = []
+    errors: List[str] = []
+    for inst in insts:
+        try:
+            meta = inst.meta()
+            if str(getattr(meta, "name", "") or "") != "aiocqhttp":
+                continue  # 群列表只有 OneBot 有，别碰其它平台
+            pid = str(getattr(meta, "id", "") or "aiocqhttp")
+        except Exception:  # noqa: BLE001
+            continue
+        getter = getattr(inst, "get_client", None)
+        client = getter() if callable(getter) else getattr(inst, "bot", None)
+        call = getattr(client, "call_action", None)
+        if not callable(call):
+            continue
+        try:
+            rows = await call("get_group_list")
+        except Exception as exc:  # noqa: BLE001  未连上 / 超时
+            errors.append(str(exc))
+            continue
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            gid = str(row.get("group_id") or "").strip()
+            if not gid:
+                continue
+            groups.append(
+                {
+                    "group_id": gid,
+                    "group_name": str(row.get("group_name") or ""),
+                    "umo": f"{pid}:GroupMessage:{gid}",
+                }
+            )
+    if not groups and errors:
+        return {"ok": False, "error": f"获取群列表失败：{errors[0]}"}
+    return {"ok": True, "data": groups}
+
+
 def register_web_api(context: Any, runtime: Any) -> bool:
     """注册 XBNEXT 的 Web API；不可用时返回 ``False``。"""
     register = getattr(context, "register_web_api", None)
@@ -246,6 +300,15 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
+    async def groups_route() -> Any:
+        try:
+            result = await handle_groups(context)
+            if not result.get("ok"):
+                return _err(result.get("error") or "请求失败", astrbot_web, result.get("data"))
+            return _ok(result.get("data"), astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
@@ -254,6 +317,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/profile_save", profile_save, ["POST"], "XBNEXT 写入用户档案")
         register(f"{base}/profile_delete", profile_delete, ["POST"], "XBNEXT 删除用户档案")
         register(f"{base}/inject_log", inject_log_route, ["GET"], "XBNEXT 提示词注入记录")
+        register(f"{base}/groups", groups_route, ["GET"], "XBNEXT 所在群列表（token 白名单）")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True
@@ -267,5 +331,6 @@ __all__ = [
     "handle_profile_save",
     "handle_profile_delete",
     "handle_inject_log",
+    "handle_groups",
     "PROFILE_KEY",
 ]
