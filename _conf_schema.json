@@ -115,7 +115,7 @@
   "token_usage_umos": {
     "type": "string",
     "description": "显示 token 用量的会话名单",
-    "hint": "每项填一个会话 UMO（格式如 aiocqhttp:GroupMessage:群号），多个用逗号、顿号或换行分隔；只有名单内的会话会在回复末尾显示用量。留空 = 任何会话都不显示。仅在「Token 用量展示」开启时生效。",
+    "hint": "每项填一个会话 UMO（格式如 aiocqhttp:GroupMessage:群号），多个用逗号、顿号或换行分隔；也可在会话里发 /xbnext token 一键把当前会话加进/移出名单。只有名单内的会话会在回复末尾显示用量。留空 = 任何会话都不显示。仅在「Token 用量展示」开启时生效。",
     "default": "",
     "collapsed": true,
     "condition": { "enable_token_usage": true }

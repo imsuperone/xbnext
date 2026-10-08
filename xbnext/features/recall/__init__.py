@@ -72,7 +72,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ... import log
-from ...eventids import gid_of, uid_of
+from ...eventids import gid_of, umo_of, uid_of
 from . import replies, service
 from ..base import Feature
 
@@ -168,7 +168,7 @@ class RecallFeature(Feature):
         event = ctx.event
 
         # ⓪ 看门狗：顺手疏通本会话被死票堵死的排队（#6 旧伤，见 docstring）
-        self._sweep_stuck(self._umo(event))
+        self._sweep_stuck(umo_of(event))
 
         # ① 撤回 notice？确认开关开着 ⇒ 先问不急着动；否则照老规矩立刻取消
         for raw in service.raw_sources(event):
@@ -194,21 +194,13 @@ class RecallFeature(Feature):
         mid = service.trigger_id(event)
         task = asyncio.current_task()
         if mid and task is not None:
-            self._track(mid, task, self._umo(event))
+            self._track(mid, task, umo_of(event))
         if mid:
             self._install_capture(event, mid)
 
     # ------------------------------------------------------------------
     # 内部
     # ------------------------------------------------------------------
-    @staticmethod
-    def _umo(event: Any) -> str:
-        """会话标识（``unified_msg_origin``）；取不到返回空串不冒泡。"""
-        try:
-            return str(getattr(event, "unified_msg_origin", "") or "")
-        except Exception:  # noqa: BLE001
-            return ""
-
     def _confirm_on(self, ctx: Any) -> bool:
         """确认询问开关（``ctx.conf`` 缺失 / 读失败一律当关，绝不冒泡）。"""
         conf = getattr(ctx, "conf", None)
@@ -316,7 +308,7 @@ class RecallFeature(Feature):
         这三条，票会永远悬着、整个会话的排队堵死。只在「被撤的正是这次
         run 的触发消息」时动手：撤排队中的消息不该动主 run 的票。
         """
-        umo = self._umo(event)
+        umo = umo_of(event)
         if not umo:
             return
         runner = self._active_runner(umo)
