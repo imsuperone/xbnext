@@ -32,43 +32,18 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from ... import log
+from ...seg import first as _first, seg_data as _seg_data, seg_type as _seg_type
 from ..base import Feature
 from . import service, updater
 
-#: 非消息段对象（例如 dict 的类名）走 dict 分支
-_DICT_TYPES = ("dict", "dictproxy", "MappingProxyType", "mappingproxy")
+#: 商城表情段的类型名变体
 _MFACE_TYPES = ("mface", "market_face", "marketface")
-
-
-def _seg_type_name(seg: Any) -> str:
-    """取段的类型名（小写；对象用类名，dict 用 ``type`` 字段）。"""
-    if isinstance(seg, dict) or type(seg).__name__ in _DICT_TYPES:
-        return str(seg.get("type") or "").lower()
-    return type(seg).__name__.lower()
-
-
-def _seg_data(seg: Any) -> Any:
-    """取段的 ``data`` 字典；对象没有 ``data`` 时返回 ``{}``。"""
-    if isinstance(seg, dict):
-        return seg.get("data") or {}
-    data = getattr(seg, "data", None)
-    return data if isinstance(data, dict) else {}
-
-
-def _first(mapping: Any, *keys: str) -> Any:
-    """按顺序取第一个非空字段。"""
-    if not isinstance(mapping, dict):
-        return None
-    for k in keys:
-        v = mapping.get(k)
-        if v not in (None, ""):
-            return v
-    return None
 
 
 def _token_from_obj(seg: Any) -> Optional[Tuple[str, Any]]:
     """把一个消息段对象压成 ``(kind, code)``；不相关就返回 ``None``。"""
-    t = _seg_type_name(seg)
+    t = _seg_type(seg)
     if t == "face":
         code = _first(_seg_data(seg), "id", "face_id", "faceId")
         if code is None:
@@ -235,13 +210,8 @@ class FaceFeature(Feature):
             return False
 
     def _emit(self, level: str, message: str) -> None:
-        """带 ``[XBNEXT] `` 前缀写日志；``_log`` 缺失 / 方法缺失 / 写失败都安全跳过。"""
-        method = getattr(self._log, level, None) if self._log is not None else None
-        if callable(method):
-            try:
-                method(f"[XBNEXT] {message}")
-            except Exception:  # noqa: BLE001
-                pass
+        """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""
+        log.emit(self._log, level, message)
 
     # -- 早期钩子：纯表情消息的救生索 ------------------------------------
     def on_adapter_message(self, ctx) -> None:

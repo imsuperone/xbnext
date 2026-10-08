@@ -29,6 +29,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from ... import log
 from ...injector import sanitize, strip_xbnext
 
 #: 允许的档案字段（多余字段一律丢弃，避免用户塞结构化指令进去）
@@ -224,12 +225,8 @@ class ProfileStore:
         await self._kv.set(INDEX_KEY, [t for t in tokens if isinstance(t, str)])
 
     def _warn(self, message: str) -> None:
-        method = getattr(self._log, "warning", None)
-        if callable(method):
-            try:
-                method(message)
-            except Exception:  # noqa: BLE001
-                pass
+        """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""
+        log.emit(self._log, "warning", message)
 
 
 __all__ = [

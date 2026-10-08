@@ -36,10 +36,6 @@ class TestFindPlaceholders(unittest.TestCase):
         self.assertEqual(len(stats["noise"]), 1)
         self.assertEqual(len(stats["degraded"]), 1)
 
-    def test_has_placeholders(self):
-        self.assertTrue(service.has_placeholders("x [Empty Text] y"))
-        self.assertFalse(service.has_placeholders("正常的一句话"))
-
 
 class TestCleanPrompt(unittest.TestCase):
     def test_label_policy(self):

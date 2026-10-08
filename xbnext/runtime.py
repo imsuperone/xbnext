@@ -35,7 +35,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Dict, List
 
-from . import commands, features, inject_log, injector
+from . import commands, features, inject_log, injector, log
 from .config import Config
 from .context import RequestContext
 from .storage import KV
@@ -89,11 +89,11 @@ class XbnextRuntime:
             await self.on_loaded()
 
     def get_feature(self, key: str) -> Any:
-        """按配置键取功能实例（WebUI 端点用）；找不到返回 ``None``。"""
-        for feat in self.features:
-            if feat.key == key:
-                return feat
-        return None
+        """按配置键取功能实例（WebUI 端点用）；找不到返回 ``None``。
+
+        实现委托给 :func:`xbnext.features.get_feature`（全仓唯一实现）。
+        """
+        return features.get_feature(key)
 
     async def terminate(self) -> None:
         """插件卸载：逆序释放各功能。"""
@@ -186,9 +186,7 @@ class XbnextRuntime:
                     continue
                 if not ctx.enabled(feat.key):
                     continue
-                result = feat.on_llm_response(ctx, resp)
-                if inspect.isawaitable(result):
-                    await result
+                await self._invoke(feat.on_llm_response, ctx, resp)
             except Exception as exc:  # noqa: BLE001
                 self._warn(f"{feat.key} 记录用量失败：{exc!r}")
 
@@ -303,22 +301,11 @@ class XbnextRuntime:
     # ==================================================================
     # 外挂点
     # ==================================================================
-    def register_commands(self, star: Any) -> None:
-        """装配期把 ``Star`` 实例交给需要它（读写 KV、发消息）的功能。
+    async def handle_command(self, name: str, event: Any, args: List[str]) -> str:
+        """把**已拆好**的子指令参数交给对应功能处理（按功能注册表路由）。
 
-        指令本身仍然静态写在 ``main.py`` —— AstrBot 的钩子扫描发生在类
-        加载阶段，动态挂载子命令不可靠。
-        """
-        for feat in self.features:
-            hook = getattr(feat, "bind", None)
-            if callable(hook):
-                try:
-                    hook(self, star)
-                except Exception as exc:  # noqa: BLE001
-                    self._warn(f"{feat.key} 绑定失败：{exc!r}")
-
-    async def handle_command(self, name: str, event: Any) -> str:
-        """把 ``/xbnext <name> ...`` 的剩余参数交给对应功能处理。
+        文本只在 :meth:`dispatch` 拆一遍，本方法不再回读 ``message_str``
+        重拆（aidoc/02 §10.2-4）。
 
         **不经过 ``ctx.enabled``** —— 子指令是维护入口，不能因为功能开关
         关着就用不了（见 ``_conf_schema.json`` 里 ``enable_user_profile`` 的 hint）。
@@ -326,19 +313,9 @@ class XbnextRuntime:
         返回要发给用户的文本；异常返回带原因的兜底文案，**不裸抛**。
         """
         await self.ensure_loaded()
-        try:
-            sub, args = commands.split(str(getattr(event, "message_str", "") or ""))
-        except Exception as exc:  # noqa: BLE001
-            # 兜底文案给人看，repr 只进日志（真机反馈：回复里出现 Python repr 很乱）
-            self._warn(f"指令解析失败：{exc!r}")
-            return "指令没看懂，请换种写法：/xbnext status 或 /xbnext profile"
-        # AstrBot 可能已把 "xbnext profile" 一并剥掉 → 把 sub 当第一个参数回填
-        if sub != name:
-            args = ([sub] if sub else []) + args
-
         feat = features.get_feature_by_command(name)
         if feat is None:
-            return f"没有 /xbnext {name} 这个子指令。可用子指令：status、profile。"
+            return f"❓ 未知子指令「{name}」，发送 /xbnext 可查看可用指令菜单。"
         handler = getattr(feat, "handle_command", None)
         if not callable(handler):
             return f"/xbnext {name} 没有实现处理逻辑。"
@@ -357,8 +334,11 @@ class XbnextRuntime:
             /xbnext           → 指令菜单（commands.MENU）
             /xbnext help|菜单 → 同上
             /xbnext status    → 状态行（别名：状态）
-            /xbnext profile…  → handle_command（档案子逻辑）
-            /xbnext <其它>    → 一句「未知子指令」提示
+            /xbnext <子指令>… → handle_command（按功能注册表路由）
+            /xbnext <其它>    → 一句「未知子指令」提示（handle_command 给）
+
+        **文本只拆一遍**：``split`` 出的 ``(sub, args)`` 直接传给
+        :meth:`handle_command`，不再二次解析。
 
         **全部由插件自己答**：不依赖 AstrBot 指令组的「参数不足」树
         （旧版 core 上裸指令会漏给 LLM 乱答，新版会甩一脸技术树，
@@ -368,7 +348,7 @@ class XbnextRuntime:
         await self.ensure_loaded()
         text = str(getattr(event, "message_str", "") or "")
         try:
-            sub, _ = commands.split(text)
+            sub, args = commands.split(text)
         except Exception as exc:  # noqa: BLE001
             self._warn(f"指令解析失败：{exc!r}")
             return "指令没看懂，请换种写法：/xbnext status 或 /xbnext profile"
@@ -376,9 +356,7 @@ class XbnextRuntime:
             return commands.MENU
         if sub in commands.STATUS_WORDS:
             return "\n".join(self.status_lines())
-        if sub == "profile":
-            return await self.handle_command("profile", event)
-        return f"❓ 未知子指令「{sub}」，发送 /xbnext 可查看可用指令菜单。"
+        return await self.handle_command(sub, event, args)
 
     # ==================================================================
     # 状态（/xbnext status 与 WebUI 共用）
@@ -412,9 +390,9 @@ class XbnextRuntime:
     # ==================================================================
     # 内部
     # ==================================================================
-    async def _invoke(self, fn: Any, ctx: RequestContext) -> None:
-        """调用功能钩子，自动 await 协程版。"""
-        result = fn(ctx)
+    async def _invoke(self, fn: Any, *args: Any) -> None:
+        """调用功能钩子（一个或多个实参），自动 await 协程版。"""
+        result = fn(*args)
         if inspect.isawaitable(result):
             await result
 
@@ -444,22 +422,14 @@ class XbnextRuntime:
             return 0
 
     # -- 日志 ---------------------------------------------------------
-    def _emit(self, level: str, message: str) -> None:
-        method = getattr(self.log, level, None)
-        if callable(method):
-            try:
-                method(message)
-            except Exception:  # noqa: BLE001
-                pass
-
     def _info(self, message: str) -> None:
-        self._emit("info", f"[XBNEXT] {message}")
+        log.emit(self.log, "info", message)
 
     def _debug(self, message: str) -> None:
-        self._emit("debug", f"[XBNEXT] {message}")
+        log.emit(self.log, "debug", message)
 
     def _warn(self, message: str) -> None:
-        self._emit("warning", f"[XBNEXT] {message}")
+        log.emit(self.log, "warning", message)
 
 
 __all__ = ["XbnextRuntime"]

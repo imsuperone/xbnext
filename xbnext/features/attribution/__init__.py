@@ -23,39 +23,14 @@ import hashlib
 import time
 from typing import Any, List, Optional, Tuple
 
+from ...eventids import umo_of
+from ...seg import field as _field, seg_data as _seg_data, seg_type as _seg_type
 from ..base import Feature
 from . import service
 from .store import DEFAULT_LIMIT, ReplyTargetStore
 
 #: 回溯轮数上限（配置越界时收敛到这里）
 MAX_DEPTH = 10
-
-
-def _seg_type(seg: Any) -> str:
-    """段类型名（小写）；dict 用 ``type`` 字段，对象用类名。"""
-    if isinstance(seg, dict):
-        return str(seg.get("type") or "").lower()
-    return type(seg).__name__.lower()
-
-
-def _seg_data(seg: Any) -> Any:
-    if isinstance(seg, dict):
-        return seg.get("data") or {}
-    data = getattr(seg, "data", None)
-    return data if isinstance(data, dict) else {}
-
-
-def _field(seg: Any, *names: str) -> Any:
-    """从段里按顺序取第一个非空字段（先看 ``data``，再看对象属性）。"""
-    data = _seg_data(seg)
-    for n in names:
-        if isinstance(data, dict) and data.get(n) not in (None, ""):
-            return data.get(n)
-    for n in names:
-        v = getattr(seg, n, None)
-        if v not in (None, ""):
-            return v
-    return None
 
 
 def chain_of(event: Any) -> List[Any]:
@@ -158,8 +133,7 @@ def message_text(event: Any) -> str:
 
 def session_scope(event: Any) -> str:
     """会话类型：``group`` / ``channel`` / ``private`` / ``""``。"""
-    umo = str(getattr(event, "unified_msg_origin", "") or "")
-    parts = [p for p in umo.split("/") if p]
+    parts = [p for p in umo_of(event).split("/") if p]
     if len(parts) >= 2:
         kind = parts[1].lower()
         if "group" in kind:

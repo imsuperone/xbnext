@@ -256,8 +256,8 @@ class TestMainSmoke(unittest.TestCase):
     def test_command_entry_also_initialises(self):
         plugin = self.main.XbnextPlugin(context=None, config={})
         self.assertFalse(plugin.runtime._loaded)
-        # FakeEvent 的 message_str 是空串 → 指令解析为空，但初始化必须先跑
-        asyncio.run(plugin.runtime.handle_command("profile", FakeEvent()))
+        # FakeEvent 的 message_str 是空串 → 指令参数为空，但初始化必须先跑
+        asyncio.run(plugin.runtime.handle_command("profile", FakeEvent(), []))
         self.assertTrue(plugin.runtime._loaded)
         asyncio.run(plugin.terminate())
 

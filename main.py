@@ -30,7 +30,6 @@ class XbnextPlugin(Star):
         super().__init__(context)
         # Star 自身就是插件维度 KV 代理（put_kv_data / get_kv_data）
         self.runtime = XbnextRuntime(config=config, kv_store=self, logger=logger)
-        self.runtime.register_commands(self)
         register_web_api(context, self.runtime)
 
     # ------------------------------------------------------------------

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...eventids import gid_of, platform_of, uid_of
 from ..base import Feature
 from . import service
 from . import store as store_mod
@@ -274,72 +275,11 @@ class ProfileFeature(Feature):
     def _speaker(event: Any) -> Tuple[str, str, str]:
         """返回 ``(platform, gid, uid)``；取不到的位置留空串（不猜）。
 
-        ``gid`` = 所在群号（**分群维度**），私聊取不到时为 ``""``。
-        取群号按真机跑过的 xbimg 同款多重兼容顺序：
-        ``event.get_group_id()`` → ``message_obj.group_id`` →
-        ``unified_msg_origin`` 的群段；``"None"`` / ``"0"`` 视为没有。
+        ``gid`` = 所在群号（**分群维度**），私聊取不到时为 ``""``；
+        取值顺序（群号三级兼容、发言人三级兼容）统一在
+        :mod:`xbnext.eventids`，全插件共用这一份实现。
         """
-        try:
-            if event is None:
-                return "", "", ""
-            uid = ""
-            try:
-                sender = getattr(getattr(event, "message_obj", None), "sender", None)
-                uid = str(getattr(sender, "user_id", "") or "")
-            except Exception:  # noqa: BLE001
-                uid = ""
-            if not uid:
-                for attr in ("get_sender_id", "get_user_id"):
-                    fn = getattr(event, attr, None)
-                    if callable(fn):
-                        try:
-                            uid = str(fn() or "")
-                        except Exception:  # noqa: BLE001
-                            uid = ""
-                        if uid:
-                            break
-
-            def _clean(value: Any) -> str:
-                text = str(value or "").strip()
-                return "" if text in ("None", "none", "0") else text
-
-            gid = ""
-            fn = getattr(event, "get_group_id", None)
-            if callable(fn):
-                try:
-                    gid = _clean(fn())
-                except Exception:  # noqa: BLE001
-                    gid = ""
-            if not gid:
-                try:
-                    mo = getattr(event, "message_obj", None)
-                    gid = _clean(getattr(mo, "group_id", "") if mo else "")
-                except Exception:  # noqa: BLE001
-                    gid = ""
-            if not gid:
-                # umo 形如 ``aiocqhttp/GroupMessage/123456``：群段兜底
-                parts = [
-                    p
-                    for p in str(getattr(event, "unified_msg_origin", "") or "").split("/")
-                    if p
-                ]
-                if len(parts) >= 3 and "group" in parts[1].lower():
-                    gid = _clean(parts[2])
-
-            platform = ""
-            fn = getattr(event, "get_platform_name", None)
-            if callable(fn):
-                try:
-                    platform = str(fn() or "")
-                except Exception:  # noqa: BLE001
-                    platform = ""
-            if not platform:
-                # 平台名取不到就从会话来源推，避免所有平台共用一份档案
-                umo = str(getattr(event, "unified_msg_origin", "") or "")
-                platform = umo.split("/")[0].strip()
-            return platform, gid, uid
-        except Exception:  # noqa: BLE001
-            return "", "", ""
+        return platform_of(event), gid_of(event), uid_of(event)
 
 
 __all__ = ["ProfileFeature", "TITLE", "TIPS"]

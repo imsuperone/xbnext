@@ -15,9 +15,10 @@
 
 - 功能里填 ``command = "mything"`` 并实现
   ``async def handle_command(self, event, args, conf) -> str``；
-- 在 ``main.py`` 加一个 ``@xbnext.command("mything")`` 转发到
-  ``runtime.handle_command(...)`` —— AstrBot 的指令扫描发生在类加载期，
-  子命令必须静态写在那里。
+- **不用碰 ``main.py``** —— ``runtime.dispatch`` 按功能注册表
+  （``get_feature_by_command``）统一路由；指令入口全仓只有单指令
+  ``/xbnext`` 一个，子指令一律走注册表，不静态挂多指令；
+- 顺手在 ``commands.MENU`` 里加一行菜单文案。
 
 约定：
 
@@ -65,13 +66,6 @@ class Feature:
 
     def on_unload(self) -> None:
         """插件卸载时调用；用来落盘、释放资源。"""
-
-    def bind(self, runtime: Any, star: Any = None) -> None:
-        """装配期调用；需要持有 runtime / star 引用时覆写。
-
-        :param runtime: :class:`~xbnext.runtime.XbnextRuntime`
-        :param star: 插件入口 Star 实例（可读写 KV、发消息）
-        """
 
     # ------------------------------------------------------------------
     # 钩子

@@ -95,12 +95,6 @@ class TestFaceData(unittest.TestCase):
         self.assertIsNone(data.mface_name(""))
         self.assertIsNone(data.mface_name(None))
 
-    def test_reverse_lookup(self):
-        self.assertEqual(data.face_id("微笑"), 14)
-        self.assertEqual(data.face_id("[得意]"), 4)
-        self.assertIsNone(data.face_id(None))
-        self.assertIsNone(data.face_id("不是表情"))
-
 
 class TestCleanSummary(unittest.TestCase):
     def test_strips_decoration(self):
@@ -183,7 +177,9 @@ class TestTranslateAll(unittest.TestCase):
 
 class TestNote(unittest.TestCase):
     def test_wrapped_for_injection(self):
-        note = service.build_note([("face", 4), ("face", 5)])
+        note = service.note_from_parts(
+            service.translate_all([("face", 4), ("face", 5)])
+        )
         self.assertTrue(note.startswith(service.NOTE_PREFIX))
         self.assertIn("[表情:得意]", note)
         self.assertIn("[表情:流泪]", note)
@@ -191,14 +187,14 @@ class TestNote(unittest.TestCase):
         self.assertIn(service.NOTE_MID, note)
 
     def test_empty_tokens(self):
-        self.assertEqual(service.build_note([]), "")
-        self.assertEqual(service.build_note(None), "")
         self.assertEqual(service.note_from_parts([]), "")
         self.assertEqual(service.note_from_parts(None), "")
 
     def test_every_name_placeholder_replaced(self):
         """格式串里出现几次 {name} 就替换几次（配置由管理员控制）。"""
-        note = service.build_note([("face", 4)], fmt="<{name}|{name}>")
+        note = service.note_from_parts(
+            service.translate_all([("face", 4)], fmt="<{name}|{name}>")
+        )
         self.assertNotIn("{name}", note)
         self.assertIn("<得意|得意>", note)
 

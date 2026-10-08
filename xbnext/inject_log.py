@@ -22,6 +22,8 @@ import asyncio
 import time
 from typing import Any, Dict, List
 
+from .eventids import umo_of
+
 #: 并发写锁：``record`` 的「读-改-写」串行化 —— 真实 KV 是文件写、有让出
 #: 窗口，两轮请求同时收尾时裸读改写会互相覆盖（丢一条记录）
 _LOCK = asyncio.Lock()
@@ -36,7 +38,6 @@ __all__ = [
     "load",
     "part_text",
     "record",
-    "umo_of",
 ]
 
 #: KV 键（KV 视图会自动带 ``xbnext:`` 前缀）
@@ -56,20 +57,6 @@ def _clip(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "…（已截断）"
-
-
-def umo_of(event: Any) -> str:
-    """会话标识：优先 ``unified_msg_origin``，兜底 ``get_session_id()``。"""
-    umo = getattr(event, "unified_msg_origin", None)
-    if isinstance(umo, str) and umo:
-        return umo
-    getter = getattr(event, "get_session_id", None)
-    if callable(getter):
-        try:
-            return str(getter() or "")
-        except Exception:  # noqa: BLE001
-            return ""
-    return ""
 
 
 def part_text(part: Any) -> str:

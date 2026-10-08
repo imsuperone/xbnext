@@ -52,6 +52,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
+from ... import log
+from ...eventids import gid_of, uid_of
 from . import replies, service
 from ..base import Feature
 
@@ -186,14 +188,8 @@ class RecallFeature(Feature):
             pass
 
     def _info(self, message: str) -> None:
-        """带 ``[XBNEXT] `` 前缀写日志（照抄 face 的安全写法）。"""
-        method = getattr(self._log, "info", None) if self._log is not None else None
-        if not callable(method):
-            return
-        try:
-            method(f"[XBNEXT] {message}")
-        except Exception:  # noqa: BLE001
-            pass
+        """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""
+        log.emit(self._log, "info", message)
 
     # ------------------------------------------------------------------
     # 三期 · 确认询问（P19）
@@ -293,11 +289,8 @@ class RecallFeature(Feature):
         verdict = service.match_answer(getattr(event, "message_str", ""))
         if verdict is None:
             return False
-        try:
-            group = str(event.get_group_id() or "")
-            sender = str(event.get_sender_id() or "")
-        except Exception:  # noqa: BLE001
-            return False
+        group = gid_of(event)
+        sender = uid_of(event)
         hits = [
             mid
             for mid, item in self._awaiting.items()
@@ -455,9 +448,9 @@ class RecallFeature(Feature):
         raw = getattr(getattr(event, "message_obj", None), "raw_message", None)
         routing = self._routing(raw)
 
-        is_group = bool(event.get_group_id())
-        session_id = event.get_group_id() if is_group else event.get_sender_id()
-        sid = str(session_id or "")
+        gid = gid_of(event)
+        is_group = bool(gid)
+        sid = gid if is_group else uid_of(event)
         sid_int = int(sid) if sid.isdigit() else None
 
         ret: Any = None
@@ -468,7 +461,7 @@ class RecallFeature(Feature):
         elif raw is not None and hasattr(raw, "get"):
             ret = await bot.send(event=raw, message=segs)
         else:
-            raise ValueError(f"无法发送：session 非数字 {session_id!r} 且无 raw event")
+            raise ValueError(f"无法发送：session 非数字 {sid!r} 且无 raw event")
 
         if isinstance(ret, dict):
             rid = ret.get("message_id")

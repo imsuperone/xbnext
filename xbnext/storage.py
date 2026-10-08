@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Set
 
-from . import KV_PREFIX
+from . import KV_PREFIX, log
 
 _MISSING = object()
 
@@ -140,12 +140,8 @@ class KV:
         return self._owner is not None and not self._broken
 
     def _log(self, level: str, message: str) -> None:
-        method = getattr(self._logger, level, None)
-        if callable(method):
-            try:
-                method(message)
-            except Exception:  # noqa: BLE001
-                pass
+        """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""
+        log.emit(self._logger, level, message)
 
 
 __all__ = ["KV"]

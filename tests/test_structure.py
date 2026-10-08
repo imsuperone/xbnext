@@ -16,7 +16,6 @@ from conftest import _ROOT  # noqa: F401  触发 sys.path 注入
 import xbnext
 from xbnext import config as xbconfig
 from xbnext import features as xbfeatures
-from xbnext import switches
 
 
 def _read(path: Path) -> str:
@@ -149,11 +148,6 @@ class TestFeatureRegistry(unittest.TestCase):
             xbfeatures.get_feature("enable_quote_clean").order,
             xbfeatures.get_feature("enable_user_profile").order,
             "档案注入必须排在清洗之后",
-        )
-
-    def test_switches_covers_features(self):
-        self.assertEqual(
-            set(switches.FEATURE_KEYS), {f.key for f in xbfeatures.FEATURES}
         )
 
     def test_describe(self):

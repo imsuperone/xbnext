@@ -174,11 +174,6 @@ def note_from_parts(parts: Optional[Iterable[str]]) -> str:
     return f"{NOTE_PREFIX}{' '.join(items)}{NOTE_MID}{NOTE_SUFFIX}"
 
 
-def build_note(tokens: Iterable[Sequence], fmt: str = DEFAULT_FORMAT) -> str:
-    """把表情片段合成一段可注入的说明文本；没有片段时返回 ``""``。"""
-    return note_from_parts(translate_all(tokens, fmt=fmt))
-
-
 # ---------------------------------------------------------------------------
 # OneBot 原始载荷解析（mface 不进消息链，只能从这里捞）
 # ---------------------------------------------------------------------------
@@ -293,6 +288,5 @@ __all__ = [
     "translate_token",
     "translate_all",
     "note_from_parts",
-    "build_note",
     "tokens_from_raw",
 ]

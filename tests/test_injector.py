@@ -66,17 +66,6 @@ class TestStripXbnext(unittest.TestCase):
         self.assertEqual(injector.strip_xbnext(12), "")
 
 
-class TestWrap(unittest.TestCase):
-    def test_with_title(self):
-        out = injector.wrap("body", "标题")
-        self.assertIn("<xbnext>", out)
-        self.assertIn("[标题]", out)
-        self.assertIn("body", out)
-
-    def test_empty_body(self):
-        self.assertEqual(injector.wrap("  "), "")
-
-
 class TestInject(unittest.TestCase):
     def test_injects_temp_part(self):
         req = FakeReq()

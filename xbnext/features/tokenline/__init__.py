@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...eventids import umo_of
 from . import service
 from ..base import Feature
 
@@ -41,7 +42,7 @@ class TokenLineFeature(Feature):
 
     async def on_llm_response(self, ctx: Any, resp: Any) -> None:
         event = ctx.event
-        umo = getattr(event, "unified_msg_origin", None)
+        umo = umo_of(event)
         try:
             whitelist = ctx.conf.text("token_usage_umos")
         except Exception:  # noqa: BLE001
@@ -52,18 +53,16 @@ class TokenLineFeature(Feature):
         if picked is None:
             return
         kind, vals = picked
-        prev = service.get_extra(event, service.EXTRA_KEY)
-        service.set_extra(
-            event, service.EXTRA_KEY, service.merge_extra(prev, kind, vals)
-        )
+        prev = event.get_extra(service.EXTRA_KEY)
+        event.set_extra(service.EXTRA_KEY, service.merge_extra(prev, kind, vals))
 
     async def on_decorating_result(self, ctx: Any) -> None:
         event = ctx.event
-        data = service.get_extra(event, service.EXTRA_KEY)
+        data = event.get_extra(service.EXTRA_KEY)
         if not isinstance(data, dict):
             return
         # 先读后焚 —— 装饰钩子在洋葱模型里可能被多次触发，防重复追加
-        service.set_extra(event, service.EXTRA_KEY, None)
+        event.set_extra(service.EXTRA_KEY, None)
         line = service.format_line(data)
         if not line:
             return

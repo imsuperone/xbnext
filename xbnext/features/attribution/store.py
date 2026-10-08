@@ -23,6 +23,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from ... import log
+
 #: 每会话保留的回复记录数（P16 起默认 50，用户拍板；超出先进先出淘汰）
 DEFAULT_LIMIT = 50
 #: 全局会话数上限（对标 AstrNa 的 300，我们取 200）
@@ -200,12 +202,8 @@ class ReplyTargetStore:
         await self._kv.set(INDEX_KEY, sessions)
 
     def _warn(self, message: str) -> None:
-        method = getattr(self._log, "warning", None)
-        if callable(method):
-            try:
-                method(message)
-            except Exception:  # noqa: BLE001
-                pass
+        """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""
+        log.emit(self._log, "warning", message)
 
 
 __all__ = [

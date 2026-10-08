@@ -68,16 +68,10 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     return None
 
 
-def feature_meta() -> List[Dict[str, Any]]:
-    """导出全部功能的元信息（WebUI 卡片用）。"""
-    return [f.describe() for f in all_features()]
-
-
 __all__ = [
     "Feature",
     "FEATURES",
     "all_features",
     "get_feature",
     "get_feature_by_command",
-    "feature_meta",
 ]

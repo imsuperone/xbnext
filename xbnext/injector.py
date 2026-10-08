@@ -163,19 +163,6 @@ def inject_text(req: Any, text: str, text_part_cls: Any = None) -> bool:
         return False
 
 
-def wrap(body: str, title: str = "") -> str:
-    """给注入内容套统一的 ``<xbnext>`` 标签块。
-
-    标签只是**给模型看的分节提示**，不是可信协议 —— 不要用它做解析依据。
-    """
-    body = (body or "").strip()
-    if not body:
-        return ""
-    if title:
-        return f"<xbnext>\n[{title}]\n{body}\n</xbnext>"
-    return f"<xbnext>\n{body}\n</xbnext>"
-
-
 __all__ = [
     "TAG",
     "sanitize",
@@ -183,5 +170,4 @@ __all__ = [
     "clean_output",
     "make_temp_part",
     "inject_text",
-    "wrap",
 ]

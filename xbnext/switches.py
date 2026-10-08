@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-"""开关对账与配置写入。
+"""WebUI 配置写入。
 
-三条职责：
+两条职责：
 
-1. :func:`resolve` —— 把配置摊平成 ``{功能键: 是否启用}``，
-   供 runtime 每请求对账（配置热改无需重启）。
-2. :func:`coerce_value` / :func:`save_config` / :func:`apply_conf` ——
+1. :func:`coerce_value` / :func:`save_config` / :func:`apply_conf` ——
    WebUI 写配置的类型转换、落盘与失败回滚。
-3. :data:`WRITABLE_KEYS` 键白名单 —— 防止 WebUI 往配置里塞任意键。
+2. :data:`WRITABLE_KEYS` 键白名单 —— 防止 WebUI 往配置里塞任意键。
+
+（功能开关不存在本模块：runtime 每功能进门直接
+``ctx.enabled(key)`` 读配置，热改即生效。）
 """
 
 from __future__ import annotations
@@ -16,23 +17,6 @@ import asyncio
 from typing import Any, Dict
 
 from .config import SCHEMA, Config
-
-#: XBNEXT 功能总开关（顺序 = 注入执行顺序，与 features 注册表一致）
-FEATURE_KEYS = (
-    "enable_image_slim",  # R8 历史图片瘦身
-    "enable_quote_clean",  # R2 quote_clean
-    "enable_face_translate",  # R3 face_translate
-    "enable_reply_attribution",  # R1 reply_attribution
-    "enable_user_profile",  # R4 user_profile
-    "enable_recall_cancel",  # 撤回取消请求（P16/P17：掐请求 + 连带撤回复）
-    "enable_token_usage",  # R9 token 用量展示
-)
-
-
-def resolve(conf: Config) -> Dict[str, bool]:
-    """把配置摊平成功能开关表。"""
-    return {key: conf.enabled(key) for key in FEATURE_KEYS}
-
 
 # ==================================================================
 # 配置写入（WebUI 用）
@@ -155,9 +139,7 @@ async def apply_conf(conf: Config, key: str, value: Any) -> Dict[str, Any]:
 
 
 __all__ = [
-    "FEATURE_KEYS",
     "WRITABLE_KEYS",
-    "resolve",
     "coerce_value",
     "save_config",
     "apply_conf",

@@ -7,9 +7,9 @@
    （``_ACTIVE_AGENT_RUNNERS``，含工具循环的多次调用；私有表，惰性
    import、拿不到就回落），再回落到钩子实参 ``resp.usage``；
    两条路都要求 provider 真回报了 usage，**全 0 不显示**；
-2. **暂存** :func:`get_extra` / :func:`set_extra` —— ``on_llm_response``
-   写进 ``event`` extras，``on_decorating_result`` 读走即焚（核心
-   ``astr_agent_hooks`` 同款中转姿势）；
+2. **暂存** —— 直接用核心原生的 ``event.get_extra`` /
+   ``event.set_extra``（``on_llm_response`` 写入，``on_decorating_result``
+   读走即焚）；
 3. **格式与名单** :func:`format_line` / :func:`parse_umos` /
    :func:`in_whitelist`。
 
@@ -19,6 +19,8 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+
+from ...eventids import umo_of
 
 #: event extras 里暂存本轮用量的键（发完即焚）
 EXTRA_KEY = "_xb_token_usage"
@@ -78,7 +80,7 @@ def _runner_usage(event: Any) -> Optional[Dict[str, int]]:
             _ACTIVE_AGENT_RUNNERS,
         )
 
-        umo = getattr(event, "unified_msg_origin", None)
+        umo = umo_of(event)
         if not umo:
             return None
         runner = _ACTIVE_AGENT_RUNNERS.get(umo)
@@ -103,27 +105,6 @@ def pick_usage(event: Any, resp: Any) -> Optional[Tuple[str, Dict[str, int]]]:
     if vals:
         return "sum", vals
     return None
-
-
-def get_extra(event: Any, key: str) -> Any:
-    """读 ``event`` extras（无此能力 / 抛异常 ⇒ ``None``）。"""
-    try:
-        getter = getattr(event, "get_extra", None)
-        if callable(getter):
-            return getter(key)
-    except Exception:  # noqa: BLE001
-        pass
-    return None
-
-
-def set_extra(event: Any, key: str, value: Any) -> None:
-    """写 ``event`` extras（无此能力 / 抛异常 ⇒ 静默）。"""
-    try:
-        setter = getattr(event, "set_extra", None)
-        if callable(setter):
-            setter(key, value)
-    except Exception:  # noqa: BLE001
-        pass
 
 
 def merge_extra(prev: Any, kind: str, vals: Dict[str, int]) -> Dict[str, int]:
@@ -158,8 +139,6 @@ __all__ = [
     "in_whitelist",
     "extract_usage",
     "pick_usage",
-    "get_extra",
-    "set_extra",
     "merge_extra",
     "format_line",
 ]

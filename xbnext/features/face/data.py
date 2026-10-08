@@ -868,13 +868,6 @@ def face_name(code: object) -> Optional[str]:
         return None
 
 
-def face_id(name: object) -> Optional[int]:
-    """按中文名反查 ID；查不到返回 ``None``。"""
-    if not isinstance(name, str) or not name:
-        return None
-    return QQ_FACE_ALIAS.get(name.strip("[]").strip())
-
-
 def mface_name(key: object) -> Optional[str]:
     """按 mface（商城表情）key 查名称。
 
@@ -895,6 +888,5 @@ __all__ = [
     "QQ_FACE_ALIAS",
     "CONFLICTS",
     "face_name",
-    "face_id",
     "mface_name",
 ]

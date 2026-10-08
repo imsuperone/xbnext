@@ -121,11 +121,6 @@ def find_placeholders(text: str) -> Dict[str, List[str]]:
     return result
 
 
-def has_placeholders(text: str) -> bool:
-    """文本里是否存在任意已知占位符。"""
-    return any(find_placeholders(text).values())
-
-
 # ---------------------------------------------------------------------------
 # 改写
 # ---------------------------------------------------------------------------
@@ -371,7 +366,6 @@ __all__ = [
     "QUOTED_EMPTY_NOTE",
     "QUOTE_BLOCK_RE",
     "find_placeholders",
-    "has_placeholders",
     "clean_prompt",
     "repair_quote_block",
     "clean_parts",

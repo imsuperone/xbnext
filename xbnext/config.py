@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "_conf_schema.json"
 
@@ -38,7 +38,7 @@ def schema_default(key: str) -> Any:
 
 
 class Config:
-    """插件配置的只读视图（热更新时调用 :meth:`reload` 换底）。"""
+    """插件配置的只读视图（直接包在 AstrBot 传入的配置对象上，热改即生效）。"""
 
     __slots__ = ("_raw",)
 
@@ -50,10 +50,6 @@ class Config:
     def raw(self) -> Any:
         """原始配置对象（可能是 AstrBotConfig），WebUI 需要时直接用。"""
         return self._raw
-
-    def reload(self, raw: Any) -> None:
-        """热替换配置对象。AstrBot 配置页保存后调用。"""
-        self._raw = raw
 
     # -- 读取 ---------------------------------------------------------
     def get(self, key: str, default: Any = None) -> Any:
@@ -115,19 +111,6 @@ class Config:
         for key in SCHEMA:
             out[key] = self.get(key, schema_default(key))
         return out
-
-    def condition_ok(self, key: str) -> bool:
-        """判断 schema 里声明的 ``condition`` 是否满足（子项是否该显示）。"""
-        item = SCHEMA.get(key)
-        if not isinstance(item, dict):
-            return True
-        cond = item.get("condition")
-        if not isinstance(cond, Mapping):
-            return True
-        try:
-            return all(self.get(k) == v for k, v in cond.items())
-        except Exception:  # noqa: BLE001
-            return True
 
 
 __all__ = ["Config", "SCHEMA", "schema_default"]

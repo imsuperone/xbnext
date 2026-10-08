@@ -650,29 +650,30 @@ class TestRuntimeHandleCommand(unittest.TestCase):
 
     def test_set_via_full_command(self):
         rt = self._runtime()
-        out = run(rt.handle_command("profile", CmdEvent("/xbnext profile 称呼 小明")))
+        out = run(rt.dispatch(CmdEvent("/xbnext profile 称呼 小明")))
         self.assertIn("已更新", out)
 
     def test_set_when_prefix_stripped(self):
-        """AstrBot 剥掉 'xbnext profile' 后仍然能解析。"""
+        """AstrBot 只剥掉根命令 'xbnext' 后仍然能解析。"""
         rt = self._runtime()
-        out = run(rt.handle_command("profile", CmdEvent("称呼 小明")))
+        out = run(rt.dispatch(CmdEvent("profile 称呼 小明")))
         self.assertIn("已更新", out)
-        view = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        view = run(rt.dispatch(CmdEvent("profile")))
         self.assertIn("称呼：小明", view)
 
     def test_unknown_command(self):
         rt = self._runtime()
-        out = run(rt.handle_command("nope", CmdEvent("/xbnext nope")))
-        self.assertIn("没有 /xbnext nope", out)
+        out = run(rt.handle_command("nope", CmdEvent(), []))
+        self.assertIn("未知子指令", out)
+        self.assertIn("「nope」", out)
 
     def test_works_even_when_switch_off(self):
         """开关只控制"喂不喂给模型"，维护入口必须一直可用。"""
         rt = self._runtime()
         self.assertFalse(rt.conf.enabled("enable_user_profile"))
-        out = run(rt.handle_command("profile", CmdEvent("/xbnext profile 称呼 小红")))
+        out = run(rt.handle_command("profile", CmdEvent(), ["称呼", "小红"]))
         self.assertIn("已更新", out)
-        view = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        view = run(rt.handle_command("profile", CmdEvent(), []))
         self.assertIn("称呼：小红", view)
 
     def test_execute_failure_returns_friendly_text(self):
@@ -686,7 +687,7 @@ class TestRuntimeHandleCommand(unittest.TestCase):
 
         feat.handle_command = boom
         try:
-            out = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+            out = run(rt.handle_command("profile", CmdEvent(), []))
         finally:
             if original is None:
                 feat.__dict__.pop("handle_command", None)
@@ -706,7 +707,7 @@ class TestRuntimeHandleCommand(unittest.TestCase):
 
         commands.split = broken
         try:
-            out = run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+            out = run(rt.dispatch(CmdEvent("/xbnext profile")))
         finally:
             commands.split = original
         self.assertIn("没看懂", out)
@@ -993,7 +994,7 @@ class TestLazyInit(unittest.TestCase):
         """真机症状：/xbnext profile 回"档案存储还没就绪"。"""
         rt = self._runtime()
         self.assertFalse(rt._loaded)
-        run(rt.handle_command("profile", CmdEvent("/xbnext profile")))
+        run(rt.handle_command("profile", CmdEvent(), []))
         self.assertTrue(rt._loaded)
 
     def test_message_sent_triggers_init(self):
