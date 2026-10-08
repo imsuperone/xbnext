@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Token 用量展示（R9）：取数、白名单、暂存、结果追加 / 流式补发。
+"""Token 用量展示（R9）：取数（含 raw 缓存补读与缓存 0 隐藏）、白名单、暂存、结果追加 / 流式补发。
 
 链路：``on_llm_response`` 收 usage 存进 ``event`` extras →
 ``on_decorating_result`` 读走即焚（普通回复追加 Plain；流式收尾单独发）。
@@ -208,6 +208,77 @@ class TestPickUsage(unittest.TestCase):
         )
 
 
+class TestRawCached(unittest.TestCase):
+    """缓存自救：核心没解析的 DeepSeek 类字段，从响应原件补读。"""
+
+    def test_dict_usage_top_level_field(self):
+        # DeepSeek 形态：缓存在顶层 prompt_cache_hit_tokens（dict raw usage）
+        resp = SimpleNamespace(
+            raw_completion=SimpleNamespace(
+                usage={"prompt_tokens": 1000, "prompt_cache_hit_tokens": 300}
+            )
+        )
+        self.assertEqual(service.raw_cached(resp), 300)
+
+    def test_object_usage_attribute(self):
+        usage = SimpleNamespace(prompt_cache_hit_tokens=250)
+        resp = SimpleNamespace(raw_completion=SimpleNamespace(usage=usage))
+        self.assertEqual(service.raw_cached(resp), 250)
+
+    def test_object_usage_model_extra(self):
+        # openai SDK BaseModel（extra="allow"）：自报字段挂 model_extra
+        usage = SimpleNamespace(model_extra={"prompt_cache_hit_tokens": 210})
+        resp = SimpleNamespace(raw_completion=SimpleNamespace(usage=usage))
+        self.assertEqual(service.raw_cached(resp), 210)
+
+    def test_standard_cached_tokens_fallback(self):
+        resp = SimpleNamespace(
+            raw_completion=SimpleNamespace(
+                usage={"prompt_tokens_details": {"cached_tokens": 120}}
+            )
+        )
+        self.assertEqual(service.raw_cached(resp), 120)
+
+    def test_missing_raw_is_zero(self):
+        self.assertEqual(service.raw_cached(None), 0)
+        self.assertEqual(service.raw_cached(SimpleNamespace()), 0)
+        resp = SimpleNamespace(raw_completion=SimpleNamespace(usage={}))
+        self.assertEqual(service.raw_cached(resp), 0)
+
+    def test_pick_usage_rescues_zero_cache(self):
+        # 核心解析 cached=0（DeepSeek 顶层字段没解析）⇒ 原件补读
+        resp = SimpleNamespace(
+            usage=_Usage(1000, 0, 50),
+            raw_completion=SimpleNamespace(usage={"prompt_cache_hit_tokens": 300}),
+        )
+        picked = service.pick_usage(_Ev(), resp)
+        self.assertEqual(picked, ("sum", {"input": 1000, "cached": 300, "output": 50}))
+
+    def test_rescue_capped_at_input(self):
+        # 原件缓存不可能超过 input；异常数据封顶，不出现「缓存 > 输入」
+        resp = SimpleNamespace(
+            usage=_Usage(200, 0, 10),
+            raw_completion=SimpleNamespace(usage={"prompt_cache_hit_tokens": 9999}),
+        )
+        _, vals = service.pick_usage(_Ev(), resp)
+        self.assertEqual(vals["cached"], 200)
+
+    def test_pick_usage_keeps_parsed_cache(self):
+        # 解析出的缓存非 0 ⇒ 原件不掺和（stats 路径优先原则不变）
+        resp = SimpleNamespace(
+            usage=_Usage(100, 40, 5),
+            raw_completion=SimpleNamespace(usage={"prompt_cache_hit_tokens": 7}),
+        )
+        _, vals = service.pick_usage(_Ev(), resp)
+        self.assertEqual(vals["cached"], 40)
+
+    def test_no_raw_no_rescue(self):
+        # 没有原件可补读：cached 保持 0，展示侧省略缓存段
+        resp = SimpleNamespace(usage=_Usage(10, 0, 1))
+        _, vals = service.pick_usage(_Ev(), resp)
+        self.assertEqual(vals, {"input": 10, "cached": 0, "output": 1})
+
+
 class TestMergeAndFormat(unittest.TestCase):
     def test_stats_overwrites(self):
         merged = service.merge_extra(
@@ -233,6 +304,12 @@ class TestMergeAndFormat(unittest.TestCase):
         line = service.format_line({"input": 1234, "output": 567, "cached": 800})
         self.assertEqual(line, "📊 本轮 token：输入 1,234 · 输出 567 · 缓存 800")
         self.assertEqual(service.format_line({"input": 0, "output": 0, "cached": 0}), "")
+
+    def test_format_line_hides_zero_cache(self):
+        # 端点不回报缓存 / 补读不到 ⇒ 省略缓存段，不显示「缓存 0」
+        line = service.format_line({"input": 1234, "output": 567, "cached": 0})
+        self.assertEqual(line, "📊 本轮 token：输入 1,234 · 输出 567")
+        self.assertNotIn("缓存", line)
 
 
 # ==================================================================

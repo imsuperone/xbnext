@@ -44,8 +44,8 @@ MENU = (
     "• /xbnext profile 称呼: — 删掉单个字段（字段后跟冒号留空）\n"
     "• /xbnext profile 清空 — 删除我的档案\n"
     "\n"
-    "📊 Token 用量显示\n"
-    "• /xbnext token — 本会话开 / 关 token 用量显示（总开关需先在 WebUI 打开）\n"
+    "📊 Token 用量展示\n"
+    "• /xbnext token — 本会话开 / 关 token 用量展示（总开关需先在 WebUI 打开）\n"
     "\n"
     "💡 档案与「用户档案」开关解耦：关着开关也能查能改，只是不喂给模型。"
 )

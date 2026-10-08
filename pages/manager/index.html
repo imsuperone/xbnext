@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.0" />
+  <link rel="stylesheet" href="./style.css?v=0.2.1" />
   <!-- 深浅色与主题色存在服务端配置里（唯一真相源，无本地副本），需等 state 回来才套用；
        首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
   <style>
@@ -25,7 +25,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.0">0.2.0</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.1">0.2.1</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -81,7 +81,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">引用占位清洗</h2>
-              <p class="card-desc">清理引用链里 core 塞入的 <code>[Empty Text]</code> / <code>[Image unavailable]</code> 占位噪声，并把失效的引用图片明确标注给模型，杜绝"凭空出现的空白图片"。修正类功能，开启会改写本轮请求。</p>
+              <p class="card-desc">请求前清理引用链里的 <code>[Empty Text]</code> / <code>[Image unavailable]</code> 占位噪声，把失效图片标注给模型，杜绝"凭空出现的空白图片"。修正类功能，开启会改写本轮请求。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_quote_clean" data-key="enable_quote_clean" />
@@ -94,7 +94,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">QQ 表情翻译</h2>
-              <p class="card-desc">把消息链里的 face / mface 翻译成文字描述追加进本轮请求。aiocqhttp 默认会把表情丢在 message_str 之外，不开启等于表情全部丢失。修正类功能。</p>
+              <p class="card-desc">把消息里的 face / mface 翻译成文字描述追加进请求。适配器默认不把表情放进正文，不开启等于表情全部丢失。修正类功能。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_face_translate" data-key="enable_face_translate" />
@@ -133,7 +133,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">撤回取消请求</h2>
-              <p class="card-desc">撤回刚发的那条消息时，取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；bot 已发出的回复也会连带撤回（aiocqhttp 下生效）。默认开启。</p>
+              <p class="card-desc">撤回刚发的消息时取消这条消息在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；bot 已发出的回复也会连带撤回（aiocqhttp 下生效）。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_recall_cancel" data-key="enable_recall_cancel" />
@@ -146,7 +146,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">撤回先询问再取消</h2>
-              <p class="card-desc">撤回消息时先问一句「要取消这次回复吗」，只有撤回者本人的回答算数（其他人回复无效），回复「是」才取消，回复「否」就保留，30 秒内没人回复则按原行为自动取消。仅在上面的开关开启时生效。默认关闭。</p>
+              <p class="card-desc">撤回时先问一句「要取消这次回复吗」，只有撤回者本人的回答算数（其他人回复无效）；回「是」取消并撤回回复，回「否」保留，10 秒内不回复自动取消。流程结束时询问消息会自动撤回。仅在上面的开关开启时生效。默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_recall_confirm" data-key="enable_recall_confirm" />
@@ -172,7 +172,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">Token 用量展示</h2>
-              <p class="card-desc">回复末尾追加一行本轮 token 用量（输入 / 输出 / 缓存），仅对「行为微调」里指定名单内的会话显示。默认关闭。</p>
+              <p class="card-desc">回复末尾追加一行本轮 token 用量（输入含缓存 / 输出 / 缓存），仅对「行为微调」里指定名单内的会话显示；端点不回报用量或缓存时不显示对应内容。默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_token_usage" data-key="enable_token_usage" />
@@ -202,7 +202,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">移除失效图片路径</h2>
-              <p class="card-desc">只删「能证实已失效」的本地路径，http/https/data 与无法离线判断的一律保留；移除后会把正文里的裸 <code>[Image]</code> 一并标注为已失效，杜绝模型臆想出一张空白图。仅在「引用占位清洗」开启时生效。</p>
+              <p class="card-desc">只删「能证实已失效」的本地路径，链接类（http/https/data）与无法离线判断的一律保留；正文里的裸 <code>[Image]</code> 一并标注失效，杜绝模型臆想出空白图。仅在「引用占位清洗」开启时生效。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_quote_drop_dead_images" data-key="quote_drop_dead_images" />
@@ -235,12 +235,12 @@
           <div class="form-group">
             <label class="form-label">每天更新时间</label>
             <input type="text" class="m3-input" id="inp_face_update_time" data-key="face_update_time" placeholder="04:30" />
-            <span class="field-hint">24 小时制 <code>HH:MM</code>，例如 <code>04:30</code>（凌晨四点半）；格式非法按 04:30 处理。首次安装启动约 1 分钟后会先拉一次，不用等第一个凌晨。仅在「表情表自动更新」开启时生效。</span>
+            <span class="field-hint">24 小时制 <code>HH:MM</code>，例如 <code>04:30</code>；格式非法按 04:30 处理。首次安装启动约 1 分钟后会先拉一次，不用等第一个凌晨。</span>
           </div>
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">回复指向（R1）</h2>
+          <h2 class="card-title">回复指向</h2>
           <p class="card-desc">仅在「回复指向索引」开启时生效。</p>
           <div class="form-group">
             <label class="form-label">每会话保留的记录数</label>
@@ -255,7 +255,7 @@
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">用户档案（R4）</h2>
+          <h2 class="card-title">用户档案</h2>
           <p class="card-desc">仅在「用户档案注入」开启时生效。</p>
           <div class="form-group">
             <label class="form-label">单人档案最大字数</label>
@@ -265,7 +265,7 @@
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">Token 用量展示（R9）</h2>
+          <h2 class="card-title">Token 用量展示</h2>
           <p class="card-desc">仅在「Token 用量展示」开启时生效。</p>
           <div class="form-group">
             <label class="form-label">显示的会话名单</label>
@@ -434,7 +434,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.0"></script>
-  <script src="./app.js?v=0.2.0"></script>
+  <script src="./api.js?v=0.2.1"></script>
+  <script src="./app.js?v=0.2.1"></script>
 </body>
 </html>

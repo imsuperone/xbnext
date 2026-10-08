@@ -37,7 +37,7 @@ __all__ = [
 RECALL_NOTICE_TYPES = ("group_recall", "friend_recall")
 
 #: 撤回确认询问的等待时长（秒）；超时按老规矩自动取消
-CONFIRM_TIMEOUT = 30.0
+CONFIRM_TIMEOUT = 10.0
 
 #: 认「是」（取消）的回答词 —— 精确匹配，不搞包含判断防误伤
 _YES_WORDS = frozenset({"是", "对", "要", "确认", "取消", "y", "yes", "ok", "1"})
@@ -104,11 +104,15 @@ def match_answer(text: Any) -> Optional[bool]:
 
 
 def ask_text() -> str:
-    """撤回确认询问的正文（群私通用；群里前面会再 @ 撤回者）。"""
+    """撤回确认询问的正文（群私通用；群里前面会再 @ 撤回者）。
+
+    秒数从 :data:`CONFIRM_TIMEOUT` 动态渲染，改常量文案自动跟随。
+    """
+    secs = f"{CONFIRM_TIMEOUT:.0f}"
     return (
         "你撤回了一条消息，要取消这次回复吗？"
-        "回复「是」：不再往下生成，已经发出来的回复也一并撤回；"
-        "回复「否」：保留。30 秒内不回复，就自动取消。"
+        "回「是」：撤回回复并停止生成；回「否」：保留。"
+        f"{secs} 秒内不回复自动取消。"
     )
 
 

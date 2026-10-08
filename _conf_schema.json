@@ -1,14 +1,14 @@
 {
   "enable_quote_clean": {
     "type": "bool",
-    "description": "引用占位清洗（R2）",
-    "hint": "开启后，XBNEXT 会在每次请求前识别 core 塞进引用链的占位噪声（[Empty Text]、[Image unavailable] 等），并把已失效的引用图片明确标注给模型，避免模型凭空想象出一张空白图片。属于修正类功能，会改写本轮请求内容；关闭后完全恢复 AstrBot 原生行为。默认开启。",
+    "description": "引用占位清洗",
+    "hint": "请求前识别 core 塞进引用链的占位噪声（[Empty Text]、[Image unavailable] 等），把失效图片标注给模型，避免它凭空想象空白图片。修正类功能，会改写本轮请求；关闭恢复原生行为。默认开启。",
     "default": true
   },
   "quote_placeholder_action": {
     "type": "string",
     "description": "占位处理方式",
-    "hint": "label = 把失效图片标注成中文说明（推荐）；strip = 直接删除占位文本；keep = 只记日志不改写。默认 label。",
+    "hint": "label = 失效图片标注成中文说明（推荐）；strip = 直接删占位文本；keep = 只记日志不改写。默认 label。",
     "default": "label",
     "collapsed": true,
     "condition": { "enable_quote_clean": true }
@@ -16,21 +16,21 @@
   "quote_drop_dead_images": {
     "type": "bool",
     "description": "移除失效的图片路径",
-    "hint": "开启后会把引用消息里已失效的本地图片路径从待发图片列表中移除，并把正文中的 [Image] 占位一并标注为已失效。只删能证实不存在的路径，http/https/data 与无法离线判断的一律保留。默认开启。",
+    "hint": "把引用里已失效的本地图片路径从待发列表移除，正文 [Image] 一并标注失效；只删能证实不存在的，链接类一律保留。默认开启。",
     "default": true,
     "collapsed": true,
     "condition": { "enable_quote_clean": true }
   },
   "enable_face_translate": {
     "type": "bool",
-    "description": "QQ 表情翻译（R3）",
-    "hint": "开启后，XBNEXT 会把消息链里的 QQ 自带表情（face / mface）翻译成文字描述追加进本轮请求。aiocqhttp 适配器默认会把表情丢在 message_str 之外，模型根本收不到，所以不开启就等于表情全部丢失。属于修正类功能，会改写本轮请求内容。默认开启。",
+    "description": "QQ 表情翻译",
+    "hint": "把 face / mface 翻译成文字描述追加进请求。适配器默认不把表情放进正文，不开启等于表情全部丢失。修正类功能。默认开启。",
     "default": true
   },
   "face_format": {
     "type": "string",
     "description": "表情翻译格式",
-    "hint": "{name} 会被替换成表情中文名，取不到名字时替换成表情 ID。例如 [表情:得意]、[表情:ID12345]。默认 [表情:{name}]。",
+    "hint": "{name} 替换成表情中文名，取不到名字时用表情 ID。默认 [表情:{name}]。",
     "default": "[表情:{name}]",
     "collapsed": true,
     "condition": { "enable_face_translate": true }
@@ -38,7 +38,7 @@
   "face_auto_update": {
     "type": "bool",
     "description": "表情表自动更新",
-    "hint": "开启后，XBNEXT 会定期从 QQ 表情权威源（koishijs/QFace 的 _index.json）拉取新增的表情 ID，补进内置表的缺口（内置表优先、只补缺，不覆盖）。成功后有新增打一条日志；拉取失败只记警告，不影响表情翻译本身。仅在「QQ 表情翻译」开启时生效。默认开启。",
+    "hint": "定期从 QQ 表情权威源拉取新增表情 ID，只补内置表缺口、不覆盖，不影响翻译本身。默认开启。",
     "default": true,
     "collapsed": true,
     "condition": { "enable_face_translate": true }
@@ -46,21 +46,21 @@
   "face_update_time": {
     "type": "string",
     "description": "表情表自动更新时间",
-    "hint": "每天在本地时间的这个时刻自动更新表情表，24 小时制 HH:MM，例如 04:30（凌晨四点半）。格式非法时按 04:30 处理；首次安装启动约 1 分钟后会先拉一次，不用等到凌晨。仅在「表情表自动更新」开启时生效。默认 04:30。",
+    "hint": "每天几点自动更新表情表，24 小时制 HH:MM（如 04:30）；格式非法按 04:30 处理。默认 04:30。",
     "default": "04:30",
     "collapsed": true,
     "condition": { "enable_face_translate": true, "face_auto_update": true }
   },
   "enable_reply_attribution": {
     "type": "bool",
-    "description": "回复指向索引（R1）",
-    "hint": "开启后，XBNEXT 会记录 bot 每条回复'回给谁'，并在下一轮请求里给出三方区分说明，避免把 A 问过的话套到 B 头上。属于新增行为，默认关闭；开启后每轮会多注入一小段说明。",
+    "description": "回复指向索引",
+    "hint": "记录 bot 每条回复「回给谁」，下一轮给出三方区分说明，避免把 A 问过的话套到 B 头上。新增行为。默认关闭。",
     "default": false
   },
   "reply_history_limit": {
     "type": "int",
     "description": "每会话保留的回复记录数",
-    "hint": "单个会话最多保留多少条'回给谁'记录，超出按先进先出淘汰。默认 50。",
+    "hint": "单个会话最多保留多少条「回给谁」记录，超出先淘汰旧的。默认 50。",
     "default": 50,
     "collapsed": true,
     "condition": { "enable_reply_attribution": true }
@@ -68,21 +68,21 @@
   "reply_scope_depth": {
     "type": "int",
     "description": "说明注入的回溯轮数",
-    "hint": "注入说明时最多回溯多少轮对话。数值越大说明越长、上下文占用越多。默认 3。",
+    "hint": "注入说明最多回溯多少轮对话；数值越大说明越长。默认 3。",
     "default": 3,
     "collapsed": true,
     "condition": { "enable_reply_attribution": true }
   },
   "enable_user_profile": {
     "type": "bool",
-    "description": "用户档案注入（R4）",
-    "hint": "开启后，XBNEXT 会在每轮请求里注入当前发言人的自助档案，让 bot 按档案理解用户而不是乱猜。档案按群隔离（同一个人在不同群各一份，私聊单独一份），按不可信输入清洗后注入，且不写入会话历史。属于新增行为，默认关闭；关闭时仍然可以用 /xbnext profile 查看和维护档案。",
+    "description": "用户档案注入",
+    "hint": "每轮按当前发言人注入其自助档案，让 bot 按档案理解用户而不是乱猜。档案按群隔离、清洗后注入、不进历史。关着开关也能用 /xbnext profile 维护。默认关闭。",
     "default": false
   },
   "user_profile_max_chars": {
     "type": "int",
     "description": "单人档案最大字数",
-    "hint": "超过这个字数的档案会被截断后再注入，防止个别超长档案挤占上下文。默认 600。",
+    "hint": "档案超过这个字数会被截断后再注入，防止挤占上下文。默认 600。",
     "default": 600,
     "collapsed": true,
     "condition": { "enable_user_profile": true }
@@ -90,32 +90,32 @@
   "enable_recall_cancel": {
     "type": "bool",
     "description": "撤回取消请求",
-    "hint": "开启后，如果你撤回了刚发的那条消息，XBNEXT 会取消这条消息正在飞的 LLM 请求 —— 省一次白烧的 token，也避免 bot 对着已撤回的消息回一整段；如果 bot 已经把回复发出去了，会连带把回复一并撤回（aiocqhttp 下生效）。默认开启。",
+    "hint": "撤回刚发的消息时取消这条消息在飞的 LLM 请求，省掉白烧的 token；bot 已发出的回复也会连带撤回（aiocqhttp 下生效）。默认开启。",
     "default": true
   },
   "enable_recall_confirm": {
     "type": "bool",
     "description": "撤回先询问再取消",
-    "hint": "开启后，撤回消息时不再立刻动手 —— bot 会先在原会话问一句「要取消这次回复吗」（群里会 @ 执行撤回的那个人），只有撤回者本人的回答算数，其他人回复无效。回复「是」才取消：还没发完的不再发，已经发出来的回复也一并撤回；回复「否」就保留。30 秒内没人回复，按原行为自动取消。仅在「撤回取消请求」开启时生效。默认关闭。",
+    "hint": "撤回时先问一句「要取消这次回复吗」（群里会 @ 执行撤回的人），只有撤回者本人的回答算数。回「是」取消并撤回回复，回「否」保留；10 秒内不回复自动取消，流程结束询问消息自动撤回。仅在「撤回取消请求」开启时生效。默认关闭。",
     "default": false,
     "condition": { "enable_recall_cancel": true }
   },
   "enable_image_slim": {
     "type": "bool",
-    "description": "历史图片瘦身（R8）",
-    "hint": "开启后，XBNEXT 会在每轮请求前把对话历史里较旧消息携带的图片换成文字占位（最近 6 条消息的原图保留），大幅减少输入 token —— 一张截图动辄几千 token，越老的图对模型越没用。当前轮刚发的图片不受影响；瘦身结果随核心落历史自动保持。属于改写类功能，默认关闭。",
+    "description": "历史图片瘦身",
+    "hint": "把对话历史里较旧的图片换成文字占位，大幅省输入 token（一张截图动辄几千）；最近 6 条与当轮的图不受影响。改写类功能。默认关闭。",
     "default": false
   },
   "enable_token_usage": {
     "type": "bool",
-    "description": "Token 用量展示（R9）",
-    "hint": "开启后，XBNEXT 会在回复末尾追加一行本轮 token 用量（输入 / 输出 / 缓存），且仅对下方名单内的会话显示。provider 没回报用量时不显示；DeepSeek 类端点核心不解析其缓存字段，缓存列可能恒为 0。默认关闭。",
+    "description": "Token 用量展示",
+    "hint": "回复末尾追加一行本轮用量（输入含缓存 / 输出 / 缓存），仅对下方名单内的会话显示；端点不回报用量或缓存时不显示对应内容。默认关闭。",
     "default": false
   },
   "token_usage_umos": {
     "type": "string",
     "description": "显示 token 用量的会话名单",
-    "hint": "每项填一个会话 UMO（格式如 aiocqhttp:GroupMessage:群号），多个用逗号、顿号或换行分隔；也可在会话里发 /xbnext token 一键把当前会话加进/移出名单。只有名单内的会话会在回复末尾显示用量。留空 = 任何会话都不显示。仅在「Token 用量展示」开启时生效。",
+    "hint": "每项一个会话 UMO（如 aiocqhttp:GroupMessage:群号），逗号 / 顿号 / 换行分隔；也可在会话里发 /xbnext token 一键加进 / 移出。留空 = 都不显示。仅在「Token 用量展示」开启时生效。",
     "default": "",
     "collapsed": true,
     "condition": { "enable_token_usage": true }
@@ -123,20 +123,20 @@
   "debug_log": {
     "type": "bool",
     "description": "输出调试日志",
-    "hint": "在 AstrBot 日志里打印每个功能的执行结果与跳过原因，排查'为什么没生效'时打开。默认关闭。",
+    "hint": "在 AstrBot 日志里打印各功能的执行结果与跳过原因，排查「为什么没生效」时打开。默认关闭。",
     "default": false
   },
   "ui_theme_mode": {
     "type": "string",
     "description": "控制台深浅色",
-    "hint": "WebUI 控制台界面的深浅色：留空 = 跟随系统（与 xbdoc / xbimg 一致），也可锁定为 light / dark。由控制台右上角按钮自动维护，一般不用手动改。",
+    "hint": "控制台界面深浅色：留空 = 跟随系统，也可锁定 light / dark。由右上角按钮自动维护，一般不用手动改。",
     "default": "",
     "collapsed": true
   },
   "ui_accent_color": {
     "type": "string",
     "description": "控制台主题色",
-    "hint": "WebUI 控制台的强调色（6 位十六进制，如 #4A90D9）。留空表示使用默认蓝。由控制台取色器自动维护。",
+    "hint": "控制台强调色（6 位十六进制，如 #4A90D9）；留空 = 默认蓝。由取色器自动维护。",
     "default": "",
     "collapsed": true
   }

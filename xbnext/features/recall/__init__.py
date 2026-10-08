@@ -41,9 +41,11 @@
 **只有撤回者本人的回答算数**（会话 + ``operator_id`` 双匹配，别人的
 回复不消费、照常走管线）；等回答期间这条消息的回复**扣在发送口不发**
 （先拦后放）：答「否」放行发出，答「是」掐请求 + 连带撤回复、回复
-根本不出门，30 秒不回答按老规矩自动取消。回答命中即 ``stop_event()``
-吞掉（不唤醒 LLM、不进历史）；询问发不出去 ⇒ 回退老行为立刻取消；
-bot 自己删消息的撤回回执不问也不动（防自问自答）。
+根本不出门，超时按老规矩自动取消（秒数见
+``service.CONFIRM_TIMEOUT``）。回答命中即 ``stop_event()``
+吞掉（不唤醒 LLM、不进历史）；**流程收尾（答是 / 答否 / 超时）时把
+bot 自己发的那句询问一并撤回**，不给会话留残句；询问发不出去 ⇒
+回退老行为立刻取消；bot 自己删消息的撤回回执不问也不动（防自问自答）。
 
 **排队疏通（真机回归 #6）**：核心把同会话连发的消息排成严格按号
 叫序的队，只有「run 正常完成 / 出错 / 主动中断」三条路会把手里代管
@@ -61,7 +63,7 @@ bot 自己删消息的撤回回执不问也不动（防自问自答）。
    astrbot 环境 / 核心改名）时看门狗整段跳过，宁不动不误杀。
 
 范围：请求在飞 ⇒ 掐请求；回复已发 ⇒ 连带撤回；回复在途 ⇒ 补删；
-确认开关打开时以上动作都要先过「撤回者本人回答 / 30 秒超时」这道闸，
+确认开关打开时以上动作都要先过「撤回者本人回答 / 超时」这道闸，
 闸未落定前回复一律扣在发送口。
 """
 
@@ -81,6 +83,21 @@ from ..base import Feature
 _RUNNER_UNKNOWN = object()
 
 
+def _msg_id_of(ret: Any) -> str:
+    """发送回执里的 ``message_id`` → 字符串；拿不到返回空串。
+
+    OneBot 的 ``send_group_msg / send_private_msg`` 回执是
+    ``{"message_id": 123, ...}``；个别实现返回对象形态也认。
+    """
+    try:
+        value = ret.get("message_id") if isinstance(ret, dict) else getattr(
+            ret, "message_id", None
+        )
+        return str(value) if value is not None and str(value).strip() else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 class _Awaiting:
     """一次等待确认的撤回：被撤消息 id → 撤回者 / 会话 / 挂起的定时器。"""
 
@@ -92,6 +109,7 @@ class _Awaiting:
         "timer",
         "gate",
         "verdict",
+        "ask_id",
     )
 
     def __init__(self, trigger_id: str, group_id: str, operator_id: str, event: Any) -> None:
@@ -107,6 +125,8 @@ class _Awaiting:
         self.gate = asyncio.Event()
         #: ``None`` 等回答；``True`` 放行（答「否」/ 卸载）；``False`` 拦截不发
         self.verdict: Optional[bool] = None
+        #: bot 发出的那句询问的 message_id（流程收尾时撤回；拿不到为空串）
+        self.ask_id: str = ""
 
 
 class RecallFeature(Feature):
@@ -118,7 +138,7 @@ class RecallFeature(Feature):
     #: 守候类功能，排在清洗 / 注入之后（order 无强依赖，登记要趁早）
     order = 90
     uses_adapter_hook = True
-    #: 确认询问的等待秒数（类属性，测试调小即可不真等 30 秒）
+    #: 确认询问的等待秒数（类属性，测试调小即可不真等完整秒数）
     confirm_timeout: float = service.CONFIRM_TIMEOUT
     #: 判「挂死」的年龄门槛（秒）：没有 run 在跑还挂这么久 ⇒ 疑似死票
     stuck_timeout: float = 120.0
@@ -379,7 +399,7 @@ class RecallFeature(Feature):
     async def _begin_confirm(
         self, ctx: Any, event: Any, raw: Any, mid: str
     ) -> None:
-        """撤回确认：**先立发送闸** → 发询问 → 登记等待 → 启动 30 秒超时。
+        """撤回确认：**先立发送闸** → 发询问 → 登记等待 → 启动超时。
 
         闸一立，这条消息的回复就被扣在发送口等回答（先拦后放，不再
         「问归问、回复照发」）。没有在飞请求也没有已发回复 ⇒ 无可取消
@@ -396,8 +416,8 @@ class RecallFeature(Feature):
         operator = meta.get("operator_id", "")
         # 先登记（闸生效）再发问：发问 await 期间回复也要扣住
         self._awaiting[mid] = _Awaiting(mid, group_id, operator, event)
-        sent = await self._send_ask(event, group_id, operator, raw)
-        if not sent:
+        ask_id = await self._send_ask(event, group_id, operator, raw)
+        if ask_id is None:
             item = self._awaiting.pop(mid, None)
             if item is not None:
                 item.verdict = False  # 问不出去 ⇒ 拦截不发，随后立刻取消
@@ -405,6 +425,9 @@ class RecallFeature(Feature):
             self._info("撤回确认：询问发送失败，回退为立刻自动取消")
             await self._cancel_now(ctx, event, mid, via="撤回命中")
             return
+        item = self._awaiting.get(mid)
+        if item is not None:
+            item.ask_id = ask_id  # 流程收尾时把这句询问撤回
         self._spawn_deadline(mid)
         self._info(
             f"撤回确认：已发出询问，等 {self.confirm_timeout:.0f} 秒回答（消息 {mid}）"
@@ -418,33 +441,41 @@ class RecallFeature(Feature):
 
     async def _send_ask(
         self, event: Any, group_id: str, operator: str, raw: Any
-    ) -> bool:
-        """把询问发到原会话（群里 @ 撤回者）；发不出去返回 ``False``。"""
+    ) -> Optional[str]:
+        """把询问发到原会话（群里 @ 撤回者）；发不出去返回 ``None``。
+
+        成功返回询问消息的 ``message_id``（bot 没回报 id 时为空串），
+        流程收尾要把这条询问撤回。
+        """
         bot = getattr(event, "bot", None)
         if bot is None or not operator:
-            return False
+            return None
         text = service.ask_text()
         routing = self._routing(raw)
         try:
             if group_id:
                 if not str(group_id).isdigit():
-                    return False
+                    return None
                 segs: List[Any] = [
                     {"type": "at", "data": {"qq": str(operator)}},
                     {"type": "text", "data": {"text": f" {text}"}},
                 ]
-                await bot.send_group_msg(group_id=int(group_id), message=segs, **routing)
+                ret = await bot.send_group_msg(
+                    group_id=int(group_id), message=segs, **routing
+                )
             else:
                 if not str(operator).isdigit():
-                    return False
+                    return None
                 segs = [{"type": "text", "data": {"text": text}}]
-                await bot.send_private_msg(user_id=int(operator), message=segs, **routing)
-            return True
+                ret = await bot.send_private_msg(
+                    user_id=int(operator), message=segs, **routing
+                )
+            return _msg_id_of(ret)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
             self._info(f"撤回确认：询问发送失败 {exc!r}")
-            return False
+            return None
 
     def _spawn_deadline(self, mid: str) -> None:
         """给这次询问挂一个超时任务（无事件循环时静默不挂）。"""
@@ -471,9 +502,22 @@ class RecallFeature(Feature):
             f"撤回确认：{self.confirm_timeout:.0f} 秒无人回答，自动取消（消息 {mid}）"
         )
         try:
+            await self._delete_ask(item)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             await self._cancel_now(None, item.event, mid, via="超时未确认")
         except Exception:  # noqa: BLE001
             pass
+
+    async def _delete_ask(self, item: Any) -> None:
+        """流程收尾：撤回 bot 自己发的那句询问（答是 / 答否 / 超时都撤）。"""
+        ask_id = getattr(item, "ask_id", "")
+        if not ask_id:
+            return
+        done = await self._delete_ids(item.event, [ask_id])
+        if done:
+            self._info(f"撤回确认：询问消息已撤回（消息 {item.trigger_id}）")
 
     async def _consume_answer(self, ctx: Any, event: Any) -> bool:
         """撤回者本人的回答 ⇒ 处理并吞掉本条消息；其它情况 ``False``。
@@ -512,6 +556,10 @@ class RecallFeature(Feature):
             # 闸门再执行动作，扣在发送口的任务拿到判决才动
             item.verdict = not bool(verdict)
             item.gate.set()
+            try:
+                await self._delete_ask(item)  # 流程收尾：询问撤回，不留残句
+            except Exception:  # noqa: BLE001
+                pass
             if verdict:
                 self._info(f"撤回确认：撤回者答「是」，执行取消（消息 {mid}）")
                 await self._cancel_now(ctx, item.event, mid, via="确认取消")
@@ -720,7 +768,20 @@ class RecallFeature(Feature):
     async def _delete_replies(
         self, event: Any, reply_ids: List[str], trigger_id: str
     ) -> int:
-        """OneBot ``delete_msg``（str→int 双试），返回成功条数。"""
+        """删除 bot 回复（``delete_msg``，str→int 双试），返回成功条数。"""
+        done = await self._delete_ids(event, reply_ids)
+        if reply_ids:
+            self._info(
+                f"撤回连带：删除 bot 回复 {done}/{len(reply_ids)} 条（消息 {trigger_id}）"
+            )
+        return done
+
+    async def _delete_ids(self, event: Any, ids: List[str]) -> int:
+        """OneBot ``delete_msg``（str→int 双试），返回成功条数。
+
+        连带撤回复与「撤回询问消息」共用的底层；不写日志（各自的
+        调用方按自己的措辞记）。
+        """
         bot = getattr(event, "bot", None)
         call = getattr(bot, "call_action", None)
         if not callable(call):
@@ -732,7 +793,7 @@ class RecallFeature(Feature):
         routing = self._routing(raw)
 
         done = 0
-        for rid in reply_ids:
+        for rid in ids:
             candidates: List[Any] = [rid]
             if str(rid).isdigit():
                 candidates.append(int(rid))
@@ -745,8 +806,4 @@ class RecallFeature(Feature):
                     raise
                 except Exception:  # noqa: BLE001
                     continue
-        if reply_ids:
-            self._info(
-                f"撤回连带：删除 bot 回复 {done}/{len(reply_ids)} 条（消息 {trigger_id}）"
-            )
         return done

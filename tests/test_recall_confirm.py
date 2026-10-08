@@ -5,6 +5,7 @@
   （只认精确词，认不出就继续等）；
 - 流程：开着开关 ⇒ 撤回先发询问不急着动；答「是」才掐请求 + 撤回复；
   答「否」保留；超时自动取消；**只有撤回者本人的回答算数**；
+  流程收尾（答是 / 答否 / 超时）把 bot 发的询问一并撤回；
 - 兜底：询问发不出去 ⇒ 回退老行为立刻取消；关着开关 ⇒ 老行为不变。
 """
 
@@ -18,6 +19,7 @@ from conftest import _ROOT  # noqa: F401  触发 sys.path 注入
 
 from xbnext.features.recall import RecallFeature, replies
 from xbnext.features.recall.service import (
+    CONFIRM_TIMEOUT,
     ask_text,
     match_answer,
     recall_meta,
@@ -82,9 +84,12 @@ class TestMatchAnswer(unittest.TestCase):
 
     def test_ask_text_mentions_timeout_and_words(self):
         text = ask_text()
-        self.assertIn("30 秒", text)
+        # 秒数随常量动态渲染，改 CONFIRM_TIMEOUT 文案自动跟随
+        self.assertIn(f"{CONFIRM_TIMEOUT:.0f} 秒", text)
         self.assertIn("「是」", text)
         self.assertIn("「否」", text)
+        self.assertIn("要取消这次回复吗", text)
+        self.assertLessEqual(len(text), 60, "询问正文要短，别刷屏")
 
 
 # ==================================================================
@@ -213,6 +218,7 @@ class TestConfirmFlow(unittest.TestCase):
                 self.assertEqual(segs[0]["data"]["qq"], "666")  # @ 撤回者
                 self.assertIn("要取消这次回复吗", segs[1]["data"]["text"])
                 self.assertEqual(sends[0][1]["self_id"], 555)  # 多连接路由
+                self.assertEqual(feat._awaiting["789"].ask_id, "900")  # 询问 id 已登记
                 # 在飞任务一根毛都没动
                 self.assertFalse(task.done())
                 self.assertIn("789", feat._awaiting)
@@ -322,8 +328,8 @@ class TestConfirmFlow(unittest.TestCase):
                 self.assertTrue(task.cancelled())
                 self.assertEqual(feat._awaiting, {})
                 dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
-                self.assertEqual(len(dels), 1)
-                self.assertEqual(str(dels[0][1]["message_id"]), "555")
+                ids = [str(d[1]["message_id"]) for d in dels]
+                self.assertEqual(ids, ["900", "555"])  # 询问 + 已发回复都撤
                 self.assertEqual(replies.take("789"), ([], False))
             finally:
                 feat.on_unload()
@@ -343,7 +349,8 @@ class TestConfirmFlow(unittest.TestCase):
                 self.assertFalse(task.done())  # 请求没被掐
                 self.assertEqual(feat._awaiting, {})
                 dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
-                self.assertEqual(dels, [])  # 回复没被撤
+                # 只撤了询问（900），已发回复（555）原样保留
+                self.assertEqual([str(d[1]["message_id"]) for d in dels], ["900"])
                 self.assertEqual(replies.take("789"), (["555"], False))
             finally:
                 feat.on_unload()
@@ -475,8 +482,8 @@ class TestConfirmFlow(unittest.TestCase):
                 ans = _answer_event("是", sender="666")
                 await feat.on_adapter_message(_Ctx(ans, confirm=True))
                 dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
-                self.assertEqual(len(dels), 1)
-                self.assertEqual(str(dels[0][1]["message_id"]), "555")
+                ids = [str(d[1]["message_id"]) for d in dels]
+                self.assertEqual(ids, ["900", "555"])  # 询问 + 回复都撤
             finally:
                 feat.on_unload()
 
@@ -498,6 +505,81 @@ class TestConfirmFlow(unittest.TestCase):
                 feat.on_unload()
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+        self._run(main())
+
+    # -- 询问消息自动撤回（流程收尾不留残句） ------------------------
+    def test_ask_message_id_captured(self):
+        """发送回执里的 message_id 登记进 _Awaiting.ask_id。"""
+        async def main():
+            feat = RecallFeature()
+            ctx, task, notice = await self._arm(feat)
+            try:
+                item = feat._awaiting.get("789")
+                self.assertIsNotNone(item)
+                self.assertEqual(item.ask_id, "900")
+            finally:
+                feat.on_unload()
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        self._run(main())
+
+    def test_ask_recalled_after_yes(self):
+        async def main():
+            feat = RecallFeature()
+            _, task, notice = await self._arm(feat)
+            try:
+                ans = _answer_event("是", sender="666")
+                await feat.on_adapter_message(_Ctx(ans, confirm=True))
+                await asyncio.gather(task, return_exceptions=True)
+                dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
+                self.assertEqual([str(d[1]["message_id"]) for d in dels], ["900"])
+            finally:
+                feat.on_unload()
+
+        self._run(main())
+
+    def test_ask_recalled_after_no(self):
+        async def main():
+            feat = RecallFeature()
+            _, task, notice = await self._arm(feat)
+            try:
+                ans = _answer_event("否", sender="666")
+                await feat.on_adapter_message(_Ctx(ans, confirm=True))
+                dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
+                self.assertEqual([str(d[1]["message_id"]) for d in dels], ["900"])
+            finally:
+                feat.on_unload()
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+        self._run(main())
+
+    def test_ask_recalled_after_timeout(self):
+        async def main():
+            feat = RecallFeature()
+            feat.confirm_timeout = 0.05
+            _, task, notice = await self._arm(feat)
+            try:
+                await asyncio.sleep(0.15)
+                dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
+                self.assertEqual([str(d[1]["message_id"]) for d in dels], ["900"])
+            finally:
+                feat.on_unload()
+
+        self._run(main())
+
+    def test_unload_leaves_ask_untouched(self):
+        """卸载不发请求，不追删询问（只放行闸、清表）。"""
+        async def main():
+            feat = RecallFeature()
+            _, task, notice = await self._arm(feat)
+            feat.on_unload()
+            dels = [c for c in notice.bot.calls if c[0] == "delete_msg"]
+            self.assertEqual(dels, [])
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
         self._run(main())
 

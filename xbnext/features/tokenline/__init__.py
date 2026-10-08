@@ -31,8 +31,8 @@ class TokenLineFeature(Feature):
     key = "enable_token_usage"
     name = "Token 用量展示"
     description = (
-        "回复末尾追加本轮 输入/输出/缓存 token 用量；仅对名单内的"
-        "会话显示，默认关闭"
+        "回复末尾追加本轮 token 用量（输入含缓存 / 输出 / 缓存）；"
+        "仅对名单内的会话显示，默认关闭"
     )
     #: 收数在 LLM 响应、出数在结果装饰，都不在 on_llm_request 主链
     order = 95
@@ -44,7 +44,7 @@ class TokenLineFeature(Feature):
     _plain_cls: Any = None
 
     async def handle_command(self, event: Any, args: List[str], conf: Any = None) -> str:
-        """``/xbnext token`` —— 当前会话的 token 用量显示一键开关。
+        """``/xbnext token`` —— 当前会话的 token 用量展示一键开关。
 
         只把**当前会话 UMO** 追加 / 移出 ``token_usage_umos`` 白名单
         （一个字节都不动其它会话）；总开关 ``enable_token_usage`` 没开时
@@ -68,7 +68,7 @@ class TokenLineFeature(Feature):
         result = await switches.apply_conf(conf, "token_usage_umos", "\n".join(umos))
         if result.get("error"):
             return f"{verb}但没能保存（已回滚）：{result['error']}"
-        return f"{verb}本会话的 token 用量显示（{umo}），白名单共 {len(umos)} 项。"
+        return f"{verb}本会话的 token 用量展示（{umo}），白名单共 {len(umos)} 项。"
 
     async def on_llm_response(self, ctx: Any, resp: Any) -> None:
         event = ctx.event

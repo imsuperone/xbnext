@@ -6,7 +6,9 @@
 1. **取数** :func:`pick_usage` —— 优先读核心 agent runner 的整轮累计
    （``_ACTIVE_AGENT_RUNNERS``，含工具循环的多次调用；私有表，惰性
    import、拿不到就回落），再回落到钩子实参 ``resp.usage``；
-   两条路都要求 provider 真回报了 usage，**全 0 不显示**；
+   两条路都要求 provider 真回报了 usage，**全 0 不显示**。解析出的
+   缓存为 0 时，再从响应原件 :func:`raw_cached` 补读 DeepSeek 类
+   端点的自报缓存字段（核心不解析，见该函数 docstring）；
 2. **暂存** —— 直接用核心原生的 ``event.get_extra`` /
    ``event.set_extra``（``on_llm_response`` 写入，``on_decorating_result``
    读走即焚）；
@@ -117,6 +119,78 @@ def _runner_usage(event: Any) -> Optional[Dict[str, int]]:
         return None
 
 
+#: raw usage 里各家自报的缓存字段名（标准字段之外的别名，按优先级）
+_RAW_CACHE_FIELDS = ("prompt_cache_hit_tokens", "cache_read_input_tokens")
+
+
+def _usage_get(usage: Any, name: str) -> Any:
+    """从 usage（dict 或 pydantic 对象，含 extra 字段）取一个字段。"""
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        return usage.get(name)
+    value = getattr(usage, name, None)
+    if value is None:
+        # openai SDK BaseModel（extra="allow"）：DeepSeek 自报字段挂在
+        # model_extra 上；dict 形态的 raw usage 直接走上面的 .get
+        extra = getattr(usage, "model_extra", None) or getattr(
+            usage, "__pydantic_extra__", None
+        )
+        if isinstance(extra, dict):
+            value = extra.get(name)
+    return value
+
+
+def _to_int(value: Any) -> int:
+    try:
+        num = int(value or 0)
+        return num if num > 0 else 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def raw_cached(resp: Any) -> int:
+    """从响应原件补读缓存 token（核心没解析的 DeepSeek 类字段）。
+
+    核心 ``_extract_usage`` 只认标准 ``prompt_tokens_details.cached_tokens``，
+    DeepSeek 类端点把缓存写在顶层 ``prompt_cache_hit_tokens`` —— 原件
+    ``resp.raw_completion.usage`` 里还在（openai SDK ``extra="allow"``），
+    这里补读。dict / pydantic 对象双形态都认；读不到返回 0。
+    """
+    try:
+        usage = getattr(getattr(resp, "raw_completion", None), "usage", None)
+    except Exception:  # noqa: BLE001
+        return 0
+    if usage is None:
+        return 0
+    for name in _RAW_CACHE_FIELDS:
+        num = _to_int(_usage_get(usage, name))
+        if num:
+            return num
+    details = _usage_get(usage, "prompt_tokens_details")
+    return _to_int(_usage_get(details, "cached_tokens"))
+
+
+def _rescue_cached(vals: Dict[str, int], resp: Any) -> Dict[str, int]:
+    """解析出的缓存为 0 时，从响应原件补读（封顶 input）。
+
+    工具循环场景 raw 只有最后一跳、可能低于整轮累计 —— 单次问答准确，
+    多跳略保守；补读不到就保持 0（展示侧会省略缓存段）。
+    """
+    if vals.get("cached"):
+        return vals
+    num = raw_cached(resp)
+    if not num:
+        return vals
+    out = dict(vals)
+    try:
+        cap = int(out.get("input") or 0)
+        out["cached"] = min(num, cap) if cap > 0 else num
+    except Exception:  # noqa: BLE001
+        out["cached"] = num
+    return out
+
+
 def pick_usage(event: Any, resp: Any) -> Optional[Tuple[str, Dict[str, int]]]:
     """选本轮展示用的用量：``(kind, vals)``；``kind`` 决定叠加策略。
 
@@ -124,13 +198,14 @@ def pick_usage(event: Any, resp: Any) -> Optional[Tuple[str, Dict[str, int]]]:
     - ``"sum"``   —— 单次调用 ``resp.usage``，同轮多次到达时累加。
 
     provider 没回报 usage / 三列全 0 ⇒ ``None``（不显示 0/0/0 误导人）。
+    解析出的缓存为 0 时从响应原件补读（:func:`raw_cached`）。
     """
     vals = _runner_usage(event)
     if vals:
-        return "stats", vals
+        return "stats", _rescue_cached(vals, resp)
     vals = extract_usage(getattr(resp, "usage", None))
     if vals:
-        return "sum", vals
+        return "sum", _rescue_cached(vals, resp)
     return None
 
 
@@ -148,7 +223,10 @@ def merge_extra(prev: Any, kind: str, vals: Dict[str, int]) -> Dict[str, int]:
 
 
 def format_line(vals: Dict[str, int]) -> str:
-    """拼展示行：``📊 本轮 token：输入 1,234 · 输出 567 · 缓存 800``。"""
+    """拼展示行：``📊 本轮 token：输入 1,234 · 输出 567 · 缓存 800``。
+
+    缓存为 0（端点不回报 / 补读不到）⇒ 省略缓存段，不显示「缓存 0」。
+    """
     try:
         inp = int(vals.get("input", 0) or 0)
         out = int(vals.get("output", 0) or 0)
@@ -157,7 +235,10 @@ def format_line(vals: Dict[str, int]) -> str:
         return ""
     if not (inp or out or cached):
         return ""
-    return f"📊 本轮 token：输入 {inp:,} · 输出 {out:,} · 缓存 {cached:,}"
+    line = f"📊 本轮 token：输入 {inp:,} · 输出 {out:,}"
+    if cached > 0:
+        line += f" · 缓存 {cached:,}"
+    return line
 
 
 __all__ = [
@@ -166,6 +247,7 @@ __all__ = [
     "normalize_umos",
     "in_whitelist",
     "extract_usage",
+    "raw_cached",
     "pick_usage",
     "merge_extra",
     "format_line",
