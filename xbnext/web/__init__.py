@@ -31,6 +31,7 @@ from .. import HOOK_PRIORITY, PLUGIN_NAME, __version__
 from .. import inject_log, switches
 from ..config import SCHEMA
 from ..features.face import updater as face_updater
+from ..features.tokenline import service as tokenline_service
 
 
 def _ok(data: Any, astrbot_web: Any) -> Any:
@@ -87,7 +88,11 @@ async def handle_setting(runtime: Any, payload: Any) -> Dict[str, Any]:
         return {"ok": False, "error": f"未知配置项: {key or '(空)'}"}
     if "value" not in payload:
         return {"ok": False, "error": "缺少 value"}
-    result = await switches.apply_conf(runtime.conf, key, payload.get("value"))
+    value = payload.get("value")
+    if key == "token_usage_umos" and isinstance(value, (str, list, tuple)):
+        # 写回前先洗一遍：切开黏连 + 保序去重，坏数据不再落盘（D4）
+        value = tokenline_service.normalize_umos(value)
+    result = await switches.apply_conf(runtime.conf, key, value)
     if result.get("error"):
         return {"ok": False, "error": result["error"], "data": result}
     return {"ok": True, "data": result}

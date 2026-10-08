@@ -314,7 +314,7 @@
       });
     }
 
-    var inputs = document.querySelectorAll('input.m3-input[data-key="' + key + '"]');
+    var inputs = document.querySelectorAll('.m3-input[data-key="' + key + '"]');
     Array.prototype.forEach.call(inputs, function (inp) {
       if (document.activeElement !== inp) {
         inp.value = CONFIG[key] == null ? "" : String(CONFIG[key]);
@@ -334,7 +334,10 @@
       Array.prototype.forEach.call(
         document.querySelectorAll('[data-key="' + key + '"]'),
         function (el) {
-          if (el.tagName === "INPUT" && (el.type === "checkbox" || el.type === "text" || el.type === "number")) {
+          if (
+            (el.tagName === "INPUT" && (el.type === "checkbox" || el.type === "text" || el.type === "number")) ||
+            el.tagName === "TEXTAREA"
+          ) {
             el.disabled = !ok;
           }
           el.style.opacity = ok ? "" : "0.45";
@@ -430,7 +433,7 @@
 
     // 文本输入
     Array.prototype.forEach.call(
-      document.querySelectorAll("input.m3-input[data-key]"),
+      document.querySelectorAll(".m3-input[data-key]"),
       function (inp) {
         var key = inp.getAttribute("data-key");
         var flush = function () {
@@ -440,7 +443,10 @@
         };
         inp.addEventListener("change", flush);
         inp.addEventListener("blur", flush);
-        inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") flush(); });
+        inp.addEventListener("keydown", function (ev) {
+          // textarea 里 Enter 是换行，保存交给 change / blur
+          if (ev.key === "Enter" && inp.tagName !== "TEXTAREA") flush();
+        });
       }
     );
   }
@@ -1003,9 +1009,18 @@
    * Token 白名单 · 一键获取群列表（R9：手打 UMO 太难，点选自动拼）
    * ====================================================================== */
   function tkParseUmos(text) {
-    return String(text || "").split(/[,，、;；\n]/).map(function (s) {
-      return s.trim();
-    }).filter(Boolean);
+    // 黏连自救：单行 input 剥掉换行后名单会黏成一坨，按「数字 + 新 UMO 开头」补回换行
+    var raw = String(text || "").replace(
+      /(\d)(?=[A-Za-z_][A-Za-z0-9_\-]*:[A-Za-z0-9_\-]*Message:)/g,
+      "$1\n"
+    );
+    var seen = {};
+    var out = [];
+    raw.split(/[,，、;；\n]/).forEach(function (s) {
+      s = s.trim();
+      if (s && !seen[s]) { seen[s] = true; out.push(s); }
+    });
+    return out;
   }
 
   function tkLoadGroups() {
@@ -1015,13 +1030,16 @@
     box.hidden = false;
     box.textContent = "正在拉取群列表…";
     if (btn) btn.disabled = true;
-    API.groups().then(function (rows) {
-      if (btn) btn.disabled = false;
-      tkRenderGroups(box, rows || []);
-    }, function (e) {
-      if (btn) btn.disabled = false;
-      box.textContent = "获取失败：" + (e && e.message ? e.message : e);
-    });
+    // 先刷新一次配置：群里 /xbnext token 开过的，这里就要显示成勾选
+    loadState().catch(function () { /* 配置刷新失败不拦着拉群列表 */ })
+      .then(function () { return API.groups(); })
+      .then(function (rows) {
+        if (btn) btn.disabled = false;
+        tkRenderGroups(box, rows || []);
+      }, function (e) {
+        if (btn) btn.disabled = false;
+        box.textContent = "获取失败：" + (e && e.message ? e.message : e);
+      });
   }
 
   function tkRenderGroups(box, rows) {
@@ -1042,6 +1060,8 @@
       cb.type = "checkbox";
       cb.setAttribute("data-umo", umo);
       if (umo && have.indexOf(umo) >= 0) cb.checked = true;
+      // 勾选直控：勾 = 加入名单并保存，取消勾 = 移出并保存（写读两侧都防重）
+      cb.addEventListener("change", function () { tkToggleUmo(umo, cb.checked); });
       var span = document.createElement("span");
       span.textContent = (g.group_name || "未命名群") + "（" + (g.group_id || "") + "）";
       label.appendChild(cb);
@@ -1049,30 +1069,40 @@
       list.appendChild(label);
     });
     box.appendChild(list);
-    var addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.className = "m3-btn primary-btn";
-    addBtn.textContent = "追加选中到名单";
-    addBtn.addEventListener("click", tkAppendSelected);
-    box.appendChild(addBtn);
+    var hint = document.createElement("span");
+    hint.className = "field-hint";
+    hint.textContent = "勾选 = 加入名单，取消勾选 = 移出名单，改动即时保存（自动去重）。";
+    box.appendChild(hint);
   }
 
-  function tkAppendSelected() {
+  function tkToggleUmo(umo, on) {
     var inp = $("inp_token_usage_umos");
-    if (!inp) return;
+    if (!inp || !umo) return;
     var have = tkParseUmos(inp.value);
-    var added = 0;
+    var idx = have.indexOf(umo);
+    if (on && idx >= 0) return;
+    if (!on && idx < 0) return;
+    if (on) have.push(umo);
+    else have.splice(idx, 1);
+    inp.value = have.join("\n");
+    writeConfig("token_usage_umos", inp.value, { quiet: true }).then(function () {
+      tkSyncChecks();
+      toast(on ? "已加入名单并保存" : "已移出名单并保存", "ok");
+    }, function () {
+      // 保存失败：writeConfig 已回滚文本，这里把勾选状态也同步回去
+      tkSyncChecks();
+    });
+  }
+
+  function tkSyncChecks() {
+    var inp = $("inp_token_usage_umos");
+    var have = tkParseUmos(inp ? inp.value : "");
     Array.prototype.forEach.call(
-      document.querySelectorAll("#tkGroupsBox input[type=checkbox]:checked"),
+      document.querySelectorAll("#tkGroupsBox input[type=checkbox][data-umo]"),
       function (cb) {
-        var umo = cb.getAttribute("data-umo");
-        if (umo && have.indexOf(umo) < 0) { have.push(umo); added += 1; }
+        cb.checked = have.indexOf(cb.getAttribute("data-umo")) >= 0;
       }
     );
-    if (!added) { toast("没有新增的会话（选中的都已在名单里）", "bad"); return; }
-    inp.value = have.join("\n");
-    inp.dispatchEvent(new Event("change")); // 触发 initControls 的自动保存
-    toast("已追加 " + added + " 个会话并保存", "ok");
   }
 
   function initTokenline() {

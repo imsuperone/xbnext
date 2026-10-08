@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...eventids import umo_of
@@ -28,17 +29,43 @@ EXTRA_KEY = "_xb_token_usage"
 #: UMO 名单分隔符：中文/英文逗号、顿号、分号（换行走 str.splitlines）
 _SPLIT_MARKERS = ("，", ",", "、", ";", "；")
 
+#: 黏连切开：单行输入框赋值会剥掉换行，名单黏成
+#: ``...GroupMessage:753700701default:GroupMessage:...`` 一坨。在「**数字
+#: 结尾 + 新 UMO 开头**」处补回换行。锚定前面的数字是关键——光用
+#: lookahead 会在 ``efault:`` 这类平台名中间撕开。
+_GLUE_RE = re.compile(r"(\d)(?=[A-Za-z_][A-Za-z0-9_\-]*:[A-Za-z0-9_\-]*Message:)")
+
 
 def parse_umos(text: Any) -> List[str]:
-    """把配置里的会话名单文本拆成列表（逗号 / 顿号 / 分号 / 换行）。"""
+    """把配置里的会话名单文本拆成列表（逗号 / 顿号 / 分号 / 换行）。
+
+    自救两步（D4 根因：单行 input 赋值剥换行 → 名单黏成一坨）：
+
+    1. 按 :data:`_GLUE_RE` 把黏连处补回换行，切开成一条条 UMO；
+    2. **保序去重** —— 群里存过一次、WebUI 又存过一次的重复只留第一条。
+    """
     if isinstance(text, (list, tuple)):
-        return [str(item).strip() for item in text if str(item).strip()]
-    if not isinstance(text, str) or not text.strip():
+        raw = "\n".join(str(item) for item in text)
+    elif isinstance(text, str) and text.strip():
+        raw = text
+    else:
         return []
-    raw = text
     for marker in _SPLIT_MARKERS:
         raw = raw.replace(marker, "\n")
-    return [chunk.strip() for chunk in raw.splitlines() if chunk.strip()]
+    raw = _GLUE_RE.sub(r"\1\n", raw)
+    seen = set()
+    out: List[str] = []
+    for chunk in raw.splitlines():
+        chunk = chunk.strip()
+        if chunk and chunk not in seen:
+            seen.add(chunk)
+            out.append(chunk)
+    return out
+
+
+def normalize_umos(text: Any) -> str:
+    """写回配置前洗一遍：切开黏连 + 保序去重，换行拼接（存侧归一化）。"""
+    return "\n".join(parse_umos(text))
 
 
 def in_whitelist(text: Any, umo: Any) -> bool:
@@ -136,6 +163,7 @@ def format_line(vals: Dict[str, int]) -> str:
 __all__ = [
     "EXTRA_KEY",
     "parse_umos",
+    "normalize_umos",
     "in_whitelist",
     "extract_usage",
     "pick_usage",

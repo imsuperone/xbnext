@@ -109,6 +109,61 @@ class TestParseAndWhitelist(unittest.TestCase):
         self.assertEqual(service.parse_umos(None), [])
         self.assertEqual(service.parse_umos(123), [])
 
+    def test_parse_umos_splits_glued_and_dedups(self):
+        # D4 真机坏数据：单行 input 剥了换行黏成一坨，且 7683 存了两次
+        glued = (
+            "default:GroupMessage:753700701"
+            "default:GroupMessage:723827683"
+            "default:GroupMessage:723827683"
+        )
+        self.assertEqual(
+            service.parse_umos(glued),
+            ["default:GroupMessage:753700701", "default:GroupMessage:723827683"],
+        )
+
+    def test_parse_umos_glued_after_marker_split(self):
+        # 逗号还在、换行被剥：先按逗号切，黏连段照样自救
+        raw = (
+            "aiocqhttp:GroupMessage:1,"
+            "aiocqhttp:GroupMessage:2aiocqhttp:GroupMessage:3"
+        )
+        self.assertEqual(
+            service.parse_umos(raw),
+            [
+                "aiocqhttp:GroupMessage:1",
+                "aiocqhttp:GroupMessage:2",
+                "aiocqhttp:GroupMessage:3",
+            ],
+        )
+
+    def test_parse_umos_dedup_keeps_order(self):
+        self.assertEqual(service.parse_umos("a\nb\na\nc\nb"), ["a", "b", "c"])
+
+    def test_parse_umos_single_umo_not_torn(self):
+        # 平台名带数字的单条 UMO 不许被误切
+        self.assertEqual(
+            service.parse_umos("qq123:GroupMessage:456789"),
+            ["qq123:GroupMessage:456789"],
+        )
+
+    def test_in_whitelist_reads_glued_book(self):
+        glued = "aiocqhttp:GroupMessage:1aiocqhttp:GroupMessage:2"
+        self.assertTrue(service.in_whitelist(glued, "aiocqhttp:GroupMessage:2"))
+        self.assertFalse(service.in_whitelist(glued, "aiocqhttp:GroupMessage:9"))
+
+    def test_normalize_umos(self):
+        glued = (
+            "default:GroupMessage:753700701"
+            "default:GroupMessage:723827683"
+            "default:GroupMessage:723827683"
+        )
+        self.assertEqual(
+            service.normalize_umos(glued),
+            "default:GroupMessage:753700701\ndefault:GroupMessage:723827683",
+        )
+        self.assertEqual(service.normalize_umos(["a", "a", "b"]), "a\nb")
+        self.assertEqual(service.normalize_umos(None), "")
+
     def test_in_whitelist(self):
         book = "aiocqhttp:GroupMessage:1，aiocqhttp:GroupMessage:2"
         self.assertTrue(service.in_whitelist(book, "aiocqhttp:GroupMessage:2"))

@@ -302,6 +302,22 @@ class HandleSettingTest(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertIn("未保存", out["error"])
 
+    def test_setting_normalizes_token_umos(self):
+        # D4：存名单前先洗一遍 —— 黏连切开 + 去重，坏数据不许落盘
+        glued = (
+            "default:GroupMessage:753700701"
+            "default:GroupMessage:723827683"
+            "default:GroupMessage:723827683"
+        )
+        saver = Saver()
+        out = self._run(
+            handle_setting(FakeRuntime(saver), {"key": "token_usage_umos", "value": glued})
+        )
+        self.assertTrue(out.get("ok"), out)
+        cleaned = "default:GroupMessage:753700701\ndefault:GroupMessage:723827683"
+        self.assertEqual(out["data"]["value"], cleaned)
+        self.assertEqual(saver.data["token_usage_umos"], cleaned)
+
 
 class InjectLogEndpointTest(unittest.TestCase):
     """P16 · GET inject_log：永远 ok，空 / 有数据两种形态。"""

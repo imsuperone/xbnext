@@ -269,8 +269,8 @@
           <p class="card-desc">仅在「Token 用量展示」开启时生效。</p>
           <div class="form-group">
             <label class="form-label">显示的会话名单</label>
-            <input type="text" class="m3-input" id="inp_token_usage_umos" data-key="token_usage_umos" placeholder="aiocqhttp:GroupMessage:123456" />
-            <span class="field-hint">每项填一个会话 UMO（<code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔；也可以在会话里发 <code>/xbnext token</code> 一键把当前会话加进/移出名单。留空 = 任何会话都不显示。</span>
+            <textarea class="m3-input m3-textarea" id="inp_token_usage_umos" data-key="token_usage_umos" rows="3" placeholder="aiocqhttp:GroupMessage:123456"></textarea>
+            <span class="field-hint">每项填一个会话 UMO（<code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔（重复项自动去重）；下方群列表<b>勾选即加入、取消勾选即移出</b>，改动即时保存；也可以在会话里发 <code>/xbnext token</code> 一键把当前会话加进/移出名单。留空 = 任何会话都不显示。</span>
             <button type="button" class="m3-btn secondary-btn" id="tkGroupsBtn">一键获取群列表</button>
             <div id="tkGroupsBox" class="tk-groups-box" hidden></div>
           </div>
