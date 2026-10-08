@@ -6,10 +6,10 @@
 
 修正 AstrBot 日常使用中的实际问题：引用回复误判空白附件、QQ 表情不被模型识别、回复身份串台、用户画像缺失；另提供撤回取消、历史图片瘦身、Token 用量展示等可选能力，功能均可在控制台独立开关。
 
-本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一款开源的多平台聊天机器人框架，可接入 QQ、Telegram 等消息平台与多家大模型服务，自带 Web 管理界面，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
+本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一个松耦合、异步、支持多消息平台部署，具有易用的插件系统和完善的大语言模型（LLM）接入功能的聊天机器人及开发框架，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
 
 - 插件 ID：`astrbot_plugin_xbnext`
-- 当前版本：`v0.2.1`
+- 当前版本：`v0.2.2`
 - 运行要求：AstrBot `>=3.4.0`，平台 `aiocqhttp`
 - 仓库：https://github.com/imsuperone/xbnext
 
