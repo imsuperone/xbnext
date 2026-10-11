@@ -1086,6 +1086,7 @@
     var qEl = $("tkGroupSearch");
     var kw = qEl && qEl.value ? qEl.value.trim().toLowerCase() : "";
     var filtered = merged.filter(function (g) {
+      if (g.umo && /webchat|probe/i.test(g.umo)) return false;
       if (!kw) return true;
       return (g.group_name && g.group_name.toLowerCase().indexOf(kw) >= 0) ||
              (g.group_id && g.group_id.toLowerCase().indexOf(kw) >= 0) ||
@@ -1121,7 +1122,8 @@
       var tr = mkEl("tr", enabled ? "is-enabled" : "");
 
       var tdName = mkEl("td", "group-cell-name", g.group_name || "未命名会话");
-      var tdId = mkEl("td", "group-cell-id", g.group_id ? (g.group_id + " (" + umo + ")") : umo);
+      var tdId = mkEl("td", "group-cell-id", g.group_id || umo);
+      tdId.title = umo;
       var tdAct = mkEl("td", "group-cell-action");
 
       var swLabel = mkEl("label", "m3-switch");

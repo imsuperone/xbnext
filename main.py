@@ -18,6 +18,21 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star
 
+import importlib
+import sys as _sys_reload
+
+for _mod_name in list(_sys_reload.modules.keys()):
+    if (
+        _mod_name == "xbnext"
+        or _mod_name.startswith("xbnext.")
+        or _mod_name.endswith(".xbnext")
+        or ".xbnext." in _mod_name
+    ):
+        try:
+            importlib.reload(_sys_reload.modules[_mod_name])
+        except Exception:
+            pass
+
 from .xbnext import HOOK_PRIORITY, PLUGIN_NAME, __version__
 from .xbnext.runtime import XbnextRuntime
 from .xbnext.web import register_web_api
