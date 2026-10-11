@@ -305,12 +305,7 @@ class AttributionFeature(Feature):
     # -- 工具 ---------------------------------------------------------
     @staticmethod
     def _umo(ctx) -> str:
-        try:
-            umo = getattr(ctx.event, "get_session_id", None)
-            value = umo() if callable(umo) else ""
-            return str(value or "default")
-        except Exception:  # noqa: BLE001
-            return "default"
+        return umo_of(getattr(ctx, "event", None))
 
     @staticmethod
     def _build_item(ctx) -> Optional[dict]:

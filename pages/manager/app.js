@@ -1006,8 +1006,10 @@
   }
 
   /* ========================================================================
-   * Token 白名单 · 一键获取群列表（R9：手打 UMO 太难，点选自动拼）
+   * Token 白名单 · 群聊开关表（与 xbbot_beta / xbimg 同款）
    * ====================================================================== */
+  var tkCachedGroups = [];
+
   function tkParseUmos(text) {
     // 黏连自救：单行 input 剥掉换行后名单会黏成一坨，按「数字 + 新 UMO 开头」补回换行
     var raw = String(text || "").replace(
@@ -1023,56 +1025,123 @@
     return out;
   }
 
-  function tkLoadGroups() {
+  function tkLoadGroups(silent) {
     var btn = $("tkGroupsBtn");
     var box = $("tkGroupsBox");
     if (!box) return;
-    box.hidden = false;
-    box.textContent = "正在拉取群列表…";
+    if (!silent) {
+      box.textContent = "";
+      box.appendChild(pfNote("正在拉取群列表…"));
+    }
     if (btn) btn.disabled = true;
-    // 先刷新一次配置：群里 /xbnext token 开过的，这里就要显示成勾选
-    loadState().catch(function () { /* 配置刷新失败不拦着拉群列表 */ })
-      .then(function () { return API.groups(); })
+    var p = silent ? Promise.resolve() : loadState().catch(function () {});
+    p.then(function () { return API.groups(); })
       .then(function (rows) {
         if (btn) btn.disabled = false;
-        tkRenderGroups(box, rows || []);
+        tkCachedGroups = Array.isArray(rows) ? rows : [];
+        tkRenderGroups();
+        if (!silent) toast("群列表已更新（共 " + tkCachedGroups.length + " 个群）", "ok");
       }, function (e) {
         if (btn) btn.disabled = false;
-        box.textContent = "获取失败：" + (e && e.message ? e.message : e);
+        tkRenderGroups();
+        if (!silent) toast("获取群列表失败：" + (e && e.message ? e.message : e), "bad");
       });
   }
 
-  function tkRenderGroups(box, rows) {
-    box.textContent = "";
-    if (!rows.length) {
-      box.textContent = "没拉到群列表（机器人可能没连上 OneBot / 不在任何群）。";
-      return;
-    }
+  function tkRenderGroups() {
+    var box = $("tkGroupsBox");
+    if (!box) return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+
     var inp = $("inp_token_usage_umos");
     var have = tkParseUmos(inp ? inp.value : "");
-    var list = document.createElement("div");
-    list.className = "tk-groups-list";
-    rows.forEach(function (g) {
+    var haveSet = {};
+    have.forEach(function (u) { haveSet[u] = true; });
+
+    // 合并服务端拉到的群 + 已在白名单里的 UMO
+    var merged = [];
+    var seenUmo = {};
+    tkCachedGroups.forEach(function (g) {
       var umo = String(g.umo || "");
-      var label = document.createElement("label");
-      label.className = "tk-group-row";
+      if (!umo || seenUmo[umo]) return;
+      seenUmo[umo] = true;
+      merged.push({
+        umo: umo,
+        group_id: String(g.group_id || ""),
+        group_name: String(g.group_name || "")
+      });
+    });
+    have.forEach(function (umo) {
+      if (seenUmo[umo]) return;
+      seenUmo[umo] = true;
+      var parts = umo.split(":");
+      var gid = parts.length >= 3 ? parts.slice(2).join(":") : umo;
+      merged.push({
+        umo: umo,
+        group_id: gid,
+        group_name: ""
+      });
+    });
+
+    var qEl = $("tkGroupSearch");
+    var kw = qEl && qEl.value ? qEl.value.trim().toLowerCase() : "";
+    var filtered = merged.filter(function (g) {
+      if (!kw) return true;
+      return (g.group_name && g.group_name.toLowerCase().indexOf(kw) >= 0) ||
+             (g.group_id && g.group_id.toLowerCase().indexOf(kw) >= 0) ||
+             (g.umo && g.umo.toLowerCase().indexOf(kw) >= 0);
+    });
+
+    // 已开启的排前面
+    filtered.sort(function (a, b) {
+      var ea = !!haveSet[a.umo];
+      var eb = !!haveSet[b.umo];
+      if (ea !== eb) return ea ? -1 : 1;
+      return String(a.group_id).localeCompare(String(b.group_id));
+    });
+
+    if (!filtered.length) {
+      box.appendChild(pfNote(kw ? "没有匹配的群聊或会话。" : "暂未获取到群聊列表（可在上方手动输入群号添加，或点击「刷新群列表」）。"));
+      return;
+    }
+
+    var table = mkEl("table", "group-switch-table");
+    var thead = mkEl("thead");
+    var trHead = mkEl("tr");
+    trHead.appendChild(mkEl("th", "", "群聊名称"));
+    trHead.appendChild(mkEl("th", "", "群号 / UMO"));
+    trHead.appendChild(mkEl("th", "group-cell-action", "显示开关"));
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    var tbody = mkEl("tbody");
+    filtered.forEach(function (g) {
+      var umo = g.umo;
+      var enabled = !!haveSet[umo];
+      var tr = mkEl("tr", enabled ? "is-enabled" : "");
+
+      var tdName = mkEl("td", "group-cell-name", g.group_name || "未命名会话");
+      var tdId = mkEl("td", "group-cell-id", g.group_id ? (g.group_id + " (" + umo + ")") : umo);
+      var tdAct = mkEl("td", "group-cell-action");
+
+      var swLabel = mkEl("label", "m3-switch");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.setAttribute("data-umo", umo);
-      if (umo && have.indexOf(umo) >= 0) cb.checked = true;
-      // 勾选直控：勾 = 加入名单并保存，取消勾 = 移出并保存（写读两侧都防重）
+      cb.checked = enabled;
       cb.addEventListener("change", function () { tkToggleUmo(umo, cb.checked); });
-      var span = document.createElement("span");
-      span.textContent = (g.group_name || "未命名群") + "（" + (g.group_id || "") + "）";
-      label.appendChild(cb);
-      label.appendChild(span);
-      list.appendChild(label);
+      var slider = mkEl("span", "switch-slider");
+      swLabel.appendChild(cb);
+      swLabel.appendChild(slider);
+      tdAct.appendChild(swLabel);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdId);
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
     });
-    box.appendChild(list);
-    var hint = document.createElement("span");
-    hint.className = "field-hint";
-    hint.textContent = "勾选 = 加入名单，取消勾选 = 移出名单，改动即时保存（自动去重）。";
-    box.appendChild(hint);
+    table.appendChild(tbody);
+    box.appendChild(table);
   }
 
   function tkToggleUmo(umo, on) {
@@ -1086,27 +1155,46 @@
     else have.splice(idx, 1);
     inp.value = have.join("\n");
     writeConfig("token_usage_umos", inp.value, { quiet: true }).then(function () {
-      tkSyncChecks();
-      toast(on ? "已加入名单并保存" : "已移出名单并保存", "ok");
+      tkRenderGroups();
+      toast(on ? "已开启该群 Token 用量展示" : "已关闭该群 Token 用量展示", "ok");
     }, function () {
-      // 保存失败：writeConfig 已回滚文本，这里把勾选状态也同步回去
-      tkSyncChecks();
+      tkRenderGroups();
     });
   }
 
-  function tkSyncChecks() {
-    var inp = $("inp_token_usage_umos");
-    var have = tkParseUmos(inp ? inp.value : "");
-    Array.prototype.forEach.call(
-      document.querySelectorAll("#tkGroupsBox input[type=checkbox][data-umo]"),
-      function (cb) {
-        cb.checked = have.indexOf(cb.getAttribute("data-umo")) >= 0;
+  function tkAddManual() {
+    var addInp = $("tkGroupAddInput");
+    if (!addInp) return;
+    var raw = String(addInp.value || "").trim();
+    if (!raw) {
+      toast("请输入群号或会话 UMO", "bad");
+      return;
+    }
+    var umo = raw;
+    if (/^\d+$/.test(raw)) {
+      var prefix = "aiocqhttp";
+      if (tkCachedGroups.length && tkCachedGroups[0].umo) {
+        var p0 = String(tkCachedGroups[0].umo).split(":")[0];
+        if (p0) prefix = p0;
       }
-    );
+      umo = prefix + ":GroupMessage:" + raw;
+    }
+    addInp.value = "";
+    tkToggleUmo(umo, true);
   }
 
   function initTokenline() {
-    if ($("tkGroupsBtn")) $("tkGroupsBtn").addEventListener("click", tkLoadGroups);
+    if ($("tkGroupsBtn")) $("tkGroupsBtn").addEventListener("click", function () { tkLoadGroups(false); });
+    if ($("tkGroupSearch")) $("tkGroupSearch").addEventListener("input", tkRenderGroups);
+    if ($("tkGroupAddBtn")) $("tkGroupAddBtn").addEventListener("click", tkAddManual);
+    if ($("tkGroupAddInput")) {
+      $("tkGroupAddInput").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); tkAddManual(); }
+      });
+    }
+    if ($("inp_token_usage_umos")) {
+      $("inp_token_usage_umos").addEventListener("change", tkRenderGroups);
+    }
   }
 
   /* ========================================================================
@@ -1124,7 +1212,10 @@
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);
     if ($("accentResetBtn")) $("accentResetBtn").addEventListener("click", resetAccent);
     if ($("refreshAllBtn")) $("refreshAllBtn").addEventListener("click", function () {
-      loadState().then(function () { toast("已刷新", "ok"); }).catch(function () {});
+      loadState().then(function () {
+        tkLoadGroups(true);
+        toast("已刷新", "ok");
+      }).catch(function () {});
       pfLoad(false);
     });
 
@@ -1133,6 +1224,7 @@
       // 揭开后再套一次主题色：data-boot 期间的内联变量可能被首帧覆盖
       applyAccent(CONFIG.ui_accent_color || "");
       pfLoad(true);
+      tkLoadGroups(true);
     }, reveal);
   }
 

@@ -18,10 +18,13 @@ data/
 # 前端
 node_modules/
 
-# 打包产物
+# 打包产物与临时件
 dist/
 backups/
 *.zip
+*.tmp
+*.bak
+.omo/
 
 # 编辑器 / 系统
 .idea/
@@ -29,5 +32,8 @@ backups/
 .DS_Store
 Thumbs.db
 
-# 说明：aidoc/ 与 tests/ 必须进 git（协作文档与单测），
-# 但两者都不进发布包（打包脚本里排除）。
+# 本地 AI 文档与测试不进 GitHub
+aidoc/
+aidocs/
+tests/
+test_*.py

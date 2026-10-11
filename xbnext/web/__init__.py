@@ -169,7 +169,7 @@ async def handle_inject_log(runtime: Any) -> Dict[str, Any]:
     return {"ok": True, "data": {"items": items}}
 
 
-async def handle_groups(context: Any) -> Dict[str, Any]:
+async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
     """``GET groups``：机器人所在群列表（R9 · token 白名单一键填充）。
 
     只认 **aiocqhttp（OneBot）** 平台实例：``get_client().call_action(
@@ -185,6 +185,7 @@ async def handle_groups(context: Any) -> Dict[str, Any]:
     except Exception:  # noqa: BLE001
         insts = []
     groups: List[Dict[str, str]] = []
+    seen_gids: set = set()
     errors: List[str] = []
     for inst in insts:
         try:
@@ -208,15 +209,37 @@ async def handle_groups(context: Any) -> Dict[str, Any]:
             if not isinstance(row, dict):
                 continue
             gid = str(row.get("group_id") or "").strip()
-            if not gid:
+            if not gid or gid in seen_gids:
                 continue
-            groups.append(
-                {
-                    "group_id": gid,
-                    "group_name": str(row.get("group_name") or ""),
-                    "umo": f"{pid}:GroupMessage:{gid}",
-                }
-            )
+            seen_gids.add(gid)
+            gname = str(row.get("group_name") or "")
+            umo = f"{pid}:GroupMessage:{gid}"
+            groups.append({"group_id": gid, "group_name": gname, "umo": umo})
+            if runtime is not None and hasattr(runtime, "_seen_groups"):
+                try:
+                    runtime._seen_groups[gid] = {
+                        "group_id": gid,
+                        "group_name": gname or gid,
+                        "umo": umo,
+                    }
+                except Exception:  # noqa: BLE001
+                    pass
+    if runtime is not None:
+        try:
+            seen_map = getattr(runtime, "_seen_groups", None)
+            if isinstance(seen_map, dict):
+                for gid, info in seen_map.items():
+                    if gid and gid not in seen_gids and isinstance(info, dict):
+                        seen_gids.add(gid)
+                        groups.append(
+                            {
+                                "group_id": str(gid),
+                                "group_name": str(info.get("group_name") or ""),
+                                "umo": str(info.get("umo") or f"aiocqhttp:GroupMessage:{gid}"),
+                            }
+                        )
+        except Exception:  # noqa: BLE001
+            pass
     if not groups and errors:
         return {"ok": False, "error": f"获取群列表失败：{errors[0]}"}
     return {"ok": True, "data": groups}
@@ -307,7 +330,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def groups_route() -> Any:
         try:
-            result = await handle_groups(context)
+            result = await handle_groups(context, runtime)
             if not result.get("ok"):
                 return _err(result.get("error") or "请求失败", astrbot_web, result.get("data"))
             return _ok(result.get("data"), astrbot_web)

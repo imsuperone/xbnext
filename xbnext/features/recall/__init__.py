@@ -628,6 +628,13 @@ class RecallFeature(Feature):
         except Exception:  # noqa: BLE001 装不上就不装，不影响回复
             pass
 
+    @staticmethod
+    def _is_send_timeout(exc: BaseException) -> bool:
+        """NapCat / OneBot 发送超时（retcode=1200 / Timeout）通常已在后台发出去，
+        退回原发送会触发二次发送（如 xbimg 双发两张图）。"""
+        msg = f"{exc} {repr(exc)}"
+        return "retcode=1200" in msg or "timeout" in msg.lower()
+
     async def _send_captured(
         self, event: Any, trigger_id: str, chain: Any
     ) -> bool:
@@ -660,6 +667,10 @@ class RecallFeature(Feature):
             raise
         except Exception as exc:  # noqa: BLE001
             replies.abandon(trigger_id)
+            if self._is_send_timeout(exc):
+                self._info(f"接管发送超时（不再退回原发送以免重复）：{exc!r}")
+                await self._after_sent(event, chain)
+                return True
             self._info(f"接管发送失败，退回原发送：{exc!r}")
             return False
 

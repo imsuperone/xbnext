@@ -56,6 +56,7 @@ class XbnextRuntime:
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()
         self._loaded = False
+        self._seen_groups: Dict[str, Dict[str, str]] = {}
 
     # ==================================================================
     # 生命周期
@@ -205,6 +206,7 @@ class XbnextRuntime:
         except Exception as exc:  # noqa: BLE001
             self._warn(f"早期钩子初始化失败：{exc!r}")
             return
+        self._remember_group(event)
         before = str(getattr(event, "message_str", "") or "")
         ctx = RequestContext(event=event, req=None, conf=self.conf, runtime=self)
         for feat in self.features:
@@ -380,12 +382,48 @@ class XbnextRuntime:
     def status_lines(self) -> List[str]:
         """把 :meth:`status` 压成给群里看的纯文本行。"""
         st = self.status()
-        lines = [f"XBNEXT v{st['version']}" + ("（已加载）" if st["loaded"] else "（未加载）")]
+        state_tag = "🟢已加载" if st["loaded"] else "⚪未加载"
+        kv_tag = "可用" if st["kv_usable"] else "不可用"
+        lines = [
+            f"🧩【XBNEXT v{st['version']} · {state_tag}】",
+        ]
         for key, item in st["features"].items():
             mark = "✅" if item["enabled"] else "❌"
-            lines.append(f"{mark} {item['name']}")
-        lines.append("KV：" + ("可用" if st["kv_usable"] else "不可用"))
+            lines.append(f"• {mark} {item['name']}")
+        lines.append(f"💾 KV：{kv_tag} ｜ 💡 /xbnext 查看菜单")
         return lines
+
+    def _remember_group(self, event: Any) -> None:
+        """从群消息事件被动记录群号、群名称与 UMO，供 WebUI 群聊开关表展示。"""
+        try:
+            from .eventids import group_id_of, umo_of
+            gid = group_id_of(event)
+            if not gid:
+                return
+            umo = umo_of(event)
+            if not umo or "GroupMessage" not in umo:
+                umo = f"aiocqhttp:GroupMessage:{gid}"
+            gname = ""
+            mo = getattr(event, "message_obj", None)
+            grp = getattr(mo, "group", None) if mo is not None else None
+            if grp is not None:
+                gname = str(getattr(grp, "group_name", "") or "").strip()
+            if not gname:
+                raw = getattr(mo, "raw_message", None) if mo is not None else None
+                if isinstance(raw, dict):
+                    gname = str(raw.get("group_name") or "").strip()
+            prev = self._seen_groups.get(gid, {}).get("group_name", "")
+            if not gname and prev and prev != gid:
+                gname = prev
+            self._seen_groups[gid] = {
+                "group_id": gid,
+                "group_name": gname or gid,
+                "umo": umo,
+            }
+            while len(self._seen_groups) > 2000:
+                self._seen_groups.pop(next(iter(self._seen_groups)), None)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ==================================================================
     # 内部

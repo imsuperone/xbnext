@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.3" />
+  <link rel="stylesheet" href="./style.css?v=0.2.4" />
   <!-- 深浅色与主题色存在服务端配置里（唯一真相源，无本地副本），需等 state 回来才套用；
        首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
   <style>
@@ -25,11 +25,11 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.3">0.2.3</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.4">0.2.4</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
-        <span class="accent-picker-wrap"><button type="button" id="accentPickerBtn" class="m3-accent-picker" title="调整主题颜色" aria-label="调整主题颜色"><svg class="m3-accent-picker-ic" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2C6.57 2 2 6.57 2 12s4.57 10 10 10c.48 0 .87-.39.87-.87 0-.23-.09-.44-.23-.6-.14-.16-.22-.36-.22-.58 0-.48.39-.87.87-.87H16c3.31 0 6-2.69 6-6 0-4.96-4.47-9-10-9zM6.5 13c-.83 0-1.5-.67-1.5-1.5S5.67 10 6.5 10s1.5.67 1.5 1.5S7.33 13 6.5 13zm3.5-3c-.83 0-1.5-.67-1.5-1.5S9.17 7 10 7s1.5.67 1.5 1.5S10.83 10 10 10zm5 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm3 3c-.83 0-1.5-.67-1.5-1.5S17.67 10 18.5 10s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></button><input type="color" id="accentPicker" value="#4A90D9" hidden /><div class="accent-popover" id="accentPopover" hidden><div class="accent-sv" id="accentSv"><div class="accent-sv-dot" id="accentSvDot"></div></div><div class="accent-hue" id="accentHue"><div class="accent-hue-dot" id="accentHueDot"></div></div><div class="accent-pop-row"><input type="text" class="accent-hex" id="accentHex" value="#4A90D9" maxlength="7" spellcheck="false" autocomplete="off" /><span class="accent-current" id="accentCurrent"></span></div><div class="accent-presets" id="accentPresets"><button type="button" data-color="#4A90D9" style="background:#4A90D9"></button><button type="button" data-color="#1A73E8" style="background:#1A73E8"></button><button type="button" data-color="#7B1FA2" style="background:#7B1FA2"></button><button type="button" data-color="#C2185B" style="background:#C2185B"></button><button type="button" data-color="#E53935" style="background:#E53935"></button><button type="button" data-color="#F9A825" style="background:#F9A825"></button><button type="button" data-color="#388E3C" style="background:#388E3C"></button><button type="button" data-color="#00796B" style="background:#00796B"></button><button type="button" data-color="#546E7A" style="background:#546E7A"></button></div></div></span>
+        <span class="accent-picker-wrap"><button type="button" id="accentPickerBtn" class="m3-accent-picker" title="调整主题颜色" aria-label="调整主题颜色"><svg class="m3-accent-picker-ic" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2C6.57 2 2 6.57 2 12s4.57 10 10 10c.48 0 .87-.39.87-.87 0-.23-.09-.44-.23-.6-.14-.16-.22-.36-.22-.58 0-.48.39-.87.87-.87H16c3.31 0 6-2.69 6-6 0-4.96-4.47-9-10-9zM6.5 13c-.83 0-1.5-.67-1.5-1.5S5.67 10 6.5 10s1.5.67 1.5 1.5S7.33 13 6.5 13zm3.5-3c-.83 0-1.5-.67-1.5-1.5S9.17 7 10 7s1.5.67 1.5 1.5S10.83 10 10 10zm5 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm3 3c-.83 0-1.5-.67-1.5-1.5S17.67 10 18.5 10s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></button><input type="color" id="accentPicker" value="#4A90D9" hidden /><div class="accent-popover" id="accentPopover" hidden><div class="accent-sv" id="accentSv"><div class="accent-sv-dot" id="accentSvDot"></div></div><div class="accent-hue" id="accentHue"><div class="accent-hue-dot" id="accentHueDot"></div></div><div class="accent-pop-row"><input type="text" class="accent-hex" id="accentHex" value="#4A90D9" maxlength="7" spellcheck="false" autocomplete="off" /><span class="accent-current" id="accentCurrent"></span></div><div class="accent-presets" id="accentPresets"><button type="button" data-color="#4A90D9" style="background:#4A90D9"></button><button type="button" data-color="#1A73E8" style="background:#1A73E8"></button><button type="button" data-color="#00838F" style="background:#00838F"></button><button type="button" data-color="#00796B" style="background:#00796B"></button><button type="button" data-color="#388E3C" style="background:#388E3C"></button><button type="button" data-color="#7CB342" style="background:#7CB342"></button><button type="button" data-color="#F9A825" style="background:#F9A825"></button><button type="button" data-color="#EF6C00" style="background:#EF6C00"></button><button type="button" data-color="#E53935" style="background:#E53935"></button><button type="button" data-color="#C2185B" style="background:#C2185B"></button><button type="button" data-color="#7B1FA2" style="background:#7B1FA2"></button><button type="button" data-color="#546E7A" style="background:#546E7A"></button></div></div></span>
         <button id="accentResetBtn" class="m3-icon-btn" title="恢复默认主题色" type="button">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
@@ -265,14 +265,27 @@
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">Token 用量展示</h2>
-          <p class="card-desc">仅在「Token 用量展示」开启时生效。</p>
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">Token 用量展示 · 群聊开关</h2>
+              <p class="card-desc">仅在「Token 用量展示」开启时生效。直接在下方群聊开关列表中拨动开关即可加入/移出显示名单（自动保存）；也可在群内发 <code>/xbnext token</code> 一键切换。</p>
+            </div>
+            <button type="button" class="m3-btn secondary-btn" id="tkGroupsBtn">🔄 刷新群列表</button>
+          </div>
+          <div class="group-switch-toolbar">
+            <input type="text" class="m3-input group-search-input" id="tkGroupSearch" placeholder="🔍 搜索群名称或群号..." />
+            <div class="group-add-inline">
+              <input type="text" class="m3-input" id="tkGroupAddInput" placeholder="手动输入群号或 UMO" />
+              <button type="button" class="m3-btn secondary-btn" id="tkGroupAddBtn">+ 添加并开启</button>
+            </div>
+          </div>
+          <div id="tkGroupsBox" class="group-switch-table-wrap">
+            <div class="card-note">正在加载群聊列表…</div>
+          </div>
           <div class="form-group">
-            <label class="form-label">显示的会话名单</label>
+            <label class="form-label" for="inp_token_usage_umos">已开启会话 UMO 名单（与上方群聊开关实时同步）</label>
             <textarea class="m3-input m3-textarea" id="inp_token_usage_umos" data-key="token_usage_umos" rows="3" placeholder="aiocqhttp:GroupMessage:123456"></textarea>
-            <span class="field-hint">每项填一个会话 UMO（<code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔（重复项自动去重）；下方群列表<b>勾选即加入、取消勾选即移出</b>，改动即时保存；也可以在会话里发 <code>/xbnext token</code> 一键把当前会话加进/移出名单。留空 = 任何会话都不显示。</span>
-            <button type="button" class="m3-btn secondary-btn" id="tkGroupsBtn">一键获取群列表</button>
-            <div id="tkGroupsBox" class="tk-groups-box" hidden></div>
+            <span class="field-hint">每项填一个会话 UMO（如 <code>aiocqhttp:GroupMessage:群号</code>），多个用逗号、顿号或换行分隔（自动去重）。留空 = 任何会话都不显示。</span>
           </div>
         </div>
 
@@ -425,7 +438,6 @@
             <div class="kv-row"><span class="kv-k">AstrNa</span><span class="kv-v">回复指向索引的路线参考</span></div>
             <div class="kv-row"><span class="kv-k">xbdoc / xbimg / xbbot_beta</span><span class="kv-v">本控制台的设计语言与工程骨架</span></div>
           </div>
-          <span class="field-hint">⚠️ 当前版本未做真机回归：AstrBot 本体在云端，本机仅完成静态检查与单测。</span>
         </div>
       </section>
 
@@ -434,7 +446,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.3"></script>
-  <script src="./app.js?v=0.2.3"></script>
+  <script src="./api.js?v=0.2.4"></script>
+  <script src="./app.js?v=0.2.4"></script>
 </body>
 </html>
