@@ -23,6 +23,8 @@ name 规范成小写，两者不一致时 bridge 会打偏）::
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, Dict, List
 
 # 注意：本模块自身就是 ``xbnext.web`` 包，``from . import`` 只能取到
@@ -179,6 +181,16 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
     —— 与核心 ``unified_msg_origin`` 的拼法一致；平台 id 不一定是
     ``aiocqhttp``（用户可在配置里改），写死会拼出永远匹配不上的 UMO。
     """
+    if runtime is not None:
+        cached = getattr(runtime, "_groups_cache", None)
+        if (
+            isinstance(cached, tuple)
+            and len(cached) == 2
+            and (time.monotonic() - float(cached[0])) < 60.0
+            and cached[1]
+        ):
+            return {"ok": True, "data": list(cached[1])}
+
     try:
         pm = getattr(context, "platform_manager", None)
         insts: List[Any] = list(getattr(pm, "platform_insts", None) or [])
@@ -201,9 +213,9 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
         if not callable(call):
             continue
         try:
-            rows = await call("get_group_list")
+            rows = await asyncio.wait_for(call("get_group_list"), timeout=3.0)
         except Exception as exc:  # noqa: BLE001  未连上 / 超时
-            errors.append(str(exc))
+            errors.append(str(exc) or type(exc).__name__)
             continue
         for row in rows or []:
             if not isinstance(row, dict):
@@ -242,6 +254,11 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
             pass
     if not groups and errors:
         return {"ok": False, "error": f"获取群列表失败：{errors[0]}"}
+    if runtime is not None and groups:
+        try:
+            runtime._groups_cache = (time.monotonic(), list(groups))
+        except Exception:  # noqa: BLE001
+            pass
     return {"ok": True, "data": groups}
 
 

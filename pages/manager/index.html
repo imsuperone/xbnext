@@ -4,9 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.5" />
-  <!-- 深浅色与主题色存在服务端配置里（唯一真相源，无本地副本），需等 state 回来才套用；
-       首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
+  <link rel="stylesheet" href="./style.css?v=0.2.6" />
+  <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
     @media (prefers-color-scheme: dark) { html[data-boot] { background: #0f1115; } }
@@ -14,8 +13,18 @@
   <script>
     (function () {
       var d = document.documentElement;
+      try {
+        var t = localStorage.getItem("xbnext_ui_theme");
+        var a = localStorage.getItem("xbnext_ui_accent");
+        var mode = (t === "dark" || t === "light") ? t : ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
+        d.setAttribute("data-theme", mode);
+        if (a && /^#[0-9a-fA-F]{6}$/.test(a)) {
+          d.style.setProperty("--m3-sys-color-primary", a);
+        }
+        if (t !== null) return;
+      } catch (e) {}
       d.setAttribute("data-boot", "");
-      setTimeout(function () { d.removeAttribute("data-boot"); }, 3000);
+      setTimeout(function () { d.removeAttribute("data-boot"); }, 150);
     })();
   </script>
 </head>
@@ -25,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.5">0.2.5</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.6">0.2.6</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -446,7 +455,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.5"></script>
-  <script src="./app.js?v=0.2.5"></script>
+  <script src="./api.js?v=0.2.6"></script>
+  <script src="./app.js?v=0.2.6"></script>
 </body>
 </html>

@@ -66,10 +66,11 @@
     );
   }
 
-  function httpFetch(url, options) {
+  function httpFetch(url, options, timeoutMs) {
+    var ms = timeoutMs || HTTP_TIMEOUT_MS;
     var ctrl = ("AbortController" in global) ? new AbortController() : null;
     var timer = ctrl
-      ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, HTTP_TIMEOUT_MS)
+      ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms)
       : null;
     var opts = Object.assign({}, options || {});
     if (ctrl) opts.signal = ctrl.signal;
@@ -106,16 +107,27 @@
     return search ? (url + (url.indexOf("?") >= 0 ? "&" : "?") + search) : url;
   }
 
-  /** GET：从缓存前缀起步，404 时换下一个；成功后缓存命中的前缀。 */
+  /** GET：从缓存前缀起步，404 时换下一个；成功后缓存命中的前缀。并发调用共享单次前缀探测。 */
   function fetchWithProbe(endpoint, params) {
     if (_WORKING_PREFIX !== null) {
       return httpFetch(buildUrl(_WORKING_PREFIX, endpoint, params), { method: "GET" })
         .then(function (r) {
-          if (isPrefixMiss(r.status)) { _WORKING_PREFIX = null; return probeLoop(); }
+          if (isPrefixMiss(r.status)) { _WORKING_PREFIX = null; return fetchWithProbe(endpoint, params); }
           return finishHttp(r, endpoint);
         });
     }
-    return probeLoop();
+    if (_PROBE_P) {
+      return _PROBE_P.then(function () {
+        if (_WORKING_PREFIX !== null) {
+          return httpFetch(buildUrl(_WORKING_PREFIX, endpoint, params), { method: "GET" })
+            .then(function (r) { return finishHttp(r, endpoint); });
+        }
+        return probeLoop();
+      });
+    }
+    var p = probeLoop();
+    _PROBE_P = p.then(function () { _PROBE_P = null; }, function () { _PROBE_P = null; });
+    return p;
 
     function probeLoop() {
       var i = 0;
@@ -124,10 +136,12 @@
           return Promise.reject(new Error("所有接口前缀均未命中: " + endpoint));
         }
         var prefix = API_PREFIXES[i++];
-        return httpFetch(buildUrl(prefix, endpoint, params), { method: "GET" }).then(function (r) {
+        return httpFetch(buildUrl(prefix, endpoint, params), { method: "GET" }, 2500).then(function (r) {
           if (isPrefixMiss(r.status)) return next();
           if (r.status >= 200 && r.status < 300) _WORKING_PREFIX = prefix;
           return finishHttp(r, endpoint);
+        }, function () {
+          return next();
         });
       }
       return next();

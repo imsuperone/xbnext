@@ -178,6 +178,7 @@
   function applyAccent(raw) {
     var root = document.documentElement;
     var v = typeof raw === "string" ? raw.trim() : "";
+    try { localStorage.setItem("xbnext_ui_accent", isHex(v) ? v : ""); } catch (e) {}
     if (!isHex(v)) {
       ["--m3-sys-color-primary", "--m3-sys-color-primary-container",
        "--m3-seg-ink", "--m3-shadow-card"].forEach(function (k) {
@@ -241,6 +242,7 @@
   function applyTheme(mode) {
     var next = resolveTheme(mode);
     document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("xbnext_ui_theme", (mode === "dark" || mode === "light") ? mode : ""); } catch (e) {}
     var icon = $("themeIcon");
     if (icon) icon.innerHTML = next === "dark" ? SUN : MOON;
     var btn = $("themeToggleBtn");
@@ -283,6 +285,18 @@
   /* ========================================================================
    * 页签
    * ====================================================================== */
+  var _tabLoaded = {};
+
+  function ensureTabLoaded(target) {
+    if (target === "tab-tuning" && !_tabLoaded["tab-tuning"]) {
+      _tabLoaded["tab-tuning"] = true;
+      tkLoadGroups(true);
+    } else if (target === "tab-profile" && !_tabLoaded["tab-profile"]) {
+      _tabLoaded["tab-profile"] = true;
+      pfLoad(true);
+    }
+  }
+
   function initTabs() {
     var tabs = document.querySelectorAll(".cat-tab[data-tab]");
     Array.prototype.forEach.call(tabs, function (tab) {
@@ -296,6 +310,7 @@
             sec.classList.toggle("active", sec.getAttribute("data-section") === target);
           }
         );
+        ensureTabLoaded(target);
       });
     });
   }
@@ -1215,9 +1230,11 @@
     if ($("accentResetBtn")) $("accentResetBtn").addEventListener("click", resetAccent);
     if ($("refreshAllBtn")) $("refreshAllBtn").addEventListener("click", function () {
       loadState().then(function () {
+        _tabLoaded["tab-tuning"] = true;
         tkLoadGroups(true);
         toast("已刷新", "ok");
       }).catch(function () {});
+      _tabLoaded["tab-profile"] = true;
       pfLoad(false);
     });
 
@@ -1225,8 +1242,8 @@
       reveal();
       // 揭开后再套一次主题色：data-boot 期间的内联变量可能被首帧覆盖
       applyAccent(CONFIG.ui_accent_color || "");
-      pfLoad(true);
-      tkLoadGroups(true);
+      setTimeout(function () { ensureTabLoaded("tab-tuning"); }, 120);
+      setTimeout(function () { ensureTabLoaded("tab-profile"); }, 280);
     }, reveal);
   }
 

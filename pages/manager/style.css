@@ -1044,7 +1044,8 @@ code {
   }
   .group-search-input,
   .group-add-inline {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    max-width: none;
     width: 100%;
     min-width: 0;
   }
