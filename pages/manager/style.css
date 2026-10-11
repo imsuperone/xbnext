@@ -441,8 +441,13 @@ button.m3-accent-picker:focus-visible {
   margin-bottom: 0;
 }
 
-.card-row-split > div {
+.card-row-split > div:first-child {
+  flex: 1 1 0%;
   min-width: 0;
+}
+
+.card-row-split > :not(:first-child) {
+  flex-shrink: 0;
 }
 
 /* ==========================================================================
@@ -770,6 +775,7 @@ code {
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
   white-space: nowrap;
   user-select: none;
+  flex-shrink: 0;
 }
 .primary-btn {
   background: var(--m3-sys-color-primary);
@@ -919,6 +925,13 @@ code {
   overflow-x: auto;
   max-height: 240px;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.inj-pre::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* 长段默认折叠（P17 · C）：预览约 6 行，点「展开全部」看全文（仍 240px 内滚） */
@@ -937,41 +950,62 @@ code {
 .inj-toggle:hover { border-color: var(--m3-sys-color-outline); }
 
 /* ------------------------------------------------------------------
- * Token 白名单 · 群聊开关表（与 xbbot_beta / xbimg 同款）
+ * Token 白名单 · 群聊开关表（统一三列无滚动条排版）
  * ---------------------------------------------------------------- */
 .group-switch-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
   margin-bottom: 12px;
 }
 .group-search-input {
   flex: 1 1 220px;
-  min-width: 180px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
 }
 .group-add-inline {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 1 1 240px;
+  min-width: 0;
 }
 .group-add-inline .m3-input {
-  flex: 1 1 auto;
-  min-width: 130px;
+  flex: 1 1 0%;
+  min-width: 0;
+  width: auto;
+  height: 42px;
+  padding: 0 14px;
+}
+.group-add-inline .m3-btn {
+  flex: 0 0 auto;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 .group-switch-table-wrap {
   max-height: 280px;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   border: 1px solid var(--m3-sys-color-divider);
   border-radius: var(--m3-radius-medium);
   background: var(--m3-sys-color-surface-container);
 }
+.group-switch-table-wrap::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
 .group-switch-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -982,6 +1016,19 @@ code {
   border-bottom: 1px solid var(--m3-sys-color-divider);
   vertical-align: middle;
 }
+.group-switch-table th:nth-child(1),
+.group-switch-table td:nth-child(1) {
+  width: 44%;
+}
+.group-switch-table th:nth-child(2),
+.group-switch-table td:nth-child(2) {
+  width: 32%;
+}
+.group-switch-table th:nth-child(3),
+.group-switch-table td:nth-child(3) {
+  width: 24%;
+  text-align: right;
+}
 .group-switch-table th {
   position: sticky;
   top: 0;
@@ -990,6 +1037,7 @@ code {
   font-weight: 700;
   color: var(--m3-sys-color-on-surface);
   font-size: 12px;
+  white-space: nowrap;
 }
 .group-switch-table tbody tr:last-child td {
   border-bottom: none;
@@ -1003,15 +1051,21 @@ code {
 .group-cell-name {
   font-weight: 600;
   color: var(--m3-sys-color-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .group-cell-id {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--m3-sys-color-outline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .group-cell-action {
   text-align: right !important;
-  width: 90px;
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -1034,7 +1088,25 @@ code {
 
   .m3-card { padding: 18px; border-radius: var(--m3-radius-medium); }
 
-  .card-row-split { flex-direction: row; align-items: center; }
+  /* 仅右侧为开关时保持左右同行；右侧为按钮/操作组时竖排堆叠避免按钮出框 */
+  .card-row-split {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .card-row-split:has(> .m3-switch) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .card-row-split > .pf-actions {
+    margin-top: 0;
+    width: 100%;
+  }
+  .card-row-split > .m3-btn {
+    align-self: flex-start;
+  }
   .kv-k { min-width: 72px; }
 
   .group-switch-toolbar {
@@ -1051,14 +1123,8 @@ code {
   }
   .group-switch-table th,
   .group-switch-table td {
-    padding: 8px 10px;
+    padding: 9px 10px;
     font-size: 12px;
-  }
-  .group-cell-name {
-    max-width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .toast-container { left: 16px; right: 16px; align-items: center; }

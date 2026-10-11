@@ -1125,7 +1125,7 @@
     var thead = mkEl("thead");
     var trHead = mkEl("tr");
     trHead.appendChild(mkEl("th", "", "群聊名称"));
-    trHead.appendChild(mkEl("th", "", "群号 / UMO"));
+    trHead.appendChild(mkEl("th", "", "群号"));
     trHead.appendChild(mkEl("th", "group-cell-action", "显示开关"));
     thead.appendChild(trHead);
     table.appendChild(thead);
@@ -1136,7 +1136,9 @@
       var enabled = !!haveSet[umo];
       var tr = mkEl("tr", enabled ? "is-enabled" : "");
 
-      var tdName = mkEl("td", "group-cell-name", g.group_name || "未命名会话");
+      var nameStr = g.group_name || "未命名会话";
+      var tdName = mkEl("td", "group-cell-name", nameStr);
+      tdName.title = nameStr;
       var tdId = mkEl("td", "group-cell-id", g.group_id || umo);
       tdId.title = umo;
       var tdAct = mkEl("td", "group-cell-action");
