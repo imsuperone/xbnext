@@ -396,8 +396,8 @@ class XbnextRuntime:
     def _remember_group(self, event: Any) -> None:
         """从群消息事件被动记录群号、群名称与 UMO，供 WebUI 群聊开关表展示。"""
         try:
-            from .eventids import group_id_of, umo_of
-            gid = group_id_of(event)
+            from .eventids import gid_of, umo_of
+            gid = gid_of(event)
             if not gid:
                 return
             umo = umo_of(event)

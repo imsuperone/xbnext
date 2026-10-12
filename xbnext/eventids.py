@@ -76,7 +76,9 @@ def gid_of(event: Any) -> str:
             mo = getattr(event, "message_obj", None)
             gid = _clean(getattr(mo, "group_id", "") if mo else "")
         if not gid:
-            parts = [p for p in umo_of(event).split("/") if p]
+            umo_s = umo_of(event)
+            sep = "/" if "/" in umo_s else ":"
+            parts = [p for p in umo_s.split(sep) if p]
             if len(parts) >= 3 and "group" in parts[1].lower():
                 gid = _clean(parts[2])
         return gid
@@ -94,6 +96,8 @@ def platform_of(event: Any) -> str:
             platform = str(fn() or "")
             if platform:
                 return platform
-        return umo_of(event).split("/")[0].strip()
+        umo_s = umo_of(event)
+        sep = "/" if "/" in umo_s else ":"
+        return umo_s.split(sep)[0].strip()
     except Exception:  # noqa: BLE001
         return ""
