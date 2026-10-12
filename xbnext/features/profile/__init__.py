@@ -92,7 +92,71 @@ class ProfileFeature(Feature):
         if ctx.inject(note):
             ctx.note(f"user_profile 注入 {len(note)} 字")
 
-    # -- 指令 ---------------------------------------------------------
+    # -- 指令与 AI 工具 -----------------------------------------------
+    async def save_from_tool(
+        self,
+        event: Any,
+        name: str = "",
+        facts: str = "",
+        conf: Any = None,
+    ) -> str:
+        """供 LLM 工具 ``xbnext_save_profile`` 调用：用户在日常对话中主动告知称呼或自述时自动落库。"""
+        if self._store is None:
+            return "档案存储尚未就绪，稍后再试。"
+        platform, gid, uid = self._speaker(event)
+        if not uid:
+            return "未能获取当前发言人 ID，无法保存档案。"
+        updates: Dict[str, str] = {}
+        name_clean = str(name or "").strip()
+        facts_clean = str(facts or "").strip()
+        if name_clean:
+            updates["name"] = name_clean
+        if facts_clean:
+            updates["facts"] = facts_clean
+        if not updates:
+            return "未提供称呼（name）或个人自述（facts），档案未改动。"
+        try:
+            existing = await self._store.get(platform, uid, gid)
+        except Exception:  # noqa: BLE001
+            existing = {}
+        merged = service.merge(existing, updates)
+        saved = await self._store.set(platform, uid, merged, gid)
+        if not saved:
+            return "写入档案失败（存储异常）。"
+        label = service.scope_label(gid)
+        return service.change_summary(updates, scope=label)
+
+    @staticmethod
+    def _extract_target_uid(event: Any, args: List[str]) -> Tuple[str, List[str]]:
+        """提取指令首个 ``@某人`` 或消息段中的被 @ 用户（支持群友互填/代看档案）。"""
+        import re as _re
+
+        rest = list(args or [])
+        if rest and isinstance(rest[0], str):
+            first = rest[0].strip()
+            m_cq = _re.match(r"^\[CQ:at,qq=(\d{5,15})(?:,[^\]]*)?\]$", first, _re.I)
+            if m_cq:
+                return m_cq.group(1), rest[1:]
+            m_at = _re.match(r"^@(\d{5,15})$", first)
+            if m_at:
+                return m_at.group(1), rest[1:]
+        try:
+            self_id = str(getattr(event, "get_self_id", lambda: "")() or "").strip()
+            mo = getattr(event, "message_obj", None)
+            chain = getattr(mo, "message", None) if mo is not None else None
+            if isinstance(chain, (list, tuple)):
+                for seg in chain:
+                    qq = ""
+                    if isinstance(seg, dict) and seg.get("type") == "at":
+                        qq = str((seg.get("data") or {}).get("qq") or "").strip()
+                    elif type(seg).__name__ == "At":
+                        qq = str(getattr(seg, "qq", None) or getattr(seg, "target", "") or "").strip()
+                    if qq and qq != "all" and qq != self_id:
+                        return qq, rest
+        except Exception:  # noqa: BLE001
+            pass
+        return "", rest
+
     async def handle_command(self, event: Any, args: List[str], conf: Any = None) -> str:
         """``/xbnext profile ...`` 的子逻辑；返回要发给用户的文本。
 
@@ -105,12 +169,15 @@ class ProfileFeature(Feature):
         if self._store is None:
             return "档案存储还没就绪（插件可能正在加载），稍后再试。"
         platform, gid, uid = self._speaker(event)
+        target_uid, clean_args = self._extract_target_uid(event, args)
+        if target_uid:
+            uid = target_uid
         if not uid:
             return "读不到你的用户 ID，无法维护档案。"
         label = service.scope_label(gid)
 
         try:
-            action, updates = service.classify(args)
+            action, updates = service.classify(clean_args)
         except ValueError as exc:
             return str(exc)
 

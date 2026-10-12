@@ -122,5 +122,22 @@ class XbnextPlugin(Star):
         if reply:
             await event.send(event.plain_result(reply))
 
+    @filter.llm_tool(name="xbnext_save_profile")
+    async def xbnext_save_profile(
+        self,
+        event: AstrMessageEvent,
+        name: str = "",
+        facts: str = "",
+    ) -> str:
+        """当用户在对话中主动告知希望怎么被称呼（如“以后叫我小明”）或主动介绍自己的身份/偏好/设定并希望机器人记住时，调用此工具自动保存该用户的个人档案。
+
+        Args:
+            name(string): 用户希望被称呼的名字或昵称（未提及则留空）
+            facts(string): 用户的个人自述、身份、爱好或偏好设定（未提及则留空）
+        """
+        return await self.runtime.save_user_profile_tool(
+            event, name=name, facts=facts
+        )
+
     def __repr__(self) -> str:  # pragma: no cover - 仅调试用
         return f"<XbnextPlugin v{__version__} plugin={PLUGIN_NAME}>"

@@ -922,15 +922,87 @@
     if (ed) ed.classList.toggle("is-hidden", !show);
   }
 
+  function pfRefreshQuickPickers(selectedGroup) {
+    var gSel = $("pfQuickGroup");
+    var uSel = $("pfQuickUser");
+    var seenGroups = (STATE && Array.isArray(STATE.seen_groups)) ? STATE.seen_groups : [];
+    var seenUsers = (STATE && Array.isArray(STATE.seen_users)) ? STATE.seen_users : [];
+    var groupMap = {};
+    seenGroups.forEach(function (g) {
+      var gid = String(g.group_id || "").trim();
+      if (gid) groupMap[gid] = String(g.group_name || gid);
+    });
+    tkCachedGroups.forEach(function (g) {
+      var gid = String(g.group_id || "").trim();
+      if (gid && !groupMap[gid]) groupMap[gid] = String(g.group_name || gid);
+    });
+    pfRows.forEach(function (r) {
+      var gid = String(r.group || "").trim();
+      if (gid && !groupMap[gid]) groupMap[gid] = gid;
+    });
+
+    if (gSel) {
+      while (gSel.firstChild) gSel.removeChild(gSel.firstChild);
+      var opt0 = mkEl("option", "", "— 快速选择群聊（或私聊）—");
+      opt0.value = "__none__";
+      gSel.appendChild(opt0);
+      var optPriv = mkEl("option", "", "私聊 / 未分群");
+      optPriv.value = "";
+      gSel.appendChild(optPriv);
+      Object.keys(groupMap).sort().forEach(function (gid) {
+        var gname = groupMap[gid];
+        var label = (gname && gname !== gid) ? (gname + " (" + gid + ")") : ("群 " + gid);
+        var opt = mkEl("option", "", label);
+        opt.value = gid;
+        gSel.appendChild(opt);
+      });
+      if (selectedGroup != null) {
+        gSel.value = selectedGroup;
+      } else {
+        gSel.value = "__none__";
+      }
+    }
+
+    if (uSel) {
+      while (uSel.firstChild) uSel.removeChild(uSel.firstChild);
+      var uOpt0 = mkEl("option", "", "— 快速选择近期发言群友 —");
+      uOpt0.value = "";
+      uSel.appendChild(uOpt0);
+      var filterGid = selectedGroup != null ? String(selectedGroup).trim() : "";
+      var seenU = {};
+      seenUsers.slice().reverse().forEach(function (u) {
+        var uid = String(u.uid || "").trim();
+        var ug = String(u.group || "").trim();
+        if (!uid) return;
+        if (filterGid && ug && ug !== filterGid) return;
+        var key = (u.platform || "aiocqhttp") + "|" + ug + "|" + uid;
+        if (seenU[key]) return;
+        seenU[key] = true;
+        var uname = String(u.name || uid);
+        var scopeStr = ug ? ("群" + ug) : "私聊";
+        var opt = mkEl("option", "", uname + " (" + uid + " · " + scopeStr + ")");
+        opt.value = JSON.stringify({
+          platform: u.platform || "aiocqhttp",
+          group: ug,
+          uid: uid,
+          name: (uname && uname !== uid) ? uname : ""
+        });
+        uSel.appendChild(opt);
+      });
+    }
+  }
+
   function pfOpen(row, isNew) {
     pfCurrent = {
-      platform: String((row && row.platform) || ""),
+      platform: String((row && row.platform) || (isNew ? "aiocqhttp" : "")),
       uid: String((row && row.uid) || ""),
       group: String((row && row.group) || "").trim(),
       isNew: !!isNew
     };
     var p = (row && row.profile) || {};
-    if ($("pfPlatform")) { $("pfPlatform").value = pfCurrent.platform; $("pfPlatform").disabled = !isNew; }
+    if ($("pfQuickPickRow")) $("pfQuickPickRow").style.display = isNew ? "" : "none";
+    if (isNew) pfRefreshQuickPickers(pfCurrent.group || null);
+    if ($("pfPlatform")) { $("pfPlatform").value = pfCurrent.platform || "aiocqhttp"; $("pfPlatform").disabled = !isNew; }
     if ($("pfUid")) { $("pfUid").value = pfCurrent.uid; $("pfUid").disabled = !isNew; }
     // 群号始终可改：改了等于把档案挪到另一个范围（保存时带 prev_group 删旧键）
     if ($("pfGroup")) $("pfGroup").value = pfCurrent.group;
@@ -999,7 +1071,28 @@
 
   function initProfile() {
     if ($("pfRefreshBtn")) $("pfRefreshBtn").addEventListener("click", function () { pfLoad(false); });
-    if ($("pfNewBtn")) $("pfNewBtn").addEventListener("click", function () { pfOpen({ profile: {} }, true); });
+    if ($("pfNewBtn")) $("pfNewBtn").addEventListener("click", function () { pfOpen({ platform: "aiocqhttp", profile: {} }, true); });
+    if ($("pfQuickGroup")) {
+      $("pfQuickGroup").addEventListener("change", function () {
+        var val = $("pfQuickGroup").value;
+        if (val === "__none__") return;
+        if ($("pfGroup")) $("pfGroup").value = val;
+        pfRefreshQuickPickers(val);
+      });
+    }
+    if ($("pfQuickUser")) {
+      $("pfQuickUser").addEventListener("change", function () {
+        var raw = $("pfQuickUser").value;
+        if (!raw) return;
+        try {
+          var u = JSON.parse(raw);
+          if ($("pfPlatform") && u.platform) $("pfPlatform").value = u.platform;
+          if ($("pfGroup") && u.group != null) $("pfGroup").value = u.group;
+          if ($("pfUid") && u.uid) $("pfUid").value = u.uid;
+          if ($("pfName") && !$("pfName").value.trim() && u.name) $("pfName").value = u.name;
+        } catch (e) {}
+      });
+    }
     if ($("pfSaveBtn")) $("pfSaveBtn").addEventListener("click", pfSave);
     if ($("pfCancelBtn")) $("pfCancelBtn").addEventListener("click", pfClose);
     if ($("pfDeleteBtn")) {

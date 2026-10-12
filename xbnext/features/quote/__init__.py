@@ -35,15 +35,17 @@ class QuoteFeature(Feature):
             action = "label"
 
         # 1) 死路径：只删"能证实不存在"的，http/https/data 一律保留
+        alive: list = []
         dead: list = []
         if ctx.conf.bool("quote_drop_dead_images", True):
             try:
-                dead = service.dead_image_urls(getattr(ctx.req, "image_urls", None))
+                alive, dead = service.split_image_urls(
+                    getattr(ctx.req, "image_urls", None)
+                )
             except Exception as exc:  # noqa: BLE001
                 ctx.note(f"quote_clean 死路径判定失败：{exc!r}")
-                dead = []
+                alive, dead = [], []
         if dead:
-            alive, _ = service.split_image_urls(getattr(ctx.req, "image_urls", None))
             try:
                 ctx.req.image_urls = alive
                 ctx.note(f"quote_clean 移除 {len(dead)} 个失效图片路径")

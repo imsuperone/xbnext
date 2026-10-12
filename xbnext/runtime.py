@@ -57,6 +57,7 @@ class XbnextRuntime:
         self.features: List[Any] = features.all_features()
         self._loaded = False
         self._seen_groups: Dict[str, Dict[str, str]] = {}
+        self._seen_users: Dict[str, Dict[str, str]] = {}
 
     # ==================================================================
     # 生命周期
@@ -107,6 +108,46 @@ class XbnextRuntime:
     # ==================================================================
     # 主入口
     # ==================================================================
+    @staticmethod
+    def _strip_profile_tool(req: Any) -> None:
+        """当用户档案开关关闭时，从当前请求的工具集中剥离 ``xbnext_save_profile``，零 token 浪费。"""
+        ft = getattr(req, "func_tool", None)
+        if ft is None:
+            return
+        tools = getattr(ft, "tools", None)
+        if isinstance(tools, list):
+            try:
+                ft.tools = [
+                    t for t in tools
+                    if getattr(t, "name", "") != "xbnext_save_profile"
+                ]
+            except Exception:  # noqa: BLE001
+                pass
+        elif isinstance(ft, list):
+            try:
+                req.func_tool = [
+                    t for t in ft
+                    if getattr(t, "name", "") != "xbnext_save_profile"
+                ]
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def save_user_profile_tool(
+        self, event: Any, name: str = "", facts: str = ""
+    ) -> str:
+        """LLM 工具入口：对话式自动保存用户称呼与自述。"""
+        await self.ensure_loaded()
+        feat = self.get_feature("enable_user_profile")
+        if feat is None or not hasattr(feat, "save_from_tool"):
+            return "用户档案功能未就绪。"
+        try:
+            return await feat.save_from_tool(
+                event, name=name, facts=facts, conf=self.conf
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"xbnext_save_profile 工具执行失败：{exc!r}")
+            return "档案保存出错，请稍后再试。"
+
     async def handle_llm_request(self, event: Any, req: Any) -> None:
         """按固定顺序执行本轮该跑的功能，**有动作时打一条 INFO 汇总**。
 
@@ -124,6 +165,8 @@ class XbnextRuntime:
         """
         await self.ensure_loaded()
         ctx = RequestContext(event=event, req=req, conf=self.conf, runtime=self)
+        if not ctx.enabled("enable_user_profile"):
+            self._strip_profile_tool(req)
         actions: List[str] = []
         for feat in self.features:
             try:
@@ -364,7 +407,7 @@ class XbnextRuntime:
     # 状态（/xbnext status 与 WebUI 共用）
     # ==================================================================
     def status(self) -> Dict[str, Any]:
-        """导出运行状态：版本、功能开关、KV 可用性。"""
+        """导出运行状态：版本、功能开关、KV 可用性、最近活跃群与发言人。"""
         return {
             "version": self._version(),
             "loaded": self._loaded,
@@ -377,6 +420,8 @@ class XbnextRuntime:
                 for f in self.features
             },
             "kv_usable": self.kv.usable,
+            "seen_groups": list(self._seen_groups.values()),
+            "seen_users": list(self._seen_users.values()),
         }
 
     def status_lines(self) -> List[str]:
@@ -394,34 +439,48 @@ class XbnextRuntime:
         return lines
 
     def _remember_group(self, event: Any) -> None:
-        """从群消息事件被动记录群号、群名称与 UMO，供 WebUI 群聊开关表展示。"""
+        """从消息事件被动记录群号、群名称、UMO 及最近发言人，供 WebUI 群聊开关与档案快选使用。"""
         try:
-            from .eventids import gid_of, umo_of
+            from .eventids import gid_of, name_of, platform_of, uid_of, umo_of
             gid = gid_of(event)
-            if not gid:
-                return
-            umo = umo_of(event)
-            if not umo or "GroupMessage" not in umo:
-                umo = f"aiocqhttp:GroupMessage:{gid}"
+            platform = platform_of(event) or "aiocqhttp"
+            uid = uid_of(event)
+            uname = name_of(event)
             gname = ""
-            mo = getattr(event, "message_obj", None)
-            grp = getattr(mo, "group", None) if mo is not None else None
-            if grp is not None:
-                gname = str(getattr(grp, "group_name", "") or "").strip()
-            if not gname:
-                raw = getattr(mo, "raw_message", None) if mo is not None else None
-                if isinstance(raw, dict):
-                    gname = str(raw.get("group_name") or "").strip()
-            prev = self._seen_groups.get(gid, {}).get("group_name", "")
-            if not gname and prev and prev != gid:
-                gname = prev
-            self._seen_groups[gid] = {
-                "group_id": gid,
-                "group_name": gname or gid,
-                "umo": umo,
-            }
-            while len(self._seen_groups) > 2000:
-                self._seen_groups.pop(next(iter(self._seen_groups)), None)
+            if gid:
+                umo = umo_of(event)
+                if not umo or "GroupMessage" not in umo:
+                    umo = f"aiocqhttp:GroupMessage:{gid}"
+                mo = getattr(event, "message_obj", None)
+                grp = getattr(mo, "group", None) if mo is not None else None
+                if grp is not None:
+                    gname = str(getattr(grp, "group_name", "") or "").strip()
+                if not gname:
+                    raw = getattr(mo, "raw_message", None) if mo is not None else None
+                    if isinstance(raw, dict):
+                        gname = str(raw.get("group_name") or "").strip()
+                prev = self._seen_groups.get(gid, {}).get("group_name", "")
+                if not gname and prev and prev != gid:
+                    gname = prev
+                self._seen_groups[gid] = {
+                    "group_id": gid,
+                    "group_name": gname or gid,
+                    "umo": umo,
+                }
+                while len(self._seen_groups) > 2000:
+                    self._seen_groups.pop(next(iter(self._seen_groups)), None)
+            if uid:
+                ukey = f"{platform}|{gid}|{uid}"
+                prev_u = self._seen_users.get(ukey, {})
+                self._seen_users[ukey] = {
+                    "platform": platform,
+                    "group": gid,
+                    "group_name": gname or prev_u.get("group_name") or gid,
+                    "uid": uid,
+                    "name": uname or prev_u.get("name") or uid,
+                }
+                while len(self._seen_users) > 500:
+                    self._seen_users.pop(next(iter(self._seen_users)), None)
         except Exception:  # noqa: BLE001
             pass
 

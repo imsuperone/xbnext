@@ -102,6 +102,16 @@ def _split_field_sep(token: str) -> Optional[Tuple[str, str]]:
     return field, token[idx + 1:].strip()
 
 
+def _natural_prefix(token: str) -> Optional[Tuple[str, str]]:
+    """识别自然口语前缀：``叫我小明`` → ``('name', '小明')``，``我是学生`` → ``('facts', '学生')``。"""
+    if not isinstance(token, str):
+        return None
+    for prefix, field in (("叫我", "name"), ("称呼我", "name"), ("我是", "facts")):
+        if token.startswith(prefix):
+            return field, token[len(prefix):].strip(" ：:=")
+    return None
+
+
 def classify(args: Iterable[Any]) -> Tuple[str, Dict[str, str]]:
     """判定指令动作。
 
@@ -116,9 +126,12 @@ def classify(args: Iterable[Any]) -> Tuple[str, Dict[str, str]]:
        于是 ``称呼 小明 自述 学生`` 一次改多条、分隔符可混写；
     3. 分隔符后留空（``称呼:``）= 删该字段；裸字段名没值 = 报错
        （防手滑误删，报错带正确示例）；
-    4. 查看词后面带多余内容直接当查看（不再报「多余内容」）。
+    4. 查看词后面带多余内容直接当查看（不再报「多余内容」）；
+    5. 极简懒人写法：单参数 ``/xbnext profile 小明`` 自动按字数/标点识别为称呼或自述，
+       ``/xbnext profile 小明/学生`` 一次设好称呼与自述，``叫我...`` / ``我是...`` 自然口语也认。
     """
-    tokens = parse_args(args)
+    raw_list = [x for x in (args or ()) if x is not None and str(x).strip()]
+    tokens = parse_args(raw_list)
     first = tokens[0] if tokens else ""
     head = first.lower()
 
@@ -131,6 +144,26 @@ def classify(args: Iterable[Any]) -> Tuple[str, Dict[str, str]]:
         # 查看意图优先：后面带了别的当没看见（宽容，不再报「多余内容」）
         return ACTION_VIEW, {}
 
+    # 极简单参写法（必须本身是 str，排除测试里的非字符串垃圾入参如 [123]）
+    if (
+        len(tokens) == 1
+        and len(raw_list) == 1
+        and isinstance(raw_list[0], str)
+        and not _alias(first)
+        and first not in BARE_SEP
+        and not any(s in first for s in SEPARATORS)
+        and not _natural_prefix(first)
+    ):
+        for slash in ("/", "|", "｜"):
+            if slash in first:
+                left, right = first.split(slash, 1)
+                left, right = left.strip(), right.strip()
+                if left and right and len(left) <= 16:
+                    return ACTION_SET, {"name": left, "facts": right}
+        if len(first) <= 10 and not any(p in first for p in "，,。！!？?；;"):
+            return ACTION_SET, {"name": first}
+        return ACTION_SET, {"facts": first}
+
     updates: Dict[str, str] = {}
     sep_fields: set = set()  # 用显式分隔符开的字段（留空 = 删除）
     current = ""
@@ -140,6 +173,12 @@ def classify(args: Iterable[Any]) -> Tuple[str, Dict[str, str]]:
             current, value = split
             updates[current] = value
             sep_fields.add(current)
+            continue
+        nat = _natural_prefix(token)
+        if nat:
+            current, value = nat
+            updates[current] = value
+            sep_fields.discard(current)
             continue
         field = _alias(token)
         if field:
