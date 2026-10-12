@@ -3,7 +3,6 @@
 ## v0.2.8
 
 - 修复 `_remember_group` 中误引用 `group_id_of` 导致群消息事件被动记录群列表静默失败的问题（统一改用 `gid_of`）。
-- 兼容 `unified_msg_origin` 的 `:` 与 `/` 分隔符解析，确保 `gid_of` 与 `platform_of` 在各类适配器下回退准确。
 
 ## v0.2.7
 
