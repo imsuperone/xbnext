@@ -162,7 +162,10 @@ class Config:
         """导出所有 schema 键的当前值，给 WebUI 状态面板用。"""
         out: dict = {}
         for key in SCHEMA:
-            out[key] = self.get(key, schema_default(key))
+            if key == "group_features":
+                out[key] = self.group_features_map()
+            else:
+                out[key] = self.get(key, schema_default(key))
         return out
 
 

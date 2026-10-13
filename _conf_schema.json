@@ -149,10 +149,10 @@
     "collapsed": true
   },
   "group_features": {
-    "type": "object",
+    "type": "string",
     "description": "分群独立功能开关",
-    "hint": "按群号独立控制整个插件或单项功能的开关覆盖（由 Web 控制台「群聊管理」可视化维护）。",
-    "default": {},
+    "hint": "按群号独立控制整个插件或单项功能的开关覆盖（JSON 字符串，由 Web 控制台「群聊管理」可视化维护）。",
+    "default": "{}",
     "collapsed": true
   },
   "debug_log": {

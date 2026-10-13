@@ -55,6 +55,20 @@ def coerce_value(key: str, value: Any) -> Any:
         if isinstance(value, list):
             return value
         raise ValueError(f"{key} 需要列表")
+    if key == "group_features":
+        import json
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False)
+        if isinstance(value, str):
+            s = value.strip() or "{}"
+            try:
+                parsed = json.loads(s)
+            except Exception:
+                raise ValueError("group_features 需要合法 JSON 对象") from None
+            if not isinstance(parsed, dict):
+                raise ValueError("group_features 需要 JSON 对象")
+            return json.dumps(parsed, ensure_ascii=False)
+        raise ValueError(f"{key} 需要对象")
     if kind == "object":
         if isinstance(value, dict):
             return value
