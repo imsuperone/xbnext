@@ -137,14 +137,14 @@
   "group_mode": {
     "type": "string",
     "description": "群聊生效模式",
-    "hint": "all = 全部群聊生效（默认）；whitelist = 仅名单内群聊生效；blacklist = 名单内群聊禁用本插件。",
+    "hint": "all = 全部群聊生效（默认）；whitelist = 仅白名单群生效；disabled = 全部群聊关闭（仅私聊生效）。",
     "default": "all",
     "collapsed": true
   },
   "group_list": {
     "type": "string",
-    "description": "群聊白名单/黑名单",
-    "hint": "配合 group_mode 使用，多个群号用逗号、空格或换行分隔。",
+    "description": "群聊白名单",
+    "hint": "配合 group_mode (whitelist) 使用，多个群号用逗号、空格或换行分隔。",
     "default": "",
     "collapsed": true
   },

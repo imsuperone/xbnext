@@ -234,6 +234,8 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
                         "group_name": gname or gid,
                         "umo": umo,
                     }
+                    if hasattr(runtime, "_save_seen_groups"):
+                        runtime._save_seen_groups()
                 except Exception:  # noqa: BLE001
                     pass
     if runtime is not None:
@@ -246,8 +248,8 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
                         groups.append(
                             {
                                 "group_id": str(gid),
-                                "group_name": str(info.get("group_name") or ""),
-                                "umo": str(info.get("umo") or f"aiocqhttp:GroupMessage:{gid}"),
+                                "group_name": str(info.get("group_name") or gid),
+                                "umo": str(info.get("umo") or f"GroupMessage:{gid}"),
                             }
                         )
         except Exception:  # noqa: BLE001

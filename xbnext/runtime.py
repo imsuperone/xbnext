@@ -33,12 +33,35 @@
 from __future__ import annotations
 
 import inspect
+import json
+import time
+from pathlib import Path
 from typing import Any, Dict, List
 
 from . import commands, features, inject_log, injector, log
 from .config import Config
 from .context import RequestContext
 from .storage import KV
+
+
+def resolve_data_dir() -> Path:
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+        p = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_xbnext"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    except Exception:
+        pass
+    for cand in [
+        Path.cwd() / "data" / "plugin_data" / "astrbot_plugin_xbnext",
+        Path(__file__).resolve().parent.parent / "data" / "plugin_data" / "astrbot_plugin_xbnext",
+    ]:
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+            return cand.resolve()
+        except Exception:
+            continue
+    return Path.cwd()
 
 
 class XbnextRuntime:
@@ -56,8 +79,12 @@ class XbnextRuntime:
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()
         self._loaded = False
-        self._seen_groups: Dict[str, Dict[str, str]] = {}
+        self.data_dir = resolve_data_dir()
+        self.seen_path = self.data_dir / "seen_groups.json"
+        self._seen_groups: Dict[str, Dict[str, Any]] = {}
         self._seen_users: Dict[str, Dict[str, str]] = {}
+        self._seen_last_save_ts = 0.0
+        self._load_seen_groups()
 
     # ==================================================================
     # 生命周期
@@ -473,8 +500,27 @@ class XbnextRuntime:
         lines.append(f"💾 KV：{kv_tag} ｜ 💡 /xbnext 查看菜单")
         return lines
 
+    def _load_seen_groups(self) -> None:
+        try:
+            if self.seen_path.is_file():
+                with open(self.seen_path, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                if isinstance(data, dict):
+                    self._seen_groups.update(data)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"读取 seen_groups.json 异常：{exc!r}")
+
+    def _save_seen_groups(self) -> None:
+        try:
+            temp = self.seen_path.with_suffix(".tmp")
+            with open(temp, "w", encoding="utf-8") as fp:
+                json.dump(self._seen_groups, fp, ensure_ascii=False, indent=2)
+            temp.replace(self.seen_path)
+        except Exception as exc:  # noqa: BLE001
+            self._warn(f"写入 seen_groups.json 异常：{exc!r}")
+
     def _remember_group(self, event: Any) -> None:
-        """从消息事件被动记录群号、群名称、UMO 及最近发言人，供 WebUI 群聊开关与档案快选使用。"""
+        """从消息事件被动记录群号、群名称、UMO 及最近发言人，自动落盘 seen_groups.json。"""
         try:
             from .eventids import gid_of, name_of, platform_of, uid_of, umo_of
             gid = gid_of(event)
@@ -484,26 +530,59 @@ class XbnextRuntime:
             gname = ""
             if gid:
                 umo = umo_of(event)
-                if not umo or "GroupMessage" not in umo:
-                    umo = f"aiocqhttp:GroupMessage:{gid}"
+                if not umo:
+                    umo = f"{platform}:GroupMessage:{gid}"
                 mo = getattr(event, "message_obj", None)
                 grp = getattr(mo, "group", None) if mo is not None else None
                 if grp is not None:
-                    gname = str(getattr(grp, "group_name", "") or "").strip()
+                    for attr in ("group_name", "name", "title"):
+                        gn = str(getattr(grp, attr, "") or "").strip()
+                        if gn:
+                            gname = gn
+                            break
                 if not gname:
                     raw = getattr(mo, "raw_message", None) if mo is not None else None
                     if isinstance(raw, dict):
-                        gname = str(raw.get("group_name") or "").strip()
-                prev = self._seen_groups.get(gid, {}).get("group_name", "")
+                        gname = str(raw.get("group_name") or raw.get("group_title") or "").strip()
+                if not gname:
+                    sess = getattr(event, "session", None)
+                    if sess:
+                        gname = str(getattr(sess, "session_name", "") or "").strip()
+
+                prev_entry = self._seen_groups.get(gid, {})
+                prev = prev_entry.get("group_name", "") if isinstance(prev_entry, dict) else ""
                 if not gname and prev and prev != gid:
                     gname = prev
-                self._seen_groups[gid] = {
-                    "group_id": gid,
-                    "group_name": gname or gid,
-                    "umo": umo,
-                }
+
+                now = time.time()
+                updated = False
+                cur_entry = self._seen_groups.get(gid)
+                if not isinstance(cur_entry, dict):
+                    self._seen_groups[gid] = {
+                        "group_id": gid,
+                        "group_name": gname or gid,
+                        "platform": platform,
+                        "umo": umo,
+                    }
+                    updated = True
+                else:
+                    if gname and gname != cur_entry.get("group_name"):
+                        cur_entry["group_name"] = gname
+                        updated = True
+                    if platform and cur_entry.get("platform") != platform:
+                        cur_entry["platform"] = platform
+                        updated = True
+                    if umo and cur_entry.get("umo") != umo:
+                        cur_entry["umo"] = umo
+                        updated = True
+
                 while len(self._seen_groups) > 2000:
                     self._seen_groups.pop(next(iter(self._seen_groups)), None)
+
+                if updated or (now - self._seen_last_save_ts > 30.0):
+                    self._seen_last_save_ts = now
+                    self._save_seen_groups()
+
             if uid:
                 ukey = f"{platform}|{gid}|{uid}"
                 prev_u = self._seen_users.get(ukey, {})

@@ -181,8 +181,8 @@ class Config:
                 break
         if mode == "whitelist":
             return matched
-        if mode == "blacklist":
-            return not matched
+        if mode in ("disabled", "off", "none", "closed"):
+            return False
         return True
 
     def enabled_for_group(self, key: str, gid: str = "", platform: str = "") -> bool:

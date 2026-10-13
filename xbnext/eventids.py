@@ -55,6 +55,29 @@ def uid_of(event: Any) -> str:
     return ""
 
 
+def name_of(event: Any) -> str:
+    """提取发送人昵称。"""
+    if event is None:
+        return ""
+    try:
+        mo = getattr(event, "message_obj", None)
+        sender = getattr(mo, "sender", None) if mo is not None else None
+        if sender is not None:
+            for attr in ("nickname", "card", "name", "display_name"):
+                val = str(getattr(sender, attr, "") or "").strip()
+                if val:
+                    return val
+        for attr in ("get_sender_name", "get_user_name"):
+            fn = getattr(event, attr, None)
+            if callable(fn):
+                name = str(fn() or "").strip()
+                if name:
+                    return name
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
 def gid_of(event: Any) -> str:
     """所在群号（分群维度）；私聊 / 拿不到返回 ``""``。
 

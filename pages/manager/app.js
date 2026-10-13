@@ -1536,10 +1536,11 @@
       return gc.enabled;
     }
     var mode = String(CONFIG.group_mode || "all").toLowerCase();
+    if (mode === "disabled" || mode === "off" || mode === "none") return false;
     if (mode === "all") return true;
     var list = grpParseTokens(CONFIG.group_list);
     var inList = list.indexOf(String(gid)) >= 0;
-    return mode === "whitelist" ? inList : !inList;
+    return mode === "whitelist" ? inList : false;
   }
 
   function grpLoadAll(silent) {
@@ -1562,17 +1563,13 @@
     var gmap = JSON.parse(JSON.stringify(grpGetFeaturesMap()));
     if (!gmap[gid] || typeof gmap[gid] !== "object") gmap[gid] = {};
     gmap[gid].enabled = !!wantOn;
-    // 同步维护 group_list 白/黑名单以便直观对应
+    // 同步维护 group_list 白名单以便直观对应
     var mode = String(CONFIG.group_mode || "all").toLowerCase();
     var tokens = grpParseTokens(CONFIG.group_list);
     var idx = tokens.indexOf(String(gid));
     if (mode === "whitelist") {
       if (wantOn && idx < 0) tokens.push(String(gid));
       if (!wantOn && idx >= 0) tokens.splice(idx, 1);
-      writeConfig("group_list", tokens.join(","), { quiet: true }).catch(function () {});
-    } else if (mode === "blacklist") {
-      if (!wantOn && idx < 0) tokens.push(String(gid));
-      if (wantOn && idx >= 0) tokens.splice(idx, 1);
       writeConfig("group_list", tokens.join(","), { quiet: true }).catch(function () {});
     }
     writeConfig("group_features", gmap, { quiet: true }).then(function () {
