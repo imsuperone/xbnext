@@ -105,6 +105,59 @@ class Config:
         """功能总开关的统一读法（``enable_*`` 都走这里）。"""
         return self.bool(key, bool(schema_default(key)))
 
+    def group_features_map(self) -> dict:
+        """读取按群独立功能开关配置字典（``group_features``）。"""
+        val = self.get("group_features", {})
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except Exception:  # noqa: BLE001
+                val = {}
+        return val if isinstance(val, dict) else {}
+
+    def is_group_allowed(self, gid: str) -> bool:
+        """检查指定群号是否启用本插件（综合 group_mode / group_list 与 group_features[gid].enabled）。"""
+        gid = str(gid or "").strip()
+        if not gid:
+            return True
+        gmap = self.group_features_map()
+        gconf = gmap.get(gid)
+        if isinstance(gconf, dict) and "enabled" in gconf and gconf["enabled"] is not None:
+            return bool(gconf["enabled"])
+        mode = self.text("group_mode", "all").strip().lower() or "all"
+        if mode == "all":
+            return True
+        raw_list = self.text("group_list", "")
+        import re as _re
+        tokens = [t.strip() for t in _re.split(r"[,，、;；\s]+", raw_list) if t.strip()]
+        clean_gid = _re.sub(r"\D+", "", gid)
+        matched = False
+        for t in tokens:
+            ct = _re.sub(r"\D+", "", t)
+            if t == gid or (clean_gid and ct == clean_gid):
+                matched = True
+                break
+        if mode == "whitelist":
+            return matched
+        if mode == "blacklist":
+            return not matched
+        return True
+
+    def enabled_for_group(self, key: str, gid: str = "") -> bool:
+        """结合群聊总开关与分群单项功能开关判定 ``key`` 是否生效。"""
+        gid = str(gid or "").strip()
+        if gid:
+            if not self.is_group_allowed(gid):
+                return False
+            gmap = self.group_features_map()
+            gconf = gmap.get(gid)
+            if isinstance(gconf, dict) and key in gconf and gconf[key] is not None:
+                v = gconf[key]
+                if isinstance(v, str):
+                    return v.strip().lower() in ("1", "true", "yes", "on")
+                return bool(v)
+        return self.enabled(key)
+
     def as_dict(self) -> dict:
         """导出所有 schema 键的当前值，给 WebUI 状态面板用。"""
         out: dict = {}

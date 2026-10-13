@@ -40,7 +40,7 @@ RECALL_NOTICE_TYPES = ("group_recall", "friend_recall")
 CONFIRM_TIMEOUT = 10.0
 
 #: 认「是」（取消）的回答词 —— 精确匹配，不搞包含判断防误伤
-_YES_WORDS = frozenset({"是", "对", "要", "确认", "取消", "y", "yes", "ok", "1"})
+_YES_WORDS = frozenset({"是", "对", "要", "行", "好", "好的", "可以", "嗯", "确认", "取消", "y", "yes", "ok", "1"})
 
 #: 认「否」（保留）的回答词
 _NO_WORDS = frozenset(

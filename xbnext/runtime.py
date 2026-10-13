@@ -148,6 +148,39 @@ class XbnextRuntime:
             self._warn(f"xbnext_save_profile 工具执行失败：{exc!r}")
             return "档案保存出错，请稍后再试。"
 
+    @staticmethod
+    def _sanitize_req_contexts(req: Any) -> None:
+        """清理 req.contexts 中可能导致 Google Gemini 400/499 上下文错误的异常消息项：
+        1. 移除混入 contexts 的 role=="system" 项（AstrBot v4 系统提示词走 req.system_prompt）；
+        2. 移除因上轮中途取消/报错残留的空内容且无 tool_calls 的死消息。
+        """
+        if req is None:
+            return
+        for attr in ("contexts", "messages"):
+            ctx_list = getattr(req, attr, None)
+            if not isinstance(ctx_list, list) or not ctx_list:
+                continue
+            cleaned = []
+            for m in ctx_list:
+                if isinstance(m, dict):
+                    role = str(m.get("role") or "")
+                    if role == "system":
+                        sys_txt = str(m.get("content") or "").strip()
+                        if sys_txt and not str(getattr(req, "system_prompt", "") or "").strip():
+                            try:
+                                req.system_prompt = sys_txt
+                            except Exception:  # noqa: BLE001
+                                pass
+                        continue
+                    content = m.get("content")
+                    has_tools = bool(m.get("tool_calls") or m.get("function_call") or role == "tool")
+                    if not has_tools:
+                        if content is None or (isinstance(content, (str, list)) and len(content) == 0):
+                            continue
+                cleaned.append(m)
+            if len(cleaned) != len(ctx_list):
+                ctx_list[:] = cleaned
+
     async def handle_llm_request(self, event: Any, req: Any) -> None:
         """按固定顺序执行本轮该跑的功能，**有动作时打一条 INFO 汇总**。
 
@@ -164,6 +197,8 @@ class XbnextRuntime:
         - 单个功能失败仍只打 WARNING，不影响其他功能（AstrBot 原则 4）。
         """
         await self.ensure_loaded()
+        self._remember_group(event)
+        self._sanitize_req_contexts(req)
         ctx = RequestContext(event=event, req=req, conf=self.conf, runtime=self)
         if not ctx.enabled("enable_user_profile"):
             self._strip_profile_tool(req)

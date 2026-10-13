@@ -120,6 +120,41 @@
     "collapsed": true,
     "condition": { "enable_token_usage": true }
   },
+  "enable_tts_limit": {
+    "type": "bool",
+    "description": "TTS 字数上限",
+    "hint": "当单次回复纯文本字数超过设定上限时，自动跳过 AstrBot 语音合成（TTS）直接发送文字，避免长篇小说或大段分析卡死 FishAudio 等语音接口。默认开启。",
+    "default": true
+  },
+  "tts_max_chars": {
+    "type": "int",
+    "description": "TTS 最大触发字数",
+    "hint": "回复文本超过该字数时不转语音直接发文字（0 = 不限制）。默认 100 字。",
+    "default": 100,
+    "collapsed": true,
+    "condition": { "enable_tts_limit": true }
+  },
+  "group_mode": {
+    "type": "string",
+    "description": "群聊生效模式",
+    "hint": "all = 全部群聊生效（默认）；whitelist = 仅名单内群聊生效；blacklist = 名单内群聊禁用本插件。",
+    "default": "all",
+    "collapsed": true
+  },
+  "group_list": {
+    "type": "string",
+    "description": "群聊白名单/黑名单",
+    "hint": "配合 group_mode 使用，多个群号用逗号、空格或换行分隔。",
+    "default": "",
+    "collapsed": true
+  },
+  "group_features": {
+    "type": "object",
+    "description": "分群独立功能开关",
+    "hint": "按群号独立控制整个插件或单项功能的开关覆盖（由 Web 控制台「群聊管理」可视化维护）。",
+    "default": {},
+    "collapsed": true
+  },
   "debug_log": {
     "type": "bool",
     "description": "输出调试日志",

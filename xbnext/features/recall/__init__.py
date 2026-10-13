@@ -138,10 +138,11 @@ class RecallFeature(Feature):
     #: 守候类功能，排在清洗 / 注入之后（order 无强依赖，登记要趁早）
     order = 90
     uses_adapter_hook = True
+    uses_decorating_hook = True
     #: 确认询问的等待秒数（类属性，测试调小即可不真等完整秒数）
     confirm_timeout: float = service.CONFIRM_TIMEOUT
-    #: 判「挂死」的年龄门槛（秒）：没有 run 在跑还挂这么久 ⇒ 疑似死票
-    stuck_timeout: float = 120.0
+    #: 判「挂死」的年龄门槛（秒）：长文生成可能耗时数分钟，设 600s 防止长文流式输出中途被误杀触发 499
+    stuck_timeout: float = 600.0
     #: 首次疑似后的复看间隔（秒）：两次都挂着才动手，避开「正在收尾 /
     #: 正要叫号」的毫秒窗口，防误杀
     stuck_grace: float = 30.0
@@ -155,6 +156,8 @@ class RecallFeature(Feature):
         self._suspect: Dict[str, float] = {}
         #: 等待确认的撤回：触发消息 message_id -> _Awaiting
         self._awaiting: Dict[str, _Awaiting] = {}
+        #: 已确认取消的触发消息 message_id -> 取消时刻 monotonic（防超时/回答收尾窗口期漏发）
+        self._cancelled: Dict[str, float] = {}
         self._log: Optional[Any] = None
 
     # ------------------------------------------------------------------
@@ -167,6 +170,7 @@ class RecallFeature(Feature):
         self._inflight.clear()
         self._meta.clear()
         self._suspect.clear()
+        self._cancelled.clear()
         for item in list(self._awaiting.values()):
             # 插件卸载 ⇒ 按「没有确认功能」的老行为放行，别让扣在闸上的
             # 回复（或它的管线任务）卡死在 gate.wait() 上
@@ -181,14 +185,58 @@ class RecallFeature(Feature):
         replies.clear()
         self._log = None
 
+    def _mark_cancelled(self, mid: str) -> None:
+        if not mid:
+            return
+        now = time.monotonic()
+        dead = [k for k, ts in self._cancelled.items() if now - ts > 300.0]
+        for k in dead:
+            self._cancelled.pop(k, None)
+        self._cancelled[str(mid)] = now
+
+    def _is_cancelled(self, mid: str) -> bool:
+        if not mid:
+            return False
+        ts = self._cancelled.get(str(mid))
+        if ts is None:
+            return False
+        if time.monotonic() - ts > 300.0:
+            self._cancelled.pop(str(mid), None)
+            return False
+        return True
+
     # ------------------------------------------------------------------
-    # 适配器早期钩子
+    # 适配器早期钩子 & 装饰阶段拦截
     # ------------------------------------------------------------------
+    async def on_decorating_result(self, ctx: Any) -> None:
+        """若本条触发消息已被撤回取消，在装饰阶段（TTS / 转图之前）直接清空结果链并终止发送。"""
+        event = getattr(ctx, "event", None)
+        if event is None:
+            return
+        mid = service.trigger_id(event)
+        if not mid or not self._is_cancelled(mid):
+            return
+        try:
+            result = event.get_result()
+            if result is not None and hasattr(result, "chain") and isinstance(result.chain, list):
+                result.chain.clear()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            event._has_send_oper = True
+            event.stop_event()
+        except Exception:  # noqa: BLE001
+            pass
+        self._info(f"撤回拦截：装饰阶段已清空待发结果链（消息 {mid}）")
+
     async def on_adapter_message(self, ctx: Any) -> None:
         event = ctx.event
+        umo = umo_of(event)
+        if umo and ("webchat" in umo.lower()):
+            return
 
         # ⓪ 看门狗：顺手疏通本会话被死票堵死的排队（#6 旧伤，见 docstring）
-        self._sweep_stuck(umo_of(event))
+        self._sweep_stuck(umo)
 
         # ① 撤回 notice？确认开关开着 ⇒ 先问不急着动；否则照老规矩立刻取消
         for raw in service.raw_sources(event):
@@ -214,7 +262,7 @@ class RecallFeature(Feature):
         mid = service.trigger_id(event)
         task = asyncio.current_task()
         if mid and task is not None:
-            self._track(mid, task, umo_of(event))
+            self._track(mid, task, umo)
         if mid:
             self._install_capture(event, mid)
 
@@ -253,12 +301,13 @@ class RecallFeature(Feature):
             return False
 
     async def _cancel_now(self, ctx: Any, event: Any, mid: str, via: str) -> None:
-        """立刻执行取消：掐在飞请求 + 连带撤回复（老行为，也是确认后的落点）。
+        """立刻执行取消：立取消标记 + 掐在飞请求 + 连带撤回复（老行为，也是确认后的落点）。
 
         杀主 run 之前先把核心手里代管的排队票还清（``_settle_followups``），
         否则排队的前后消息会被死票堵死（#6）。``ctx`` 可为 ``None``
         （超时定时器里没有 ctx，只写日志不记备注）。
         """
+        self._mark_cancelled(mid)
         task = self._inflight.pop(mid, None)
         self._meta.pop(mid, None)
         self._suspect.pop(mid, None)
@@ -421,6 +470,7 @@ class RecallFeature(Feature):
             item = self._awaiting.pop(mid, None)
             if item is not None:
                 item.verdict = False  # 问不出去 ⇒ 拦截不发，随后立刻取消
+                self._mark_cancelled(mid)
                 item.gate.set()
             self._info("撤回确认：询问发送失败，回退为立刻自动取消")
             await self._cancel_now(ctx, event, mid, via="撤回命中")
@@ -487,6 +537,26 @@ class RecallFeature(Feature):
         if item is not None:
             item.timer = task
 
+    def _cancel_inflight_sync(self, ctx: Any, event: Any, mid: str, via: str) -> None:
+        """同步立取消标记并立刻 cancel 在飞任务（零 await 窗口，杜绝 _delete_ask 期间 LLM 偷跑发送）。"""
+        self._mark_cancelled(mid)
+        task = self._inflight.pop(mid, None)
+        self._meta.pop(mid, None)
+        self._suspect.pop(mid, None)
+        if task is not None and not task.done():
+            self._settle_followups(event, mid, via)
+            try:
+                task.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+            self._info(f"{via}：已取消在飞请求（消息 {mid}）")
+            note = getattr(ctx, "note", None)
+            if callable(note):
+                try:
+                    note(f"{via}：已取消消息 {mid} 的在飞请求")
+                except Exception:  # noqa: BLE001
+                    pass
+
     async def _deadline(self, mid: str) -> None:
         """超时没人答 ⇒ 按老规矩自动取消（省 token 的兜底不丢）。"""
         try:
@@ -497,6 +567,7 @@ class RecallFeature(Feature):
         if item is None:
             return  # 回答先到，已处理过
         item.verdict = False  # 超时 ⇒ 拦截不发，按老规矩自动取消
+        self._cancel_inflight_sync(None, item.event, mid, via="超时未确认")
         item.gate.set()
         self._info(
             f"撤回确认：{self.confirm_timeout:.0f} 秒无人回答，自动取消（消息 {mid}）"
@@ -552,9 +623,10 @@ class RecallFeature(Feature):
                     item.timer.cancel()
                 except Exception:  # noqa: BLE001
                     pass
-            # 是 ⇒ 拦截不发（verdict False）；否 ⇒ 放行（True）。先落定
-            # 闸门再执行动作，扣在发送口的任务拿到判决才动
+            # 是 ⇒ 拦截不发（verdict False）；否 ⇒ 放行（True）。先同步掐任务立拦截标记再落定闸门
             item.verdict = not bool(verdict)
+            if verdict:
+                self._cancel_inflight_sync(ctx, item.event, mid, via="确认取消")
             item.gate.set()
             try:
                 await self._delete_ask(item)  # 流程收尾：询问撤回，不留残句
@@ -601,13 +673,22 @@ class RecallFeature(Feature):
                 return
 
             async def _wrapped(chain: Any) -> None:
+                if self._is_cancelled(trigger_id):
+                    self._info(
+                        f"撤回确认：回复被拦截，未发送（消息 {trigger_id}）"
+                    )
+                    try:
+                        event._has_send_oper = True
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return
                 # 撤回确认挂着 ⇒ 回复先扣在闸上等回答（先拦后放）。
                 # 答「是」/超时判定 False ⇒ 有意不发；CancelledError 在
                 # gate.wait() 上抛出时还没登记，无需清理
                 gate_item = self._awaiting.get(trigger_id)
                 if gate_item is not None:
                     await gate_item.gate.wait()
-                    if gate_item.verdict is not True:
+                    if gate_item.verdict is not True or self._is_cancelled(trigger_id):
                         self._info(
                             f"撤回确认：回复被拦截，未发送（消息 {trigger_id}）"
                         )
@@ -620,7 +701,7 @@ class RecallFeature(Feature):
                     handled = await self._send_captured(event, trigger_id, chain)
                 except Exception:  # noqa: BLE001 意外兜底：退回原发送
                     handled = False
-                if not handled:
+                if not handled and not self._is_cancelled(trigger_id):
                     await original(chain)
 
             event.send = _wrapped
@@ -642,9 +723,15 @@ class RecallFeature(Feature):
 
         返回 ``True`` = 本方法已把消息发出去（或有意不发），包装不再
         触碰 ``original``；返回 ``False`` = 交给 ``original`` 走核心路径。
-        ``CancelledError`` 摘登记表（有补删标记则交出旧 id 让包装收尾）
+        ``CancelledError`` 摘登记表（若底层发送请求已发出则用 shield 等待其返回 message_id 后补删）
         后原样上抛，绝不重发。
         """
+        if self._is_cancelled(trigger_id):
+            try:
+                event._has_send_oper = True
+            except Exception:  # noqa: BLE001
+                pass
+            return True
         segs = await self._parse_segments(chain)
         if not segs:
             return False
@@ -658,11 +745,19 @@ class RecallFeature(Feature):
             return False
 
         replies.begin(trigger_id)
+        send_coro = self._dispatch(event, event.bot, segs)
+        send_task: Optional[asyncio.Task] = None
         try:
-            reply_ids = await self._dispatch(event, event.bot, segs)
+            try:
+                send_task = asyncio.get_running_loop().create_task(send_coro)
+                reply_ids = await asyncio.shield(send_task)
+            except RuntimeError:
+                reply_ids = await send_coro
         except asyncio.CancelledError:
             leftover = replies.abandon(trigger_id)
-            if leftover:
+            if send_task is not None and not send_task.done():
+                self._spawn_await_and_delete(event, send_task, leftover, trigger_id)
+            elif leftover:
                 self._spawn_delete(event, leftover, trigger_id)
             raise
         except Exception as exc:  # noqa: BLE001
@@ -679,11 +774,39 @@ class RecallFeature(Feature):
         except Exception:  # noqa: BLE001
             pending = False
         await self._after_sent(event, chain)
-        if pending:
+        if pending or self._is_cancelled(trigger_id):
             all_ids, _ = replies.take(trigger_id)  # 摘表并取全量（含分段旧 id）
+            if not all_ids and reply_ids:
+                all_ids = list(reply_ids)
             if all_ids:
                 await self._delete_replies(event, all_ids, trigger_id)
         return True
+
+    def _spawn_await_and_delete(
+        self,
+        event: Any,
+        send_task: asyncio.Task,
+        leftover: List[str],
+        trigger_id: str,
+    ) -> None:
+        """当发送中途任务被 cancel 时，底层 OneBot 请求已经发出，需后台等它返回 message_id 后立刻撤回。"""
+        async def _wait_and_del() -> None:
+            ids: List[str] = list(leftover or [])
+            try:
+                sent_ids = await send_task
+                if isinstance(sent_ids, list):
+                    for sid in sent_ids:
+                        if sid and sid not in ids:
+                            ids.append(sid)
+            except Exception:  # noqa: BLE001
+                pass
+            if ids:
+                await self._delete_replies(event, ids, trigger_id)
+
+        try:
+            asyncio.get_running_loop().create_task(_wait_and_del())
+        except Exception:  # noqa: BLE001
+            pass
 
     def _spawn_delete(self, event: Any, ids: List[str], trigger_id: str) -> None:
         """取消语境下不能 await —— 另起任务补删（失败只记日志）。"""

@@ -277,6 +277,15 @@ class AttributionFeature(Feature):
             ctx.note(f"reply_attribution 读取失败：{exc!r}")
             history = []
 
+        # 若当前会话上下文（req.contexts）为空或尚无任何 assistant 回复（例如刚执行过 /new 开启新对话），
+        # 不向模型注入旧对话的「最近回复对象」列表，避免与空上下文矛盾引发 Gemini 上下文错误
+        req_contexts = getattr(getattr(ctx, "req", None), "contexts", None)
+        if isinstance(req_contexts, list) and not any(
+            (m.get("role") if isinstance(m, dict) else getattr(m, "role", "")) in ("assistant", "model")
+            for m in req_contexts
+        ):
+            history = []
+
         matched = None
         qmid = quoted_message_id(event)
         if qmid:

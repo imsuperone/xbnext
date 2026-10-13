@@ -55,9 +55,18 @@ class RequestContext:
 
     # -- 开关 ---------------------------------------------------------
     def enabled(self, key: str) -> bool:
-        """某功能当前是否该跑（只看配置开关；功能自身不必再判）。"""
-        if not self.conf.enabled(key):
-            self.note(f"{key} 已关闭")
+        """某功能当前是否该跑（结合全局配置开关、群聊黑白名单与分群独立功能开关）。"""
+        gid = ""
+        if self.event is not None:
+            try:
+                from .eventids import gid_of
+                gid = gid_of(self.event)
+            except Exception:  # noqa: BLE001
+                gid = ""
+        checker = getattr(self.conf, "enabled_for_group", None)
+        ok = checker(key, gid) if callable(checker) else self.conf.enabled(key)
+        if not ok:
+            self.note(f"{key} 已关闭" + (f"（群 {gid}）" if gid else ""))
             return False
         return True
 

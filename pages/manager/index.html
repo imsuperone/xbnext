@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.9" />
+  <link rel="stylesheet" href="./style.css?v=0.2.10" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.9">0.2.9</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.10">0.2.10</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -189,10 +189,61 @@
             </label>
           </div>
         </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">TTS 字数上限</h2>
+              <p class="card-desc">当单次回复纯文本字数超过上限（默认 100 字，可在「行为微调」修改）时，自动跳过 AstrBot 语音合成（TTS）直接发送文字，避免长篇小说或大段分析卡死语音接口。默认开启。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_tts_limit" data-key="enable_tts_limit" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">群聊总开关与分群独立功能控制</h2>
+              <p class="card-desc">控制本插件在哪些群聊生效，并支持为每个群单独开关整个插件或单独开关某一项功能（未单独设置的项默认跟随上方全局开关）。</p>
+            </div>
+            <button type="button" class="m3-btn secondary-btn" id="grpSwitchRefreshBtn">🔄 刷新群列表</button>
+          </div>
+          <div class="form-group">
+            <label class="form-label">全局群聊生效模式</label>
+            <div class="m3-segmented-control" id="seg_group_mode" data-key="group_mode">
+              <button type="button" class="seg-item" data-val="all">全部群聊生效</button>
+              <button type="button" class="seg-item" data-val="whitelist">白名单模式</button>
+              <button type="button" class="seg-item" data-val="blacklist">黑名单模式</button>
+            </div>
+          </div>
+          <div class="group-switch-toolbar">
+            <input type="text" class="m3-input group-search-input" id="grpSwitchSearch" placeholder="🔍 搜索群名称或群号..." />
+            <div class="group-add-inline">
+              <input type="text" class="m3-input" id="grpSwitchAddInput" placeholder="手动输入群号" />
+              <button type="button" class="m3-btn secondary-btn" id="grpSwitchAddBtn">+ 添加群号</button>
+            </div>
+          </div>
+          <div id="grpSwitchTableWrap" class="group-switch-table-wrap">
+            <div class="card-note">正在加载群聊列表…</div>
+          </div>
+        </div>
       </section>
 
       <!-- ==================== Tab 2: 行为微调 ==================== -->
       <section class="settings-section" data-section="tab-tuning">
+        <div class="m3-card">
+          <h2 class="card-title">TTS 语音字数上限</h2>
+          <p class="card-desc">仅在「TTS 字数上限」开启时生效。单次回复文本总字数超过此值时自动跳过语音合成直接发送文字（填 0 表示不限制）。</p>
+          <div class="form-group">
+            <label class="form-label" for="inp_tts_max_chars">最大触发字数</label>
+            <input type="number" class="m3-input" id="inp_tts_max_chars" data-key="tts_max_chars" min="0" max="10000" placeholder="100" />
+            <span class="field-hint">默认 <code>100</code> 字。例如写 3000 字短篇小说时会自动跳过 FishAudio TTS 直接发出文字。</span>
+          </div>
+        </div>
+
         <div class="m3-card">
           <h2 class="card-title">引用占位处理方式</h2>
           <p class="card-desc">决定识别到引用占位符后怎么处理。仅在「引用占位清洗」开启时生效。</p>
@@ -468,7 +519,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.9"></script>
-  <script src="./app.js?v=0.2.9"></script>
+  <script src="./api.js?v=0.2.10"></script>
+  <script src="./app.js?v=0.2.10"></script>
 </body>
 </html>

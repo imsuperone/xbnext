@@ -1310,6 +1310,267 @@
   }
 
   /* ========================================================================
+   * 群聊总开关 + 分群独立功能开关（group_mode / group_list / group_features）
+   * ====================================================================== */
+  var _GRP_FEATURES_META = [
+    { key: "enable_quote_clean", label: "引用清洗" },
+    { key: "enable_face_translate", label: "表情翻译" },
+    { key: "enable_reply_attribution", label: "回复指向" },
+    { key: "enable_user_profile", label: "用户档案" },
+    { key: "enable_recall_cancel", label: "撤回取消" },
+    { key: "enable_image_slim", label: "图片瘦身" },
+    { key: "enable_token_usage", label: "Token展示" },
+    { key: "enable_tts_limit", label: "TTS限字" }
+  ];
+
+  function grpParseTokens(raw) {
+    var out = [], seen = {};
+    String(raw || "").split(/[,，、;；\s]+/).forEach(function (s) {
+      var clean = s.replace(/\D+/g, "") || s.trim();
+      if (clean && !seen[clean]) { seen[clean] = true; out.push(clean); }
+    });
+    return out;
+  }
+
+  function grpGetFeaturesMap() {
+    var v = CONFIG.group_features;
+    if (typeof v === "string") {
+      try { v = JSON.parse(v); } catch (e) { v = {}; }
+    }
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  }
+
+  function grpIsAllowed(gid) {
+    var gmap = grpGetFeaturesMap();
+    var gc = gmap[gid];
+    if (gc && typeof gc === "object" && typeof gc.enabled === "boolean") {
+      return gc.enabled;
+    }
+    var mode = String(CONFIG.group_mode || "all").toLowerCase();
+    if (mode === "all") return true;
+    var list = grpParseTokens(CONFIG.group_list);
+    var inList = list.indexOf(String(gid)) >= 0;
+    return mode === "whitelist" ? inList : !inList;
+  }
+
+  function grpLoadAll(silent) {
+    var btn = $("grpSwitchRefreshBtn");
+    if (btn) btn.disabled = true;
+    API.groups().then(function (rows) {
+      if (btn) btn.disabled = false;
+      tkCachedGroups = Array.isArray(rows) ? rows : [];
+      grpRenderTable();
+      tkRenderGroups();
+      if (!silent) toast("群列表已刷新（共 " + tkCachedGroups.length + " 个群）", "ok");
+    }, function (e) {
+      if (btn) btn.disabled = false;
+      grpRenderTable();
+      if (!silent) toast("获取群列表失败：" + (e && e.message ? e.message : e), "bad");
+    });
+  }
+
+  function grpToggleMaster(gid, wantOn) {
+    var gmap = JSON.parse(JSON.stringify(grpGetFeaturesMap()));
+    if (!gmap[gid] || typeof gmap[gid] !== "object") gmap[gid] = {};
+    gmap[gid].enabled = !!wantOn;
+    // 同步维护 group_list 白/黑名单以便直观对应
+    var mode = String(CONFIG.group_mode || "all").toLowerCase();
+    var tokens = grpParseTokens(CONFIG.group_list);
+    var idx = tokens.indexOf(String(gid));
+    if (mode === "whitelist") {
+      if (wantOn && idx < 0) tokens.push(String(gid));
+      if (!wantOn && idx >= 0) tokens.splice(idx, 1);
+      writeConfig("group_list", tokens.join(","), { quiet: true }).catch(function () {});
+    } else if (mode === "blacklist") {
+      if (!wantOn && idx < 0) tokens.push(String(gid));
+      if (wantOn && idx >= 0) tokens.splice(idx, 1);
+      writeConfig("group_list", tokens.join(","), { quiet: true }).catch(function () {});
+    }
+    writeConfig("group_features", gmap, { quiet: true }).then(function () {
+      grpRenderTable();
+      toast(wantOn ? "已开启群 " + gid + " 的 XBNEXT 插件" : "已关闭群 " + gid + " 的 XBNEXT 插件", "ok");
+    }, function () {
+      grpRenderTable();
+    });
+  }
+
+  function grpToggleFeature(gid, featKey) {
+    var gmap = JSON.parse(JSON.stringify(grpGetFeaturesMap()));
+    if (!gmap[gid] || typeof gmap[gid] !== "object") gmap[gid] = {};
+    var cur = gmap[gid][featKey];
+    var globalOn = !!CONFIG[featKey];
+    // 切换逻辑：当前生效为开 → 设为关；当前生效为关 → 设为开
+    var effOn = (typeof cur === "boolean") ? cur : globalOn;
+    var nextOn = !effOn;
+    gmap[gid][featKey] = nextOn;
+    writeConfig("group_features", gmap, { quiet: true }).then(function () {
+      grpRenderTable();
+      toast("群 " + gid + " 功能已设为：" + (nextOn ? "开启" : "关闭"), "ok");
+    }, function () {
+      grpRenderTable();
+    });
+  }
+
+  function grpResetFeatures(gid) {
+    var gmap = JSON.parse(JSON.stringify(grpGetFeaturesMap()));
+    if (gmap[gid]) {
+      var keepEnabled = gmap[gid].enabled;
+      if (typeof keepEnabled === "boolean") {
+        gmap[gid] = { enabled: keepEnabled };
+      } else {
+        delete gmap[gid];
+      }
+    }
+    writeConfig("group_features", gmap, { quiet: true }).then(function () {
+      grpRenderTable();
+      toast("群 " + gid + " 已恢复跟随全局功能开关", "ok");
+    });
+  }
+
+  function grpRenderTable() {
+    var box = $("grpSwitchTableWrap");
+    if (!box) return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+
+    var gmap = grpGetFeaturesMap();
+    var tokens = grpParseTokens(CONFIG.group_list);
+    var merged = [];
+    var seenGid = {};
+
+    function addRow(gid, gname) {
+      gid = String(gid || "").replace(/\D+/g, "") || String(gid || "").trim();
+      if (!gid || seenGid[gid]) return;
+      seenGid[gid] = true;
+      merged.push({ group_id: gid, group_name: String(gname || "") });
+    }
+
+    tkCachedGroups.forEach(function (g) { addRow(g.group_id, g.group_name); });
+    if (STATE && Array.isArray(STATE.seen_groups)) {
+      STATE.seen_groups.forEach(function (g) { addRow(g.group_id, g.group_name); });
+    }
+    tokens.forEach(function (gid) { addRow(gid, ""); });
+    Object.keys(gmap).forEach(function (gid) { addRow(gid, ""); });
+
+    var qEl = $("grpSwitchSearch");
+    var kw = qEl && qEl.value ? qEl.value.trim().toLowerCase() : "";
+    var filtered = merged.filter(function (g) {
+      if (!kw) return true;
+      return (g.group_name && g.group_name.toLowerCase().indexOf(kw) >= 0) ||
+             (g.group_id && g.group_id.toLowerCase().indexOf(kw) >= 0);
+    });
+
+    filtered.sort(function (a, b) {
+      var ea = grpIsAllowed(a.group_id);
+      var eb = grpIsAllowed(b.group_id);
+      if (ea !== eb) return ea ? -1 : 1;
+      return String(a.group_id).localeCompare(String(b.group_id));
+    });
+
+    if (!filtered.length) {
+      box.appendChild(pfNote(kw ? "没有匹配的群聊。" : "暂未获取到群聊列表，可点击「刷新群列表」或手动输入群号添加。"));
+      return;
+    }
+
+    var table = mkEl("table", "group-switch-table");
+    var thead = mkEl("thead");
+    var trHead = mkEl("tr");
+    trHead.appendChild(mkEl("th", "", "群聊名称 / 群号"));
+    trHead.appendChild(mkEl("th", "", "分群独立功能开关（点击切换，蓝底=开 / 灰底=关）"));
+    trHead.appendChild(mkEl("th", "group-cell-action", "本群总开关"));
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    var tbody = mkEl("tbody");
+    filtered.forEach(function (g) {
+      var gid = g.group_id;
+      var allowed = grpIsAllowed(gid);
+      var gc = (gmap[gid] && typeof gmap[gid] === "object") ? gmap[gid] : {};
+      var tr = mkEl("tr", allowed ? "is-enabled" : "");
+
+      var tdInfo = mkEl("td", "group-cell-name");
+      var titleDiv = mkEl("div", "", g.group_name || "群聊 " + gid);
+      titleDiv.style.fontWeight = "600";
+      var subDiv = mkEl("div", "group-cell-id", gid);
+      subDiv.style.fontSize = "12px";
+      tdInfo.appendChild(titleDiv);
+      tdInfo.appendChild(subDiv);
+
+      var tdFeats = mkEl("td", "");
+      var pillWrap = mkEl("div", "");
+      pillWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;";
+      var hasCustom = false;
+      _GRP_FEATURES_META.forEach(function (fm) {
+        var customVal = gc[fm.key];
+        var isCustom = typeof customVal === "boolean";
+        if (isCustom) hasCustom = true;
+        var effOn = allowed && (isCustom ? customVal : !!CONFIG[fm.key]);
+        var pill = mkEl("button", "m3-btn secondary-btn", (effOn ? "✅ " : "❌ ") + fm.label + (isCustom ? " *" : ""));
+        pill.type = "button";
+        pill.style.cssText = "padding:3px 9px;font-size:12px;min-height:26px;border-radius:999px;" +
+          (effOn ? "background:var(--m3-sys-color-primary-container);color:var(--m3-sys-color-on-primary-container);border-color:var(--m3-sys-color-primary);" : "opacity:0.65;");
+        pill.title = fm.label + "：" + (isCustom ? ("本群独立设为" + (customVal ? "开启" : "关闭")) : ("跟随全局（当前" + (CONFIG[fm.key] ? "开启" : "关闭") + "）")) + "，点击切换";
+        pill.disabled = !allowed;
+        pill.addEventListener("click", function () { grpToggleFeature(gid, fm.key); });
+        pillWrap.appendChild(pill);
+      });
+      if (hasCustom) {
+        var resetBtn = mkEl("button", "m3-btn secondary-btn", "↺ 跟随全局");
+        resetBtn.type = "button";
+        resetBtn.style.cssText = "padding:3px 8px;font-size:11px;min-height:24px;";
+        resetBtn.title = "清除本群单项覆盖，恢复跟随全局功能开关";
+        resetBtn.addEventListener("click", function () { grpResetFeatures(gid); });
+        pillWrap.appendChild(resetBtn);
+      }
+      tdFeats.appendChild(pillWrap);
+
+      var tdAct = mkEl("td", "group-cell-action");
+      var swLabel = mkEl("label", "m3-switch");
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = allowed;
+      cb.addEventListener("change", function () { grpToggleMaster(gid, cb.checked); });
+      swLabel.appendChild(cb);
+      swLabel.appendChild(mkEl("span", "switch-slider"));
+      tdAct.appendChild(swLabel);
+
+      tr.appendChild(tdInfo);
+      tr.appendChild(tdFeats);
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+  }
+
+  function grpAddManual() {
+    var inp = $("grpSwitchAddInput");
+    if (!inp) return;
+    var gid = String(inp.value || "").replace(/\D+/g, "");
+    if (!gid) {
+      toast("请输入纯数字群号", "bad");
+      return;
+    }
+    inp.value = "";
+    grpToggleMaster(gid, true);
+  }
+
+  function initGroupSwitch() {
+    if ($("grpSwitchRefreshBtn")) $("grpSwitchRefreshBtn").addEventListener("click", function () { grpLoadAll(false); });
+    if ($("grpSwitchSearch")) $("grpSwitchSearch").addEventListener("input", grpRenderTable);
+    if ($("grpSwitchAddBtn")) $("grpSwitchAddBtn").addEventListener("click", grpAddManual);
+    if ($("grpSwitchAddInput")) {
+      $("grpSwitchAddInput").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); grpAddManual(); }
+      });
+    }
+    if ($("seg_group_mode")) {
+      $("seg_group_mode").addEventListener("click", function () {
+        setTimeout(grpRenderTable, 80);
+      });
+    }
+  }
+
+  /* ========================================================================
    * 启动
    * ====================================================================== */
   function boot() {
@@ -1319,6 +1580,7 @@
     initProfile();
     initInjectLog();
     initTokenline();
+    initGroupSwitch();
     watchSystemTheme();
 
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);
@@ -1326,7 +1588,7 @@
     if ($("refreshAllBtn")) $("refreshAllBtn").addEventListener("click", function () {
       loadState().then(function () {
         _tabLoaded["tab-tuning"] = true;
-        tkLoadGroups(true);
+        grpLoadAll(true);
         toast("已刷新", "ok");
       }).catch(function () {});
       _tabLoaded["tab-profile"] = true;
@@ -1337,6 +1599,7 @@
       reveal();
       // 揭开后再套一次主题色：data-boot 期间的内联变量可能被首帧覆盖
       applyAccent(CONFIG.ui_accent_color || "");
+      grpLoadAll(true);
       setTimeout(function () { ensureTabLoaded("tab-tuning"); }, 120);
       setTimeout(function () { ensureTabLoaded("tab-profile"); }, 280);
     }, reveal);

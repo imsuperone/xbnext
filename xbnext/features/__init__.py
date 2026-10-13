@@ -32,6 +32,7 @@ from .profile import ProfileFeature
 from .quote import QuoteFeature
 from .recall import RecallFeature
 from .tokenline import TokenLineFeature
+from .ttslimit import TtsLimitFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
@@ -42,6 +43,7 @@ FEATURES: Tuple[Feature, ...] = (
     ProfileFeature(),
     RecallFeature(),
     TokenLineFeature(),
+    TtsLimitFeature(),
 )
 
 
