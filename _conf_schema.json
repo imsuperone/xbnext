@@ -161,6 +161,32 @@
     "hint": "在 AstrBot 日志里打印各功能的执行结果与跳过原因，排查「为什么没生效」时打开。默认关闭。",
     "default": false
   },
+  "enable_private": {
+    "type": "bool",
+    "description": "私聊独立开关",
+    "hint": "开启后私聊消息也会触发本插件（如 TTS 与功能注入）；关闭后仅在允许的群聊中生效。默认开启。",
+    "default": true
+  },
+  "platform_preset": {
+    "type": "string",
+    "description": "生效平台快速选择",
+    "hint": "下拉快速选择生效平台组合。若选择「自定义」，则由下方「允许生效的平台」自定义设置生效。默认仅 OneBot / QQ 平台。",
+    "default": "onebot",
+    "options": [
+      "onebot",
+      "onebot_matrix",
+      "all",
+      "custom"
+    ],
+    "collapsed": true
+  },
+  "allowed_platforms": {
+    "type": "string",
+    "description": "允许生效的平台（自定义/高级）",
+    "hint": "当平台选择为「自定义」时生效。以逗号分隔允许生效的平台标识（如 onebot, matrix, telegram 等）。留空或填 all 表示允许所有平台。默认 onebot, aiocqhttp。",
+    "default": "onebot, aiocqhttp",
+    "collapsed": true
+  },
   "ui_theme_mode": {
     "type": "string",
     "description": "控制台深浅色",

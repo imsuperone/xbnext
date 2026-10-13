@@ -206,6 +206,83 @@
         <div class="m3-card">
           <div class="card-row-split">
             <div>
+              <h2 class="card-title">私聊消息独立开关</h2>
+              <p class="card-desc">开启后私聊消息也会触发本插件（如 TTS 与功能注入）；关闭后仅在允许的群聊中生效。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_private" data-key="enable_private" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="m3-card" id="card_platform_mgr">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">生效平台选择与管理</h2>
+              <p class="card-desc">控制本插件在哪些平台运行。提供预设下拉选择、常用平台一键勾选，并支持添加自定义平台。</p>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="sel_platform_preset">快速模式（下拉选择）</label>
+            <select class="m3-input" id="sel_platform_preset" data-key="platform_preset">
+              <option value="onebot">仅 QQ / OneBot 平台（默认推荐）</option>
+              <option value="onebot_matrix">QQ + Matrix 平台</option>
+              <option value="all">全部平台生效（All）</option>
+              <option value="custom">自定义组合（勾选下方平台或输入添加）</option>
+            </select>
+          </div>
+          <div class="form-group" id="platformCheckboxesGroup" style="margin-top: 12px;">
+            <label class="form-label">勾选允许生效的平台</label>
+            <div class="platform-chips-wrap" id="platformChips">
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="onebot" />
+                <span>QQ / OneBot</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="aiocqhttp" />
+                <span>aiocqhttp</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="matrix" />
+                <span>Matrix</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="telegram" />
+                <span>Telegram</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="discord" />
+                <span>Discord</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="lark" />
+                <span>飞书 / Lark</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="all" />
+                <span>全部平台 (All)</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label">自定义平台标识（选填）</label>
+            <div class="group-add-inline">
+              <input type="text" class="m3-input" id="inp_custom_plat" placeholder="输入其他平台英文标识（如 dingtalk, kook, wechat）" />
+              <button type="button" class="m3-btn secondary-btn" id="btn_add_custom_plat">+ 添加</button>
+            </div>
+            <div id="customPlatTagsWrap" class="platform-tags-wrap" style="margin-top: 8px;"></div>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_allowed_platforms">生效平台标识列表（与上方勾选实时双向同步）</label>
+            <input type="text" class="m3-input" id="inp_allowed_platforms" data-key="allowed_platforms" placeholder="onebot, aiocqhttp" />
+            <span class="field-hint">以逗号分隔平台标识（如 <code>onebot, matrix</code>）；留空或填 <code>all</code> 表示所有平台。上方勾选或添加会自动保存更新。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
               <h2 class="card-title">群聊总开关与分群独立功能控制</h2>
               <p class="card-desc">控制本插件在哪些群聊生效，并支持为每个群单独开关整个插件或单独开关某一项功能（未单独设置的项默认跟随上方全局开关）。</p>
             </div>

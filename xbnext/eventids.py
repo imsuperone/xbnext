@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["umo_of", "uid_of", "gid_of", "platform_of"]
+__all__ = ["umo_of", "uid_of", "gid_of", "platform_of", "is_bot_mentioned"]
 
 
 def umo_of(event: Any) -> str:
@@ -76,9 +76,17 @@ def gid_of(event: Any) -> str:
             mo = getattr(event, "message_obj", None)
             gid = _clean(getattr(mo, "group_id", "") if mo else "")
         if not gid:
-            parts = [p for p in umo_of(event).split("/") if p]
+            umo = umo_of(event)
+            parts = [p for p in umo.split("/") if p]
             if len(parts) >= 3 and "group" in parts[1].lower():
                 gid = _clean(parts[2])
+            elif "!" in umo:
+                # 兼容 Matrix 房间 ID 格式（以 ! 开头的 room id）
+                for tok in umo.replace(":", "/").split("/"):
+                    tok_s = _clean(tok)
+                    if tok_s.startswith("!"):
+                        gid = tok_s
+                        break
         return gid
     except Exception:  # noqa: BLE001
         return ""
@@ -89,11 +97,50 @@ def platform_of(event: Any) -> str:
     if event is None:
         return ""
     try:
+        raw_p = ""
         fn = getattr(event, "get_platform_name", None)
         if callable(fn):
-            platform = str(fn() or "")
-            if platform:
-                return platform
-        return umo_of(event).split("/")[0].strip()
+            raw_p = str(fn() or "").strip()
+        if not raw_p:
+            for attr in ("platform_id", "platform"):
+                raw_p = str(getattr(event, attr, "") or "").strip()
+                if raw_p:
+                    break
+        if not raw_p:
+            umo = umo_of(event)
+            raw_p = umo.split("/")[0].split(":")[0].strip()
+        return raw_p
     except Exception:  # noqa: BLE001
         return ""
+
+
+def is_bot_mentioned(event: Any) -> bool:
+    """检测消息是否显式 @ 了机器人。"""
+    if event is None:
+        return False
+    # 1. 检查组件链中的 At / Mention
+    try:
+        mo = getattr(event, "message_obj", None)
+        comps = getattr(mo, "message", None) or []
+        self_id = str(getattr(event, "get_self_id", lambda: "")() or "").strip()
+        for c in comps:
+            cname = c.__class__.__name__
+            if cname in ("At", "Mention"):
+                target = str(getattr(c, "qq", "") or getattr(c, "user_id", "") or getattr(c, "id", "") or "").strip()
+                if not self_id or target == self_id or self_id in target or target in self_id:
+                    return True
+            elif cname == "AtAll":
+                return True
+    except Exception:
+        pass
+    # 2. 检查文本形式的 At 标记
+    try:
+        raw = str(getattr(event, "message_str", "") or "")
+        self_id = str(getattr(event, "get_self_id", lambda: "")() or "").strip()
+        if "[At:" in raw or "[CQ:at" in raw:
+            return True
+        if self_id and ("@" + self_id) in raw:
+            return True
+    except Exception:
+        pass
+    return False

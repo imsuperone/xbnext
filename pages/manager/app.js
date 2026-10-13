@@ -362,9 +362,196 @@
     });
   }
 
+  var PRESET_PLATFORMS = ["onebot", "aiocqhttp", "matrix", "telegram", "discord", "lark", "all"];
+  var _customPlatforms = [];
+
+  function parseAllowedPlatforms(raw) {
+    if (!raw) return [];
+    var parts = String(raw).split(/[,，、;；\s]+/);
+    var list = [];
+    parts.forEach(function (p) {
+      p = p.trim().toLowerCase();
+      if (p && list.indexOf(p) === -1) list.push(p);
+    });
+    return list;
+  }
+
+  function renderPlatformManager() {
+    var raw = String(CONFIG.allowed_platforms == null ? "onebot, aiocqhttp" : CONFIG.allowed_platforms).trim();
+    var tokens = parseAllowedPlatforms(raw);
+    var isAll = tokens.indexOf("all") !== -1 || tokens.indexOf("*") !== -1;
+
+    // 更新复选框
+    var cbs = document.querySelectorAll(".plat-cb");
+    Array.prototype.forEach.call(cbs, function (cb) {
+      var val = cb.value;
+      if (val === "all") {
+        cb.checked = isAll;
+      } else {
+        cb.checked = !isAll && tokens.indexOf(val) !== -1;
+      }
+    });
+
+    // 提取自定义平台
+    _customPlatforms = [];
+    tokens.forEach(function (t) {
+      if (t !== "all" && t !== "*" && PRESET_PLATFORMS.indexOf(t) === -1) {
+        if (_customPlatforms.indexOf(t) === -1) _customPlatforms.push(t);
+      }
+    });
+
+    // 渲染自定义标签
+    var wrap = $("customPlatTagsWrap");
+    if (wrap) {
+      wrap.innerHTML = _customPlatforms.map(function (tag) {
+        return '<span class="platform-tag-pill">' + tag + '<span class="tag-rm" data-tag="' + tag + '">×</span></span>';
+      }).join("");
+    }
+
+    // 智能推断或同步下拉预设
+    var sel = $("sel_platform_preset");
+    if (sel && document.activeElement !== sel) {
+      var preset = String(CONFIG.platform_preset || "").toLowerCase();
+      if (preset && ["onebot", "onebot_matrix", "all", "custom"].indexOf(preset) !== -1) {
+        sel.value = preset;
+      } else {
+        if (isAll) sel.value = "all";
+        else if (tokens.indexOf("matrix") !== -1 && (tokens.indexOf("onebot") !== -1 || tokens.indexOf("aiocqhttp") !== -1) && _customPlatforms.length === 0) sel.value = "onebot_matrix";
+        else if ((tokens.indexOf("onebot") !== -1 || tokens.indexOf("aiocqhttp") !== -1) && tokens.length <= 2 && _customPlatforms.length === 0) sel.value = "onebot";
+        else sel.value = "custom";
+      }
+    }
+  }
+
+  function savePlatformSelection(fromPreset) {
+    var sel = $("sel_platform_preset");
+    var presetVal = sel ? sel.value : "custom";
+    var finalStr = "";
+
+    if (fromPreset && presetVal === "onebot") {
+      finalStr = "onebot, aiocqhttp";
+      _customPlatforms = [];
+    } else if (fromPreset && presetVal === "onebot_matrix") {
+      finalStr = "onebot, aiocqhttp, matrix";
+      _customPlatforms = [];
+    } else if (fromPreset && presetVal === "all") {
+      finalStr = "all";
+      _customPlatforms = [];
+    } else {
+      var selected = [];
+      var isAll = false;
+      var cbs = document.querySelectorAll(".plat-cb");
+      Array.prototype.forEach.call(cbs, function (cb) {
+        if (cb.checked) {
+          if (cb.value === "all") isAll = true;
+          else selected.push(cb.value);
+        }
+      });
+      if (isAll) {
+        finalStr = "all";
+      } else {
+        _customPlatforms.forEach(function (p) {
+          if (selected.indexOf(p) === -1) selected.push(p);
+        });
+        finalStr = selected.join(", ");
+      }
+    }
+
+    var inp = $("inp_allowed_platforms");
+    if (inp) inp.value = finalStr;
+    CONFIG.allowed_platforms = finalStr;
+    CONFIG.platform_preset = presetVal;
+
+    writeConfig("allowed_platforms", finalStr, { quiet: true });
+    writeConfig("platform_preset", presetVal, { quiet: true });
+    renderPlatformManager();
+  }
+
+  function initPlatformManager() {
+    var sel = $("sel_platform_preset");
+    if (sel) {
+      sel.addEventListener("change", function () {
+        savePlatformSelection(true);
+      });
+    }
+
+    var chipsWrap = $("platformChips");
+    if (chipsWrap) {
+      chipsWrap.addEventListener("change", function (ev) {
+        if (ev.target && ev.target.classList.contains("plat-cb")) {
+          var cb = ev.target;
+          if (cb.value === "all" && cb.checked) {
+            Array.prototype.forEach.call(document.querySelectorAll(".plat-cb"), function (other) {
+              if (other !== cb) other.checked = false;
+            });
+          } else if (cb.checked) {
+            var allCb = document.querySelector('.plat-cb[value="all"]');
+            if (allCb) allCb.checked = false;
+          }
+          if (sel) sel.value = "custom";
+          savePlatformSelection(false);
+        }
+      });
+    }
+
+    var btnAdd = $("btn_add_custom_plat");
+    var inpAdd = $("inp_custom_plat");
+    function doAddCustom() {
+      if (!inpAdd) return;
+      var val = inpAdd.value.trim().toLowerCase();
+      if (!val) return;
+      if (val === "all") {
+        toast("全部平台请直接勾选「全部平台 (All)」", "info");
+        return;
+      }
+      if (PRESET_PLATFORMS.indexOf(val) !== -1) {
+        var targetCb = document.querySelector('.plat-cb[value="' + val + '"]');
+        if (targetCb) targetCb.checked = true;
+      } else {
+        if (_customPlatforms.indexOf(val) === -1) {
+          _customPlatforms.push(val);
+        }
+      }
+      inpAdd.value = "";
+      if (sel) sel.value = "custom";
+      savePlatformSelection(false);
+    }
+    if (btnAdd) btnAdd.addEventListener("click", doAddCustom);
+    if (inpAdd) {
+      inpAdd.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          doAddCustom();
+        }
+      });
+    }
+
+    var tagsWrap = $("customPlatTagsWrap");
+    if (tagsWrap) {
+      tagsWrap.addEventListener("click", function (ev) {
+        var rm = ev.target.closest ? ev.target.closest(".tag-rm") : null;
+        if (rm) {
+          var tag = rm.getAttribute("data-tag");
+          _customPlatforms = _customPlatforms.filter(function (t) { return t !== tag; });
+          if (sel) sel.value = "custom";
+          savePlatformSelection(false);
+        }
+      });
+    }
+
+    var rawInp = $("inp_allowed_platforms");
+    if (rawInp) {
+      rawInp.addEventListener("input", function () {
+        CONFIG.allowed_platforms = rawInp.value;
+        renderPlatformManager();
+      });
+    }
+  }
+
   function renderConfig() {
     Object.keys(CONFIG).forEach(applyControl);
     applyConditions();
+    renderPlatformManager();
   }
 
   /**
@@ -464,6 +651,8 @@
         });
       }
     );
+
+    initPlatformManager();
   }
 
   /* ========================================================================

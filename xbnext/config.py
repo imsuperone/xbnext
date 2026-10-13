@@ -115,13 +115,48 @@ class Config:
                 val = {}
         return val if isinstance(val, dict) else {}
 
+    def is_platform_allowed(self, platform: str = "") -> bool:
+        """检查指定平台是否允许运行本插件（支持 platform_preset 下拉预设与 allowed_platforms 自定义）。"""
+        preset = self.text("platform_preset", "").strip().lower()
+        p = (platform or "").strip().lower()
+        if preset == "all":
+            return True
+        if preset in ("onebot", "qq"):
+            if not p:
+                return True
+            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11")
+        if preset in ("onebot_matrix", "onebot,matrix", "matrix_onebot"):
+            if not p:
+                return True
+            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11", "matrix")
+
+        allowed = self.text("allowed_platforms", "onebot, aiocqhttp").strip()
+        if not allowed or allowed.lower() in ("all", "*", "any"):
+            return True
+        import re as _re
+        tokens = [t.strip().lower() for t in _re.split(r"[,，、;；\s]+", allowed) if t.strip()]
+        if not p:
+            return True
+        if "all" in tokens or "*" in tokens:
+            return True
+        if p in tokens:
+            return True
+        if p in ("aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11") and ("onebot" in tokens or "aiocqhttp" in tokens):
+            return True
+        if p == "onebot" and "aiocqhttp" in tokens:
+            return True
+        return False
+
     def is_group_allowed(self, gid: str) -> bool:
-        """检查指定群号是否启用本插件（综合 group_mode / group_list 与 group_features[gid].enabled）。"""
+        """检查指定群号/房间是否启用本插件（综合 group_mode / group_list 与 group_features[gid].enabled）。"""
         gid = str(gid or "").strip()
         if not gid:
+            val = self.get("enable_private")
+            if val is not None:
+                return bool(val)
             return True
         gmap = self.group_features_map()
-        gconf = gmap.get(gid)
+        gconf = gmap.get(gid) or gmap.get(gid.lower())
         if isinstance(gconf, dict) and "enabled" in gconf and gconf["enabled"] is not None:
             return bool(gconf["enabled"])
         mode = self.text("group_mode", "all").strip().lower() or "all"
@@ -130,11 +165,18 @@ class Config:
         raw_list = self.text("group_list", "")
         import re as _re
         tokens = [t.strip() for t in _re.split(r"[,，、;；\s]+", raw_list) if t.strip()]
-        clean_gid = _re.sub(r"\D+", "", gid)
         matched = False
+        gid_lower = gid.lower()
         for t in tokens:
-            ct = _re.sub(r"\D+", "", t)
-            if t == gid or (clean_gid and ct == clean_gid):
+            t_clean = t.strip()
+            # 兼容原生群号/房间号（含 !xxx、纯数字、带符号）、带平台前缀（如 matrix:!xxx）
+            if t_clean == gid or t_clean.lower() == gid_lower:
+                matched = True
+                break
+            if t_clean.endswith(":" + gid) or t_clean.lower().endswith(":" + gid_lower):
+                matched = True
+                break
+            if gid.isdigit() and _re.sub(r"\D+", "", t_clean) == gid:
                 matched = True
                 break
         if mode == "whitelist":
@@ -143,19 +185,24 @@ class Config:
             return not matched
         return True
 
-    def enabled_for_group(self, key: str, gid: str = "") -> bool:
-        """结合群聊总开关与分群单项功能开关判定 ``key`` 是否生效。"""
+    def enabled_for_group(self, key: str, gid: str = "", platform: str = "") -> bool:
+        """结合平台白名单、私聊总开关、群聊总开关与分群单项功能开关判定 ``key`` 是否生效。"""
+        if platform and not self.is_platform_allowed(platform):
+            return False
         gid = str(gid or "").strip()
-        if gid:
-            if not self.is_group_allowed(gid):
+        if not gid:
+            if not self.is_group_allowed(""):
                 return False
-            gmap = self.group_features_map()
-            gconf = gmap.get(gid)
-            if isinstance(gconf, dict) and key in gconf and gconf[key] is not None:
-                v = gconf[key]
-                if isinstance(v, str):
-                    return v.strip().lower() in ("1", "true", "yes", "on")
-                return bool(v)
+            return self.enabled(key)
+        if not self.is_group_allowed(gid):
+            return False
+        gmap = self.group_features_map()
+        gconf = gmap.get(gid) or gmap.get(gid.lower())
+        if isinstance(gconf, dict) and key in gconf and gconf[key] is not None:
+            v = gconf[key]
+            if isinstance(v, str):
+                return v.strip().lower() in ("1", "true", "yes", "on")
+            return bool(v)
         return self.enabled(key)
 
     def as_dict(self) -> dict:
