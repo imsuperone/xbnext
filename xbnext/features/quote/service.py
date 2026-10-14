@@ -109,6 +109,8 @@ def find_placeholders(text: str) -> Dict[str, List[str]]:
     result: Dict[str, List[str]] = dict(empty)
     if not isinstance(text, str) or not text:
         return result
+    if "[" not in text:
+        return result
     try:
         result["noise"] = NOISE_RE.findall(text)
         result["degraded"] = DEGRADED_RE.findall(text)
@@ -150,6 +152,8 @@ def clean_prompt(
             return "", empty
     if not text:
         return "", empty
+    if "[" not in text:
+        return text, empty
     stats = {k: len(v) for k, v in find_placeholders(text).items()}
     if action == "keep" or not any(stats.values()):
         return text, stats
@@ -279,9 +283,13 @@ _SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*)://")
 
 
 def _file_url_path(value: str) -> str:
-    """把 ``file:///C:/x.png`` / ``file:///data/x.png`` 还原成本地路径。"""
+    """把 ``file:///C:/x.png`` / ``file://C:/x.png`` / ``file:///data/x.png`` 还原成本地路径。"""
     try:
-        path = unquote(urlparse(value).path or "")
+        parsed = urlparse(value)
+        netloc = unquote(parsed.netloc or "")
+        path = unquote(parsed.path or "")
+        if re.match(r"^[A-Za-z]:$", netloc):
+            path = f"{netloc}{path}"
     except Exception:  # noqa: BLE001
         path = value[7:]
     # Windows 的 ``file:///C:/...`` 会带一个多余前导斜杠

@@ -53,7 +53,8 @@ class KV:
         """读一个键；未命中 / 异常都返回 ``default``。"""
         full = self.key(key)
         if full in self._cache:
-            return self._cache[full]
+            cached = self._cache[full]
+            return default if cached is _MISSING else cached
         if self._broken or self._owner is None:
             return default
         getter = getattr(self._owner, "get_kv_data", None)
@@ -66,7 +67,7 @@ class KV:
             self._log("debug", f"读取 KV 失败 {full}: {exc}")
             return default
         if value is _MISSING:
-            self._cache[full] = default
+            self._cache[full] = _MISSING
             self._loaded.add(full)
             return default
         self._cache[full] = value

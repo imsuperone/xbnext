@@ -234,10 +234,13 @@ async def handle_groups(context: Any, runtime: Any = None) -> Dict[str, Any]:
                         "group_name": gname or gid,
                         "umo": umo,
                     }
-                    if hasattr(runtime, "_save_seen_groups"):
-                        runtime._save_seen_groups()
                 except Exception:  # noqa: BLE001
                     pass
+        if runtime is not None and hasattr(runtime, "_save_seen_groups"):
+            try:
+                runtime._save_seen_groups()
+            except Exception:  # noqa: BLE001
+                pass
     if runtime is not None:
         try:
             seen_map = getattr(runtime, "_seen_groups", None)
