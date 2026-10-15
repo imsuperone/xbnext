@@ -359,6 +359,58 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
+    async def updater_plugins_route() -> Any:
+        try:
+            from ..features.updater.service import UpdaterService, PLUGIN_NICKNAMES, DEFAULT_TARGET_PLUGINS
+            updater = UpdaterService(runtime.conf)
+            ok, installed, err_msg = await updater.fetch_installed_plugins()
+            if not ok:
+                return _err(err_msg, astrbot_web)
+            targets = set(updater.target_plugins)
+            res = []
+            for p in installed:
+                name = p.get("name") or ""
+                if not name:
+                    continue
+                nick = PLUGIN_NICKNAMES.get(name, name)
+                is_selected = name in targets or (not targets and name in DEFAULT_TARGET_PLUGINS)
+                res.append({
+                    "name": name,
+                    "nickname": nick,
+                    "version": str(p.get("version") or ""),
+                    "selected": is_selected,
+                })
+            return _ok(res, astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
+    async def updater_check_route() -> Any:
+        try:
+            from ..features.updater.service import UpdaterService
+            updater = UpdaterService(runtime.conf)
+            payload, _ = await read_json()
+            names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
+            res = await updater.check_updates(names)
+            if not res.get("ok"):
+                return _err(res.get("error") or "检查更新失败", astrbot_web)
+            return _ok(res, astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
+    async def updater_apply_route() -> Any:
+        try:
+            from ..features.updater.service import UpdaterService
+            updater = UpdaterService(runtime.conf)
+            payload, _ = await read_json()
+            names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
+            force = bool((payload or {}).get("force", False)) if isinstance(payload, dict) else False
+            res = await updater.apply_updates(names, force=force)
+            if not res.get("ok"):
+                return _err(res.get("error") or "执行更新失败", astrbot_web)
+            return _ok(res, astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
@@ -368,6 +420,9 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/profile_delete", profile_delete, ["POST"], "XBNEXT 删除用户档案")
         register(f"{base}/inject_log", inject_log_route, ["GET"], "XBNEXT 提示词注入记录")
         register(f"{base}/groups", groups_route, ["GET"], "XBNEXT 所在群列表（token 白名单）")
+        register(f"{base}/updater/plugins", updater_plugins_route, ["GET"], "XBNEXT 获取已安装插件列表")
+        register(f"{base}/updater/check", updater_check_route, ["POST"], "XBNEXT 检查插件更新")
+        register(f"{base}/updater/apply", updater_apply_route, ["POST"], "XBNEXT 执行一键更新")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True

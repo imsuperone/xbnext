@@ -463,6 +463,12 @@ class XbnextRuntime:
             return commands.MENU
         if sub in commands.STATUS_WORDS:
             return "\n".join(self.status_lines())
+        if sub in ("检查更新", "查更新", "check_update", "check"):
+            return await self.handle_command("updater", event, ["check"])
+        if sub in ("一键更新", "更新", "update", "升级"):
+            return await self.handle_command("updater", event, ["update"])
+        if sub in ("强制更新", "强制升级", "force_update", "force"):
+            return await self.handle_command("updater", event, ["force"])
         return await self.handle_command(sub, event, args)
 
     # ==================================================================

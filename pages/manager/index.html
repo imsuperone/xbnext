@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.11" />
+  <link rel="stylesheet" href="./style.css?v=0.2.12" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.11">0.2.11</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.12">0.2.12</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -310,6 +310,50 @@
           <div id="grpSwitchTableWrap" class="group-switch-table-wrap">
             <div class="card-note">正在加载群聊列表…</div>
           </div>
+        </div>
+
+        <div class="sub-group-header">🔄 插件更新</div>
+        <div class="m3-card" id="card_updater">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">插件一键更新与检查</h2>
+              <p class="card-desc">通过 AstrBot OpenAPI 接口一键检查并更新选定的插件。支持检测 GitHub 远程最新提交对比本地版本，一键自动拉取并热重载。此功能默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_updater" data-key="enable_updater" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="form-label" for="inp_updater_api_key">AstrBot OpenAPI 密钥 (API Key)</label>
+            <input type="password" class="m3-input" id="inp_updater_api_key" data-key="updater_api_key" placeholder="填入在 AstrBot 控制台生成的 OpenAPI Key (如 abk_...)" />
+            <span class="field-hint">在 AstrBot Web 控制台「开放接口」生成的 API Key，需具备插件管理权限。</span>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_updater_api_url">AstrBot 服务地址 (API URL)</label>
+            <input type="text" class="m3-input" id="inp_updater_api_url" data-key="updater_api_url" placeholder="http://127.0.0.1:6185" />
+            <span class="field-hint">AstrBot 服务的基础地址。若在同一服务器部署默认使用 <code>http://127.0.0.1:6185</code>，远程部署填写实际访问域名或 IP。</span>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <div class="card-row-split" style="margin-bottom: 6px;">
+              <label class="form-label" style="margin-bottom: 0;">纳入更新的插件选择（多选）</label>
+              <button type="button" class="m3-btn secondary-btn" id="btn_fetch_updater_plugins" style="padding: 4px 10px; font-size: 12px;">🔄 获取插件列表</button>
+            </div>
+            <span class="field-hint">勾选需要一键检查与更新的插件（默认预设 xb 系列插件；未安装的插件会自动静默跳过）。</span>
+            <div id="updaterPluginsWrap" class="platform-chips-wrap" style="margin-top: 8px;"></div>
+            <input type="hidden" id="inp_updater_plugins" data-key="updater_plugins" />
+          </div>
+
+          <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="m3-btn secondary-btn" id="btn_updater_check">🔍 检查更新</button>
+            <button type="button" class="m3-btn primary-btn" id="btn_updater_apply">🚀 一键更新</button>
+            <button type="button" class="m3-btn danger-btn" id="btn_updater_force" title="跳过版本检测，直接从 GitHub 重新拉取最新代码并热重载">⚡ 强制更新</button>
+          </div>
+
+          <div id="updaterResultBox" style="display: none; margin-top: 14px; padding: 12px; border-radius: 8px; border: 1px solid var(--m3-sys-color-divider); background: var(--m3-sys-color-surface-container); white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.6;"></div>
         </div>
       </section>
 
@@ -600,7 +644,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.11"></script>
-  <script src="./app.js?v=0.2.11"></script>
+  <script src="./api.js?v=0.2.12"></script>
+  <script src="./app.js?v=0.2.12"></script>
 </body>
 </html>

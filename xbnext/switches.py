@@ -73,6 +73,8 @@ def coerce_value(key: str, value: Any) -> Any:
         if isinstance(value, dict):
             return value
         raise ValueError(f"{key} 需要对象")
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(x).strip() for x in value if str(x).strip())
     return str(value)
 
 

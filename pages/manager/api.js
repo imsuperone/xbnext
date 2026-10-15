@@ -233,6 +233,12 @@
     injectLog: function () { return getJson("inject_log", null); },
     /** aiocqhttp 所在群列表（token 白名单一键填充）：groups() -> [{group_id, group_name, umo}] */
     groups: function () { return getJson("groups", null); },
+    /** 获取已安装插件列表 */
+    updaterPlugins: function () { return getJson("updater/plugins", null); },
+    /** 检查插件更新：updaterCheck({plugins: [...]}) */
+    updaterCheck: function (payload) { return postJson("updater/check", payload); },
+    /** 执行插件更新：updaterApply({plugins: [...], force: bool}) */
+    updaterApply: function (payload) { return postJson("updater/apply", payload); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

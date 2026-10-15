@@ -552,6 +552,7 @@
     Object.keys(CONFIG).forEach(applyControl);
     applyConditions();
     renderPlatformManager();
+    renderUpdaterPlugins();
   }
 
   /**
@@ -1757,6 +1758,255 @@
   }
 
   /* ========================================================================
+   * 插件更新
+   * ====================================================================== */
+  var DEFAULT_TARGET_PLUGINS = [
+    { name: "astrbot_plugin_xbimg", nickname: "消息转图 (xbimg)" },
+    { name: "astrbot_plugin_xb2img", nickname: "消息转图轻量 (xb2img)" },
+    { name: "astrbot_plugin_xbdoc", nickname: "文档记忆 (xbdoc)" },
+    { name: "astrbot_plugin_xbbot", nickname: "小白机器人 (xbbot)" },
+    { name: "astrbot_plugin_xbbot_beta", nickname: "小白测试版 (xbbotbeta)" },
+    { name: "astrbot_plugin_xbnext", nickname: "对话细节 (xbnext)" }
+  ];
+
+  var _updaterInstalledPlugins = [];
+
+  function getSelectedUpdaterPlugins() {
+    var cbs = document.querySelectorAll(".updater-plugin-cb");
+    var res = [];
+    Array.prototype.forEach.call(cbs, function (cb) {
+      if (cb.checked && cb.value) res.push(cb.value);
+    });
+    return res;
+  }
+
+  function renderUpdaterPlugins(plugins) {
+    var wrap = $("updaterPluginsWrap");
+    if (!wrap) return;
+
+    var list = (plugins && plugins.length) ? plugins : (_updaterInstalledPlugins.length ? _updaterInstalledPlugins : DEFAULT_TARGET_PLUGINS);
+    var rawSaved = String(CONFIG.updater_plugins || "").trim();
+    var savedTokens = rawSaved ? rawSaved.split(/[,，\s\n]+/).map(function (s) { return s.trim(); }).filter(Boolean) : [];
+
+    var html = list.map(function (p) {
+      var name = typeof p === "string" ? p : p.name;
+      var nick = (typeof p === "object" && p.nickname) ? p.nickname : name;
+      var checked = (savedTokens.length === 0) || (savedTokens.indexOf(name) !== -1);
+      return (
+        '<label class="platform-chip-label">' +
+          '<input type="checkbox" class="updater-plugin-cb" value="' + name + '"' + (checked ? ' checked' : '') + ' />' +
+          '<span>' + nick + '</span>' +
+        '</label>'
+      );
+    }).join("");
+
+    wrap.innerHTML = html;
+
+    Array.prototype.forEach.call(wrap.querySelectorAll(".updater-plugin-cb"), function (cb) {
+      cb.addEventListener("change", function () {
+        var selected = getSelectedUpdaterPlugins();
+        writeConfig("updater_plugins", selected, { quiet: true, successText: "已保存插件选择" }).catch(function () {});
+      });
+    });
+  }
+
+  function fetchUpdaterPlugins(quiet) {
+    var btn = $("btn_fetch_updater_plugins");
+    if (btn) btn.disabled = true;
+    if (!quiet) toast("正在获取已安装插件列表...", "info");
+
+    return API.updaterPlugins().then(function (res) {
+      if (btn) btn.disabled = false;
+      var plugins = (res && Array.isArray(res)) ? res : ((res && res.data && Array.isArray(res.data)) ? res.data : []);
+      if (!plugins.length) {
+        if (!quiet) toast("未获取到插件列表（请先检查是否填写有效的 API Key 与服务地址）", "bad");
+        return;
+      }
+      _updaterInstalledPlugins = plugins;
+      renderUpdaterPlugins(plugins);
+      if (!quiet) toast("成功获取 " + plugins.length + " 个已安装插件", "ok");
+    }).catch(function (e) {
+      if (btn) btn.disabled = false;
+      if (!quiet) toast("获取插件列表失败：" + (e && e.message ? e.message : e), "bad");
+    });
+  }
+
+  function setUpdaterBusy(busy) {
+    ["btn_updater_check", "btn_updater_apply", "btn_updater_force", "btn_fetch_updater_plugins"].forEach(function (id) {
+      var b = $(id);
+      if (b) b.disabled = !!busy;
+    });
+  }
+
+  function initUpdater() {
+    renderUpdaterPlugins();
+
+    if ($("btn_fetch_updater_plugins")) {
+      $("btn_fetch_updater_plugins").addEventListener("click", function () {
+        fetchUpdaterPlugins(false);
+      });
+    }
+
+    if ($("btn_updater_check")) {
+      $("btn_updater_check").addEventListener("click", function () {
+        if (!CONFIG.enable_updater) {
+          toast("请先开启上方的「插件一键更新与检查」开关", "info");
+          return;
+        }
+        if (!CONFIG.updater_api_key) {
+          toast("请先填写 AstrBot OpenAPI 密钥", "info");
+          return;
+        }
+        var targets = getSelectedUpdaterPlugins();
+        var box = $("updaterResultBox");
+        if (box) {
+          box.style.display = "block";
+          box.textContent = "🔍 正在检查所选插件的更新状态，请稍候...";
+        }
+        setUpdaterBusy(true);
+
+        API.updaterCheck({ plugins: targets }).then(function (res) {
+          setUpdaterBusy(false);
+          var data = (res && res.data) ? res.data : res;
+          var plugins = (data && data.plugins) ? data.plugins : [];
+          if (!plugins.length) {
+            if (box) box.textContent = "ℹ️ 未检测到匹配的已安装插件。";
+            toast("未检测到匹配的已安装插件", "info");
+            return;
+          }
+          var lines = ["🔍【插件更新检查结果】", "━━━━━━━━━━━━━━━━━━━━"];
+          plugins.forEach(function (p) {
+            var nick = p.nickname || p.name;
+            var mark = p.has_update ? "🚀" : "🟢";
+            lines.push("• " + nick + ": " + mark + " " + p.status_text);
+          });
+          lines.push("━━━━━━━━━━━━━━━━━━━━");
+          if (data.has_new_version) {
+            lines.push("💡 发现可用新版本！点击上方【🚀 一键更新】即可完成升级与重载。");
+            toast("发现可用新版本，可点击一键更新", "ok");
+          } else {
+            lines.push("✨ 所有选定插件均已处于最新状态！");
+            toast("所有选定插件均是最新版本", "ok");
+          }
+          if (box) box.textContent = lines.join("\n");
+        }).catch(function (e) {
+          setUpdaterBusy(false);
+          var msg = e && e.message ? e.message : String(e);
+          if (box) box.textContent = "❌ 检查更新失败：" + msg;
+          toast("检查更新失败：" + msg, "bad");
+        });
+      });
+    }
+
+    if ($("btn_updater_apply")) {
+      $("btn_updater_apply").addEventListener("click", function () {
+        if (!CONFIG.enable_updater) {
+          toast("请先开启上方的「插件一键更新与检查」开关", "info");
+          return;
+        }
+        if (!CONFIG.updater_api_key) {
+          toast("请先填写 AstrBot OpenAPI 密钥", "info");
+          return;
+        }
+        var targets = getSelectedUpdaterPlugins();
+        var box = $("updaterResultBox");
+        if (box) {
+          box.style.display = "block";
+          box.textContent = "🚀 正在执行一键更新与热重载，请稍候...";
+        }
+        setUpdaterBusy(true);
+
+        API.updaterApply({ plugins: targets, force: false }).then(function (res) {
+          setUpdaterBusy(false);
+          var data = (res && res.data) ? res.data : res;
+          if (data && data.no_updates) {
+            if (box) box.textContent = data.message || "所有插件均已是最新版本，无需更新。";
+            toast("所有插件均已是最新版本", "ok");
+            return;
+          }
+          var results = (data && data.results) ? data.results : [];
+          var lines = ["🚀【一键更新执行结果】", "━━━━━━━━━━━━━━━━━━━━"];
+          var allOk = true;
+          results.forEach(function (r) {
+            var nick = r.nickname || r.name;
+            if (r.ok) {
+              lines.push("• " + nick + ": ✅ " + r.message);
+            } else {
+              allOk = false;
+              lines.push("• " + nick + ": ❌ " + r.message);
+            }
+          });
+          lines.push("━━━━━━━━━━━━━━━━━━━━");
+          if (allOk) {
+            lines.push("✨ 所选插件已全部更新并热重载生效！");
+            toast("插件已全部更新并重载生效", "ok");
+          } else {
+            lines.push("⚠️ 部分插件更新遇到异常，详情请查看上方日志。");
+            toast("部分插件更新遇到异常", "bad");
+          }
+          if (box) box.textContent = lines.join("\n");
+        }).catch(function (e) {
+          setUpdaterBusy(false);
+          var msg = e && e.message ? e.message : String(e);
+          if (box) box.textContent = "❌ 执行更新失败：" + msg;
+          toast("更新失败：" + msg, "bad");
+        });
+      });
+    }
+
+    if ($("btn_updater_force")) {
+      $("btn_updater_force").addEventListener("click", function () {
+        if (!CONFIG.enable_updater) {
+          toast("请先开启上方的「插件一键更新与检查」开关", "info");
+          return;
+        }
+        if (!CONFIG.updater_api_key) {
+          toast("请先填写 AstrBot OpenAPI 密钥", "info");
+          return;
+        }
+        var targets = getSelectedUpdaterPlugins();
+        var box = $("updaterResultBox");
+        if (box) {
+          box.style.display = "block";
+          box.textContent = "⚡ 正在从 GitHub 强制重新拉取最新代码并热重载，请稍候...";
+        }
+        setUpdaterBusy(true);
+
+        API.updaterApply({ plugins: targets, force: true }).then(function (res) {
+          setUpdaterBusy(false);
+          var data = (res && res.data) ? res.data : res;
+          var results = (data && data.results) ? data.results : [];
+          var lines = ["⚡【强制更新执行结果】", "━━━━━━━━━━━━━━━━━━━━"];
+          var allOk = true;
+          results.forEach(function (r) {
+            var nick = r.nickname || r.name;
+            if (r.ok) {
+              lines.push("• " + nick + ": ✅ " + r.message);
+            } else {
+              allOk = false;
+              lines.push("• " + nick + ": ❌ " + r.message);
+            }
+          });
+          lines.push("━━━━━━━━━━━━━━━━━━━━");
+          if (allOk) {
+            lines.push("✨ 选定插件已全部强制重新拉取并重载完成！");
+            toast("插件强制重新拉取并重载完成", "ok");
+          } else {
+            lines.push("⚠️ 部分插件重新拉取遇到异常，详情请查看上方日志。");
+            toast("部分插件重拉遇到异常", "bad");
+          }
+          if (box) box.textContent = lines.join("\n");
+        }).catch(function (e) {
+          setUpdaterBusy(false);
+          var msg = e && e.message ? e.message : String(e);
+          if (box) box.textContent = "❌ 强制更新失败：" + msg;
+          toast("强制更新失败：" + msg, "bad");
+        });
+      });
+    }
+  }
+
+  /* ========================================================================
    * 启动
    * ====================================================================== */
   function boot() {
@@ -1767,6 +2017,7 @@
     initInjectLog();
     initTokenline();
     initGroupSwitch();
+    initUpdater();
     watchSystemTheme();
 
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);

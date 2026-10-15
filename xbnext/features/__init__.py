@@ -33,6 +33,7 @@ from .quote import QuoteFeature
 from .recall import RecallFeature
 from .tokenline import TokenLineFeature
 from .ttslimit import TtsLimitFeature
+from .updater import UpdaterFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
@@ -44,6 +45,7 @@ FEATURES: Tuple[Feature, ...] = (
     RecallFeature(),
     TokenLineFeature(),
     TtsLimitFeature(),
+    UpdaterFeature(),
 )
 
 
@@ -64,6 +66,11 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     """按子指令名取功能实例（``/xbnext <name>``）；找不到返回 ``None``。"""
     if not name:
         return None
+    name_lower = name.lower()
+    if name_lower in ("updater", "检查更新", "查更新", "check_update", "check", "一键更新", "更新", "update", "升级"):
+        for feat in FEATURES:
+            if getattr(feat, "command", "") == "updater":
+                return feat
     for feat in FEATURES:
         if feat.command and feat.command == name:
             return feat
