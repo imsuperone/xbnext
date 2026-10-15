@@ -303,6 +303,13 @@ class UpdaterService:
             root_dir = install_src.get("root_dir_name") or name
 
             # 探测本地目录（通常在 data/plugins/<root_dir>）
+            local_dir = ""
+            for base_dir in ("data/plugins", "plugins", "."):
+                cand = os.path.join(base_dir, root_dir)
+                if os.path.isdir(cand):
+                    local_dir = cand
+                    break
+
             local_ver = _get_local_version(p, local_dir)
             remote_ver = _query_remote_version(repo_url, p)
 
