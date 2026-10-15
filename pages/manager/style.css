@@ -1192,3 +1192,24 @@ code {
   opacity: 1;
 }
 
+.sub-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 6px 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--m3-sys-color-primary, #4A90D9);
+  letter-spacing: 0.3px;
+}
+.sub-group-header::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--m3-sys-color-divider, rgba(120, 130, 145, 0.2));
+}
+.sub-group-header:first-of-type {
+  margin-top: 6px;
+}
+
+
