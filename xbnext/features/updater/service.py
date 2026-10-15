@@ -11,7 +11,6 @@ import json
 import os
 import re
 import ssl
-import subprocess
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
@@ -91,61 +90,109 @@ def _http_request(
         return 0, str(exc)
 
 
-def _get_local_commit(plugin_dir: str) -> str:
-    """尝试获取本地插件目录的最新 git commit hash（前 7 位）。"""
-    if not plugin_dir or not os.path.isdir(plugin_dir):
+def extract_version_from_yaml(text: str) -> str:
+    """从 metadata.yaml 文本中提取 version 字段。"""
+    if not text:
         return ""
-    try:
-        # 直接读取 .git/HEAD
-        git_dir = os.path.join(plugin_dir, ".git")
-        if os.path.isdir(git_dir):
-            head_file = os.path.join(git_dir, "HEAD")
-            if os.path.isfile(head_file):
-                with open(head_file, "r", encoding="utf-8") as f:
-                    head_ref = f.read().strip()
-                if head_ref.startswith("ref:"):
-                    ref_path = os.path.join(git_dir, head_ref[4:].strip().replace("/", os.sep))
-                    if os.path.isfile(ref_path):
-                        with open(ref_path, "r", encoding="utf-8") as f:
-                            return f.read().strip()[:7]
-                elif len(head_ref) >= 7:
-                    return head_ref[:7]
-        # 尝试调用 git rev-parse
-        res = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=plugin_dir,
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            return res.stdout.strip()[:7]
-    except Exception:
-        pass
-    return ""
+    m = re.search(r'(?:^|\n)\s*version:\s*["\']?([^"\'\s\n]+)', text)
+    return m.group(1).strip() if m else ""
 
 
-def _query_remote_github_commit(repo_url: str) -> str:
-    """根据 github 仓库地址获取 main / master 分支最新 commit hash（前 7 位）。"""
+def format_version(v: str) -> str:
+    """统一版本显示格式，如 v1.3.31 或 v26w1014b。"""
+    s = str(v or "").strip().strip("'\"")
+    if not s or s == "未知":
+        return "未知"
+    if s.lower().startswith("v"):
+        return s
+    return f"v{s}"
+
+
+def parse_version_key(v: str) -> List[Any]:
+    """解析版本号为分段权重列表，支持数字 semver 与快照字母版本。"""
+    s = str(v or "").strip().lstrip("vV").strip("'\"")
+    parts = re.findall(r"\d+|\D+", s)
+    res = []
+    for p in parts:
+        if p.isdigit():
+            res.append((0, int(p)))
+        else:
+            res.append((1, p.lower()))
+    return res
+
+
+def compare_versions(v1: str, v2: str) -> int:
+    """比较两个版本号。v1 < v2 返回 -1；v1 == v2 返回 0；v1 > v2 返回 1。"""
+    s1 = str(v1 or "").strip().lstrip("vV").strip("'\"")
+    s2 = str(v2 or "").strip().lstrip("vV").strip("'\"")
+    if s1 == s2:
+        return 0
+    k1 = parse_version_key(s1)
+    k2 = parse_version_key(s2)
+    if k1 < k2:
+        return -1
+    elif k1 > k2:
+        return 1
+    return 0
+
+
+def _get_local_version(p: Dict[str, Any], local_dir: str) -> str:
+    """获取本地插件版本，优先从 OpenAPI 插件信息读取，次选本地 metadata.yaml。"""
+    v = str(p.get("version") or "").strip()
+    if v and v != "未知":
+        return v
+    if local_dir and os.path.isdir(local_dir):
+        meta_file = os.path.join(local_dir, "metadata.yaml")
+        if os.path.isfile(meta_file):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    v_meta = extract_version_from_yaml(f.read())
+                    if v_meta:
+                        return v_meta
+            except Exception:
+                pass
+    return v or "未知"
+
+
+def _query_remote_version(repo_url: str, p: Dict[str, Any]) -> str:
+    """根据 github 仓库地址或 online_version 获取远程最新版本号。"""
+    online_ver = str(p.get("online_version") or "").strip()
+    if online_ver:
+        return online_ver
+
     if not repo_url or "github.com" not in repo_url:
         return ""
-    # 提取 owner / repo
     match = re.search(r"github\.com[/:]([^/]+)/([^/\.]+)", repo_url)
     if not match:
         return ""
     owner, repo = match.group(1), match.group(2)
-    # 优先 GitHub API
-    for branch in ("main", "master"):
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        status, data = _http_request(api_url, headers=headers, timeout=6)
-        if status == 200 and isinstance(data, dict):
-            sha = data.get("sha")
-            if sha:
-                return str(sha)[:7]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater",
+        "Accept": "application/vnd.github.v3.raw",
+    }
+
+    # 1. 优先 GitHub Contents API 直出 raw YAML
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/metadata.yaml"
+    status, body = _http_request(api_url, headers=headers, timeout=6)
+    if status == 200 and isinstance(body, str):
+        v = extract_version_from_yaml(body)
+        if v:
+            return v
+
+    # 2. 备选 raw.githubusercontent.com / jsdelivr
+    fallback_urls = [
+        f"https://raw.githubusercontent.com/{owner}/{repo}/main/metadata.yaml",
+        f"https://raw.githubusercontent.com/{owner}/{repo}/master/metadata.yaml",
+        f"https://fastly.jsdelivr.net/gh/{owner}/{repo}@main/metadata.yaml",
+    ]
+    for raw_url in fallback_urls:
+        status, body = _http_request(raw_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if status == 200 and isinstance(body, str):
+            v = extract_version_from_yaml(body)
+            if v:
+                return v
+
     return ""
 
 
@@ -256,38 +303,36 @@ class UpdaterService:
             root_dir = install_src.get("root_dir_name") or name
 
             # 探测本地目录（通常在 data/plugins/<root_dir>）
-            local_dir = ""
-            for base_dir in ("data/plugins", "plugins", "."):
-                cand = os.path.join(base_dir, root_dir)
-                if os.path.isdir(cand):
-                    local_dir = cand
-                    break
-
-            local_sha = _get_local_commit(local_dir)
-            remote_sha = _query_remote_github_commit(repo_url) if repo_url else ""
+            local_ver = _get_local_version(p, local_dir)
+            remote_ver = _query_remote_version(repo_url, p)
 
             status_text = "已是最新版本"
             is_update_available = False
 
-            if remote_sha and local_sha:
-                if remote_sha.lower() != local_sha.lower():
+            if remote_ver and local_ver and local_ver != "未知":
+                cmp_res = compare_versions(local_ver, remote_ver)
+                if cmp_res < 0:
                     is_update_available = True
                     has_new_version = True
-                    status_text = f"发现新版本 ({local_sha} → {remote_sha})"
+                    status_text = f"发现新版本 ({format_version(local_ver)} → {format_version(remote_ver)})"
+                elif cmp_res == 0:
+                    status_text = f"已是最新 ({format_version(local_ver)})"
                 else:
-                    status_text = f"已是最新 ({local_sha})"
-            elif remote_sha:
-                status_text = f"远程最新 ({remote_sha})"
+                    status_text = f"当前版本较新 ({format_version(local_ver)})"
+            elif remote_ver:
+                status_text = f"远程版本 {format_version(remote_ver)}"
+            elif local_ver:
+                status_text = f"当前版本 {format_version(local_ver)}"
             else:
-                status_text = f"当前版本 {ver}"
+                status_text = "未知版本"
 
             results.append({
                 "name": name,
                 "nickname": nick,
-                "version": ver,
+                "version": local_ver,
+                "local_version": local_ver,
+                "remote_version": remote_ver,
                 "repo": repo_url,
-                "local_sha": local_sha,
-                "remote_sha": remote_sha,
                 "has_update": is_update_available,
                 "status_text": status_text,
             })
