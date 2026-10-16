@@ -1,5 +1,9 @@
 # 更新日志 (Changelog)
 
+## v0.2.13 (2026-10-16)
+
+- **修复消息接管发送超时异常处理**：解决底层 `aiocqhttp.exceptions.ActionFailed`（继承自 `RuntimeError`）被事件循环获取逻辑误捕获，引发 `cannot reuse already awaited coroutine` 进而错误退回原发送并导致 NapCat 二次超时崩溃的问题。全面加强超时判定，有效拦截高延迟长消息引起的重复发送与管道报错。
+
 ## v0.2.12 (2026-10-15)
 
 - **新增插件一键检查与更新（`enable_updater`）**：

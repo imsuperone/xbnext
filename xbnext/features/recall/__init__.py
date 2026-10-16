@@ -713,8 +713,12 @@ class RecallFeature(Feature):
     def _is_send_timeout(exc: BaseException) -> bool:
         """NapCat / OneBot 发送超时（retcode=1200 / Timeout）通常已在后台发出去，
         退回原发送会触发二次发送（如 xbimg 双发两张图）。"""
-        msg = f"{exc} {repr(exc)}"
-        return "retcode=1200" in msg or "timeout" in msg.lower()
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+            return True
+        if getattr(exc, "retcode", None) == 1200:
+            return True
+        msg = f"{exc} {repr(exc)} {getattr(exc, 'message', '')} {getattr(exc, 'wording', '')}".lower()
+        return "retcode=1200" in msg or "retcode': 1200" in msg or "timeout" in msg
 
     async def _send_captured(
         self, event: Any, trigger_id: str, chain: Any
@@ -749,9 +753,14 @@ class RecallFeature(Feature):
         send_task: Optional[asyncio.Task] = None
         try:
             try:
-                send_task = asyncio.get_running_loop().create_task(send_coro)
-                reply_ids = await asyncio.shield(send_task)
+                loop = asyncio.get_running_loop()
+                send_task = loop.create_task(send_coro)
             except RuntimeError:
+                send_task = None
+
+            if send_task is not None:
+                reply_ids = await asyncio.shield(send_task)
+            else:
                 reply_ids = await send_coro
         except asyncio.CancelledError:
             leftover = replies.abandon(trigger_id)
