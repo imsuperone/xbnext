@@ -83,6 +83,38 @@ async def is_admin_event(event: Any) -> bool:
     return False
 
 
+import re
+from datetime import datetime, timedelta
+from typing import Any, List, Optional
+
+
+def next_schedule_delay(now_or_hhmm: Any = None, hhmm: Optional[str] = None) -> float:
+    """计算距离下一个 HH:MM 的秒数，默认 04:30。
+    支持两种调用风格：
+      - next_schedule_delay(now, "04:30")
+      - next_schedule_delay("04:30")
+    """
+    if isinstance(now_or_hhmm, str):
+        target_str = now_or_hhmm
+        now = datetime.now()
+    elif isinstance(now_or_hhmm, datetime):
+        now = now_or_hhmm
+        target_str = str(hhmm or "04:30")
+    else:
+        now = datetime.now()
+        target_str = str(hhmm or "04:30")
+
+    text = str(target_str or "").strip()
+    m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", text)
+    if not m:
+        m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", "04:30")
+    hour, minute = int(m.group(1)), int(m.group(2))
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return max(1.0, (target - now).total_seconds())
+
+
 class UpdaterFeature(Feature):
     """插件一键检查与更新功能。"""
 
@@ -91,6 +123,84 @@ class UpdaterFeature(Feature):
     description: str = "通过 AstrBot OpenAPI 接口检查并一键更新选定插件"
     order: int = 99
     command: str = "updater"
+
+    def __init__(self) -> None:
+        self._task: Optional[asyncio.Task] = None
+        self._runtime: Optional[Any] = None
+
+    async def on_load(self, runtime: Any) -> None:
+        """插件加载时启动定时自动检测循环。"""
+        self._close_task()
+        self._runtime = runtime
+        try:
+            self._task = asyncio.create_task(self._schedule_loop())
+        except Exception:
+            self._task = None
+
+    def on_unload(self) -> None:
+        """卸载时安全取消定时任务。"""
+        self._close_task()
+        self._runtime = None
+
+    def _close_task(self) -> None:
+        task, self._task = self._task, None
+        if task is None:
+            return
+        try:
+            if not task.done():
+                task.cancel()
+        except Exception:
+            pass
+
+    async def _schedule_loop(self) -> None:
+        """后台定时检测更新循环（首轮 60 秒后开始计算目标时间，分段睡眠支持热改生效）。"""
+        try:
+            await asyncio.sleep(60)
+            while True:
+                conf = getattr(self._runtime, "conf", None)
+                updater = UpdaterService(conf)
+                target_time = updater.schedule_time
+                now = datetime.now()
+                delay = next_schedule_delay(now, target_time)
+
+                while delay > 0:
+                    step = min(delay, 1800.0)
+                    await asyncio.sleep(step)
+                    delay -= step
+                    cur_conf = getattr(self._runtime, "conf", None)
+                    cur_updater = UpdaterService(cur_conf)
+                    if cur_updater.schedule_time != target_time:
+                        break
+
+                cur_conf = getattr(self._runtime, "conf", None)
+                cur_updater = UpdaterService(cur_conf)
+                if cur_updater.schedule_time != target_time:
+                    continue
+
+                if cur_updater.enabled and cur_updater.schedule_enabled and cur_updater.api_key:
+                    try:
+                        log = getattr(self._runtime, "log", None)
+                        if log and hasattr(log, "info"):
+                            log.info(f"[插件定时更新] 开始执行每日定时插件检测 (设定时刻: {cur_updater.schedule_time})...")
+                        res = await cur_updater.check_updates()
+                        has_update = res.get("has_new_version", False)
+                        plugins = res.get("plugins") or []
+                        update_names = [p.get("nickname", p.get("name")) for p in plugins if p.get("has_update")]
+                        if log and hasattr(log, "info"):
+                            if has_update:
+                                log.info(f"[插件定时更新] 自动检测完成，发现 {len(update_names)} 个插件有新版本：{', '.join(update_names)}")
+                            else:
+                                log.info("[插件定时更新] 自动检测完成，所有选定插件均已处于最新状态。")
+                    except Exception as ex:
+                        log = getattr(self._runtime, "log", None)
+                        if log and hasattr(log, "warning"):
+                            log.warning(f"[插件定时更新] 自动检测异常: {ex!r}")
+
+                await asyncio.sleep(65)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     async def handle_command(self, event: Any, args: List[str], conf: Any) -> str:
         """处理 /xbnext 检查更新 与 /xbnext 一键更新 指令。"""

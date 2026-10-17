@@ -230,6 +230,23 @@ class UpdaterService:
         return val or "http://127.0.0.1:6185"
 
     @property
+    def schedule_enabled(self) -> bool:
+        if self.conf is None:
+            return False
+        getter = getattr(self.conf, "get", None)
+        if callable(getter):
+            return bool(getter("enable_updater_schedule", False))
+        return False
+
+    @property
+    def schedule_time(self) -> str:
+        if self.conf is None:
+            return "04:30"
+        getter = getattr(self.conf, "get", None)
+        val = getter("updater_schedule_time", "04:30") if callable(getter) else "04:30"
+        return str(val or "04:30").strip()
+
+    @property
     def target_plugins(self) -> List[str]:
         if self.conf is None:
             return list(DEFAULT_TARGET_PLUGINS)

@@ -347,6 +347,23 @@
             <input type="hidden" id="inp_updater_plugins" data-key="updater_plugins" />
           </div>
 
+          <div class="card-row-split" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
+              <label class="form-label" style="margin-bottom: 2px;">定时自动检测更新</label>
+              <p class="card-desc" style="margin: 0; font-size: 12px;">每天在指定时间自动检查选定插件是否有新版本；若有更新将自动拉取并热重载。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_updater_schedule" data-key="enable_updater_schedule" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="inp_updater_schedule_time">每日自动检测时间</label>
+            <input type="text" class="m3-input" id="inp_updater_schedule_time" data-key="updater_schedule_time" placeholder="04:30" />
+            <span class="field-hint">24 小时制 <code>HH:MM</code>，例如 <code>04:30</code>。仅在「定时自动检测更新」及「插件一键更新与检查」开启时生效。</span>
+          </div>
+
           <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="m3-btn secondary-btn" id="btn_updater_check">🔍 检查更新</button>
             <button type="button" class="m3-btn primary-btn" id="btn_updater_apply">🚀 一键更新</button>

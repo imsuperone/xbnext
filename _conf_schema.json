@@ -230,5 +230,21 @@
     "default": "astrbot_plugin_xbimg, astrbot_plugin_xb2img, astrbot_plugin_xbdoc, astrbot_plugin_xbbot, astrbot_plugin_xbbot_beta, astrbot_plugin_xbnext",
     "collapsed": true,
     "condition": { "enable_updater": true }
+  },
+  "enable_updater_schedule": {
+    "type": "bool",
+    "description": "定时自动检测更新",
+    "hint": "每天在设定时刻自动检测选定插件是否有新版本。默认关闭。",
+    "default": false,
+    "collapsed": true,
+    "condition": { "enable_updater": true }
+  },
+  "updater_schedule_time": {
+    "type": "string",
+    "description": "自动检测更新时间",
+    "hint": "每日定时触发检查更新的时刻（24小时制 HH:MM），默认 04:30。",
+    "default": "04:30",
+    "collapsed": true,
+    "condition": { "enable_updater": true, "enable_updater_schedule": true }
   }
 }
