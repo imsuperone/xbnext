@@ -398,15 +398,15 @@ class UpdaterService:
                 if cmp_res < 0:
                     is_update_available = True
                     has_new_version = True
-                    status_text = f"发现新版本 ({format_version(local_ver)} → {format_version(remote_ver)})"
+                    status_text = f"{format_version(local_ver)} → {format_version(remote_ver)}"
                 elif cmp_res == 0:
-                    status_text = f"已是最新 ({format_version(local_ver)})"
+                    status_text = f"最新 ({format_version(local_ver)})"
                 else:
-                    status_text = f"当前版本较新 ({format_version(local_ver)})"
+                    status_text = f"较新 ({format_version(local_ver)})"
             elif remote_ver:
-                status_text = f"远程版本 {format_version(remote_ver)}"
+                status_text = f"云端 {format_version(remote_ver)}"
             elif local_ver:
-                status_text = f"当前版本 {format_version(local_ver)}"
+                status_text = f"本地 {format_version(local_ver)}"
             else:
                 status_text = "未知版本"
 

@@ -235,7 +235,7 @@ class UpdaterFeature(Feature):
 
             lines = [
                 "🔍【插件更新检查】",
-                "━━━━━━━━━━━━━━━━━━━━",
+                "━━━━━━━━━━━━━━",
             ]
             for p in plugins:
                 nick = p.get("nickname", p.get("name"))
@@ -244,11 +244,11 @@ class UpdaterFeature(Feature):
                 else:
                     lines.append(f"• {nick}: 🟢 {p.get('status_text')}")
 
-            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("━━━━━━━━━━━━━━")
             if res.get("has_new_version"):
-                lines.append("💡 发送【/xbnext 一键更新】即可完成一键升级与热重载。")
+                lines.append("💡 发送【/xbnext 一键更新】即可升级重载。")
             else:
-                lines.append("✨ 所有选定插件均已处于最新状态！")
+                lines.append("✨ 选定插件均已处于最新状态！")
             return "\n".join(lines)
 
         # 一键更新分支
@@ -266,7 +266,7 @@ class UpdaterFeature(Feature):
 
             lines = [
                 "🚀【插件一键更新】",
-                "━━━━━━━━━━━━━━━━━━━━",
+                "━━━━━━━━━━━━━━",
             ]
             all_ok = True
             for r in results:
@@ -277,11 +277,11 @@ class UpdaterFeature(Feature):
                     all_ok = False
                     lines.append(f"• {nick}: ❌ {r.get('message')}")
 
-            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("━━━━━━━━━━━━━━")
             if all_ok:
-                lines.append("✨ 选定插件已全部更新并热重载生效！")
+                lines.append("✨ 选定插件已全部更新并热重载！")
             else:
-                lines.append("⚠️ 部分插件更新遇到异常，详情请查看上方日志或后台日志。")
+                lines.append("⚠️ 部分插件更新异常，请查看日志。")
             return "\n".join(lines)
 
         # 强制更新分支
@@ -296,7 +296,7 @@ class UpdaterFeature(Feature):
 
             lines = [
                 "⚡【插件强制更新与重载】",
-                "━━━━━━━━━━━━━━━━━━━━",
+                "━━━━━━━━━━━━━━",
             ]
             all_ok = True
             for r in results:
@@ -307,11 +307,11 @@ class UpdaterFeature(Feature):
                     all_ok = False
                     lines.append(f"• {nick}: ❌ {r.get('message')}")
 
-            lines.append("━━━━━━━━━━━━━━━━━━━━")
+            lines.append("━━━━━━━━━━━━━━")
             if all_ok:
-                lines.append("✨ 选定插件已全部强制重新拉取并重载完成！")
+                lines.append("✨ 选定插件已全部强制重载完成！")
             else:
-                lines.append("⚠️ 部分插件重拉遇到异常，详情请查看上方日志或后台日志。")
+                lines.append("⚠️ 部分插件重拉遇到异常。")
             return "\n".join(lines)
 
         return (
