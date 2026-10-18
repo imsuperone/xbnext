@@ -1761,12 +1761,12 @@
    * 插件更新
    * ====================================================================== */
   var DEFAULT_TARGET_PLUGINS = [
-    { name: "astrbot_plugin_xbimg", nickname: "消息转图 (xbimg)" },
-    { name: "astrbot_plugin_xb2img", nickname: "消息转图轻量 (xb2img)" },
-    { name: "astrbot_plugin_xbdoc", nickname: "文档记忆 (xbdoc)" },
-    { name: "astrbot_plugin_xbbot", nickname: "小白机器人 (xbbot)" },
-    { name: "astrbot_plugin_xbbot_beta", nickname: "小白测试版 (xbbotbeta)" },
-    { name: "astrbot_plugin_xbnext", nickname: "对话细节 (xbnext)" }
+    { name: "astrbot_plugin_xbimg", nickname: "消息转图助手 (astrbot_plugin_xbimg)" },
+    { name: "astrbot_plugin_xb2img", nickname: "消息转图轻量版 (astrbot_plugin_xb2img)" },
+    { name: "astrbot_plugin_xbdoc", nickname: "文档记忆助手 (astrbot_plugin_xbdoc)" },
+    { name: "astrbot_plugin_xbbot", nickname: "小白机器人 (astrbot_plugin_xbbot)" },
+    { name: "astrbot_plugin_xbbot_beta", nickname: "小白测试版 (astrbot_plugin_xbbot_beta)" },
+    { name: "astrbot_plugin_xbnext", nickname: "XBNEXT (astrbot_plugin_xbnext)" }
   ];
 
   var _updaterInstalledPlugins = [];

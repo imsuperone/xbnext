@@ -24,15 +24,72 @@ DEFAULT_TARGET_PLUGINS = [
     "astrbot_plugin_xbnext",
 ]
 
-# 友好中文名映射
-PLUGIN_NICKNAMES = {
-    "astrbot_plugin_xbimg": "消息转图 (xbimg)",
-    "astrbot_plugin_xb2img": "消息转图轻量 (xb2img)",
-    "astrbot_plugin_xbdoc": "文档记忆 (xbdoc)",
-    "astrbot_plugin_xbbot": "小白机器人 (xbbot)",
-    "astrbot_plugin_xbbot_beta": "小白测试版 (xbbotbeta)",
-    "astrbot_plugin_xbnext": "对话细节 (xbnext)",
-}
+def extract_metadata_field(text: str, field: str) -> str:
+    """从 metadata.yaml 文本中提取指定字段（如 display_name / name / version）。"""
+    if not text:
+        return ""
+    m = re.search(rf'(?:^|\n)\s*{field}:\s*["\']?([^"\'\r\n]+)', text)
+    return m.group(1).strip() if m else ""
+
+
+def get_plugin_display_name(p: Dict[str, Any], local_dir: str = "") -> str:
+    """从本地 metadata.yaml 或 OpenAPI 返回值中读取插件显示名称，杜绝人工硬编码映射。"""
+    name = str(p.get("name") or "").strip()
+    norm_name = normalize_plugin_name(name)
+    disp = str(p.get("display_name") or "").strip()
+
+    # 1. 尝试从已知 local_dir 读取 metadata.yaml
+    if not disp and local_dir and os.path.isdir(local_dir):
+        meta_file = os.path.join(local_dir, "metadata.yaml")
+        if os.path.isfile(meta_file):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    disp = extract_metadata_field(f.read(), "display_name")
+            except Exception:
+                pass
+
+    # 2. 主动探测标准路径及同级开发工作区
+    if not disp:
+        for b in ("data/plugins", "plugins", ".", ".."):
+            for cand in (name, norm_name, name.replace("astrbot_plugin_", "")):
+                if not cand:
+                    continue
+                path = os.path.join(b, cand, "metadata.yaml")
+                if os.path.isfile(path):
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            disp = extract_metadata_field(f.read(), "display_name")
+                            if disp:
+                                break
+                    except Exception:
+                        pass
+            if disp:
+                break
+
+    if disp and disp != name:
+        return f"{disp} ({name})"
+    return disp or name
+
+
+class _DynamicNicknames(dict):
+    """动态插件名称字典代理：优先从 metadata.yaml 读取 display_name。"""
+    def get(self, key, default=None):
+        name = str(key or "").strip()
+        if not name:
+            return default if default is not None else ""
+        disp = get_plugin_display_name({"name": name})
+        if disp:
+            return disp
+        return super().get(key, default if default is not None else name)
+
+    def __getitem__(self, key):
+        v = self.get(key)
+        if v:
+            return v
+        raise KeyError(key)
+
+
+PLUGIN_NICKNAMES = _DynamicNicknames()
 
 
 def normalize_plugin_name(name: str) -> str:
@@ -314,19 +371,22 @@ class UpdaterService:
                 continue
 
             ver = str(p.get("version") or "未知")
-            nick = PLUGIN_NICKNAMES.get(name, PLUGIN_NICKNAMES.get(norm_name, name))
             install_src = p.get("install_source") or {}
             repo_url = p.get("repo") or install_src.get("repo") or ""
             root_dir = install_src.get("root_dir_name") or name
 
             # 探测本地目录（通常在 data/plugins/<root_dir>）
             local_dir = ""
-            for base_dir in ("data/plugins", "plugins", "."):
-                cand = os.path.join(base_dir, root_dir)
-                if os.path.isdir(cand):
-                    local_dir = cand
+            for base_dir in ("data/plugins", "plugins", ".", ".."):
+                for cand in (root_dir, name, norm_name):
+                    c_path = os.path.join(base_dir, cand)
+                    if os.path.isdir(c_path):
+                        local_dir = c_path
+                        break
+                if local_dir:
                     break
 
+            nick = get_plugin_display_name(p, local_dir)
             local_ver = _get_local_version(p, local_dir)
             remote_ver = _query_remote_version(repo_url, p)
 
@@ -412,7 +472,7 @@ class UpdaterService:
             if name not in targets and norm_name not in targets:
                 continue
 
-            nick = PLUGIN_NICKNAMES.get(name, PLUGIN_NICKNAMES.get(norm_name, name))
+            nick = get_plugin_display_name(p)
             update_url = f"{self.api_url}/api/v1/plugins/{name}/update"
             reload_url = f"{self.api_url}/api/v1/plugins/{name}/reload"
 

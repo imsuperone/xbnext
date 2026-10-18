@@ -361,7 +361,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def updater_plugins_route() -> Any:
         try:
-            from ..features.updater.service import UpdaterService, PLUGIN_NICKNAMES, DEFAULT_TARGET_PLUGINS
+            from ..features.updater.service import UpdaterService, get_plugin_display_name, DEFAULT_TARGET_PLUGINS
             updater = UpdaterService(runtime.conf)
             ok, installed, err_msg = await updater.fetch_installed_plugins()
             if not ok:
@@ -372,7 +372,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
                 name = p.get("name") or ""
                 if not name:
                     continue
-                nick = PLUGIN_NICKNAMES.get(name, name)
+                nick = get_plugin_display_name(p)
                 is_selected = name in targets or (not targets and name in DEFAULT_TARGET_PLUGINS)
                 res.append({
                     "name": name,
