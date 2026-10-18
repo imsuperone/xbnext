@@ -294,6 +294,12 @@
     } else if (target === "tab-profile" && !_tabLoaded["tab-profile"]) {
       _tabLoaded["tab-profile"] = true;
       pfLoad(true);
+    } else if (target === "tab-groups" && !_tabLoaded["tab-groups"]) {
+      _tabLoaded["tab-groups"] = true;
+      grpLoadAll(true);
+    } else if (target === "tab-updater" && !_tabLoaded["tab-updater"]) {
+      _tabLoaded["tab-updater"] = true;
+      fetchUpdaterPlugins(true);
     }
   }
 
@@ -1614,6 +1620,9 @@
     });
   }
 
+  var _grpCurrentPage = 1;
+  var _grpPageSize = 10;
+
   function grpRenderTable() {
     var box = $("grpSwitchTableWrap");
     if (!box) return;
@@ -1653,10 +1662,21 @@
       return String(a.group_id).localeCompare(String(b.group_id));
     });
 
+    var pBar = $("grpPaginationBar");
+    if (pBar) while (pBar.firstChild) pBar.removeChild(pBar.firstChild);
+
     if (!filtered.length) {
       box.appendChild(pfNote(kw ? "没有匹配的群聊。" : "暂未获取到群聊列表，可点击「刷新群列表」或手动输入群号添加。"));
       return;
     }
+
+    var totalCount = filtered.length;
+    var totalPages = Math.max(1, Math.ceil(totalCount / _grpPageSize));
+    if (_grpCurrentPage > totalPages) _grpCurrentPage = totalPages;
+    if (_grpCurrentPage < 1) _grpCurrentPage = 1;
+
+    var startIdx = (_grpCurrentPage - 1) * _grpPageSize;
+    var pageItems = filtered.slice(startIdx, startIdx + _grpPageSize);
 
     var table = mkEl("table", "group-switch-table");
     var thead = mkEl("thead");
@@ -1668,7 +1688,7 @@
     table.appendChild(thead);
 
     var tbody = mkEl("tbody");
-    filtered.forEach(function (g) {
+    pageItems.forEach(function (g) {
       var gid = g.group_id;
       var allowed = grpIsAllowed(gid);
       var gc = (gmap[gid] && typeof gmap[gid] === "object") ? gmap[gid] : {};
@@ -1727,6 +1747,58 @@
     });
     table.appendChild(tbody);
     box.appendChild(table);
+
+    if (pBar && totalCount > 0) {
+      var infoSpan = mkEl("span", "", "第 " + _grpCurrentPage + " / " + totalPages + " 页（共 " + totalCount + " 个群聊）");
+      infoSpan.style.cssText = "font-size: 13px; color: var(--m3-sys-color-on-surface-variant);";
+
+      var btnWrap = mkEl("div", "");
+      btnWrap.style.cssText = "display: flex; gap: 8px; align-items: center;";
+
+      var prevBtn = mkEl("button", "m3-btn secondary-btn", "◀ 上一页");
+      prevBtn.type = "button";
+      prevBtn.style.cssText = "padding: 4px 10px; font-size: 12px; height: 32px;";
+      prevBtn.disabled = _grpCurrentPage <= 1;
+      prevBtn.addEventListener("click", function () {
+        if (_grpCurrentPage > 1) {
+          _grpCurrentPage--;
+          grpRenderTable();
+        }
+      });
+
+      var nextBtn = mkEl("button", "m3-btn secondary-btn", "下一页 ▶");
+      nextBtn.type = "button";
+      nextBtn.style.cssText = "padding: 4px 10px; font-size: 12px; height: 32px;";
+      nextBtn.disabled = _grpCurrentPage >= totalPages;
+      nextBtn.addEventListener("click", function () {
+        if (_grpCurrentPage < totalPages) {
+          _grpCurrentPage++;
+          grpRenderTable();
+        }
+      });
+
+      var sizeSel = mkEl("select", "m3-input");
+      sizeSel.style.cssText = "padding: 4px 8px; font-size: 12px; height: 32px; width: auto;";
+      [10, 20, 50, 100].forEach(function (sz) {
+        var opt = document.createElement("option");
+        opt.value = sz;
+        opt.textContent = "每页 " + sz + " 条";
+        if (sz === _grpPageSize) opt.selected = true;
+        sizeSel.appendChild(opt);
+      });
+      sizeSel.addEventListener("change", function () {
+        _grpPageSize = parseInt(sizeSel.value, 10) || 10;
+        _grpCurrentPage = 1;
+        grpRenderTable();
+      });
+
+      btnWrap.appendChild(prevBtn);
+      btnWrap.appendChild(nextBtn);
+      btnWrap.appendChild(sizeSel);
+
+      pBar.appendChild(infoSpan);
+      pBar.appendChild(btnWrap);
+    }
   }
 
   function grpAddManual() {
@@ -1743,7 +1815,12 @@
 
   function initGroupSwitch() {
     if ($("grpSwitchRefreshBtn")) $("grpSwitchRefreshBtn").addEventListener("click", function () { grpLoadAll(false); });
-    if ($("grpSwitchSearch")) $("grpSwitchSearch").addEventListener("input", grpRenderTable);
+    if ($("grpSwitchSearch")) {
+      $("grpSwitchSearch").addEventListener("input", function () {
+        _grpCurrentPage = 1;
+        grpRenderTable();
+      });
+    }
     if ($("grpSwitchAddBtn")) $("grpSwitchAddBtn").addEventListener("click", grpAddManual);
     if ($("grpSwitchAddInput")) {
       $("grpSwitchAddInput").addEventListener("keydown", function (e) {
@@ -2002,6 +2079,53 @@
           if (box) box.textContent = "❌ 强制更新失败：" + msg;
           toast("强制更新失败：" + msg, "bad");
         });
+      });
+    }
+
+    if ($("btn_test_notify")) {
+      $("btn_test_notify").addEventListener("click", function () {
+        var qqInp = $("inp_update_notify_qq");
+        var qq = qqInp ? qqInp.value.trim() : (CONFIG.update_notify_qq || "");
+        if (!qq) {
+          toast("请先填写接收通知的 QQ 账号", "info");
+          return;
+        }
+        var btn = $("btn_test_notify");
+        btn.disabled = true;
+        var origText = btn.textContent;
+        btn.textContent = "正在发送...";
+        API.updaterTestNotify({ qq: qq }).then(function (res) {
+          btn.disabled = false;
+          btn.textContent = origText;
+          var data = (res && res.data) ? res.data : res;
+          toast((data && data.message) ? data.message : "测试通知已发送，请检查 QQ 私聊", "ok");
+        }).catch(function (err) {
+          btn.disabled = false;
+          btn.textContent = origText;
+          var msg = err && err.message ? err.message : String(err);
+          toast("发送失败：" + msg, "bad");
+        });
+      });
+    }
+
+    var hookInp = $("inp_webhook_url");
+    if (hookInp) {
+      try {
+        var baseOrigin = window.location.origin;
+        if (!baseOrigin || baseOrigin === "null") baseOrigin = "http://你的域名或IP:6185";
+        hookInp.value = baseOrigin + "/api/plugins/astrbot_plugin_xbnext/webhook/github";
+      } catch (e) {
+        hookInp.value = "http://你的域名或IP:6185/api/plugins/astrbot_plugin_xbnext/webhook/github";
+      }
+    }
+    if ($("btn_copy_webhook_url")) {
+      $("btn_copy_webhook_url").addEventListener("click", function () {
+        var val = $("inp_webhook_url") ? $("inp_webhook_url").value : "";
+        if (val) {
+          _copyText(val).then(function (ok) {
+            toast(ok ? "Webhook URL 已复制到剪贴板！" : "复制失败，请手动选中复制", ok ? "ok" : "bad");
+          });
+        }
       });
     }
   }

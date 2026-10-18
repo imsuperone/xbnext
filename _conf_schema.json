@@ -246,5 +246,29 @@
     "default": "04:30",
     "collapsed": true,
     "condition": { "enable_updater": true, "enable_updater_schedule": true }
+  },
+  "enable_update_notify": {
+    "type": "bool",
+    "description": "更新主动通知 (QQ私聊)",
+    "hint": "检测到插件有新版本时，自动向指定 QQ 发送私聊消息通知。默认关闭。",
+    "default": false,
+    "collapsed": true,
+    "condition": { "enable_updater": true }
+  },
+  "update_notify_qq": {
+    "type": "string",
+    "description": "接收通知 QQ",
+    "hint": "接收插件新版本提醒的 QQ 账号。默认留空。",
+    "default": "",
+    "collapsed": true,
+    "condition": { "enable_updater": true, "enable_update_notify": true }
+  },
+  "update_notify_third_party": {
+    "type": "bool",
+    "description": "监控所有第三方插件",
+    "hint": "开启后除预设 xb 系列插件外，自动扫描本地所有第三方插件的 metadata.yaml 并监控 GitHub 远端更新。默认关闭。",
+    "default": false,
+    "collapsed": true,
+    "condition": { "enable_updater": true, "enable_update_notify": true }
   }
 }

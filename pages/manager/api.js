@@ -239,6 +239,8 @@
     updaterCheck: function (payload) { return postJson("updater/check", payload); },
     /** 执行插件更新：updaterApply({plugins: [...], force: bool}) */
     updaterApply: function (payload) { return postJson("updater/apply", payload); },
+    /** 发送测试更新通知：updaterTestNotify({qq: "..."}) */
+    updaterTestNotify: function (payload) { return postJson("updater/test_notify", payload); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

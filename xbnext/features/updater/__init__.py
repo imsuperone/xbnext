@@ -115,6 +115,69 @@ def next_schedule_delay(now_or_hhmm: Any = None, hhmm: Optional[str] = None) -> 
     return max(1.0, (target - now).total_seconds())
 
 
+async def send_private_notification(context: Any, qq: Any, message: str) -> Tuple[bool, str]:
+    """向指定 QQ 账号发送私聊通知消息（兼容 AstrBot 平台适配器与 aiocqhttp call_action）。"""
+    if not qq:
+        return False, "QQ 号未填写"
+    user_id = str(qq).strip()
+    if not user_id.isdigit():
+        return False, f"无效的 QQ 号: {qq}（必须为纯数字）"
+
+    sent = False
+    last_err = ""
+
+    # 1. 优先从 context.platform_manager / platform_insts 遍历 bot 客户端
+    try:
+        pm = getattr(context, "platform_manager", None)
+        insts = (
+            getattr(pm, "platform_insts", None)
+            or getattr(pm, "platforms", None)
+            or getattr(context, "platforms", None)
+            or []
+        )
+        if isinstance(insts, dict):
+            insts = list(insts.values())
+
+        for inst in list(insts):
+            getter = getattr(inst, "get_client", None)
+            client = getter() if callable(getter) else getattr(inst, "bot", None)
+            if not client:
+                client = inst
+
+            call = getattr(client, "call_action", None) or getattr(client, "call_api", None)
+            if callable(call):
+                try:
+                    await asyncio.wait_for(call("send_private_msg", user_id=int(user_id), message=message), timeout=6.0)
+                    sent = True
+                    break
+                except Exception as ex1:
+                    try:
+                        await asyncio.wait_for(call("send_msg", user_id=int(user_id), message_type="private", message=message), timeout=6.0)
+                        sent = True
+                        break
+                    except Exception as ex2:
+                        last_err = f"{ex1} / {ex2}"
+    except Exception as ex:
+        last_err = str(ex)
+
+    # 2. 备选方案：通过 context.send_message
+    if not sent and hasattr(context, "send_message"):
+        try:
+            from astrbot.api.event import MessageChain
+            from astrbot.api.message_components import Plain
+            chain = MessageChain([Plain(message)])
+            target = f"aiocqhttp:PrivateMessage:{user_id}"
+            await context.send_message(target, chain)
+            sent = True
+        except Exception as ex:
+            if not last_err:
+                last_err = str(ex)
+
+    if sent:
+        return True, "发送成功"
+    return False, last_err or "未检测到可用的 OneBot/aiocqhttp 机器人连接"
+
+
 class UpdaterFeature(Feature):
     """插件一键检查与更新功能。"""
 
@@ -152,6 +215,64 @@ class UpdaterFeature(Feature):
         except Exception:
             pass
 
+    async def _dispatch_update_notification(self, updater: UpdaterService, updates: List[Dict[str, Any]]) -> None:
+        """格式化并在有新版本未通知时发送私聊通知。"""
+        if not updates or not updater.notify_qq:
+            return
+
+        notified_path = getattr(self._runtime, "data_dir", None)
+        notified_file = None
+        notified_map = {}
+        if notified_path:
+            notified_file = notified_path / "notified_versions.json"
+            if notified_file.is_file():
+                try:
+                    import json
+                    notified_map = json.loads(notified_file.read_text(encoding="utf-8"))
+                except Exception:
+                    notified_map = {}
+
+        new_updates = []
+        for p in updates:
+            p_name = p.get("name") or ""
+            r_ver = str(p.get("remote_version") or "")
+            if notified_map.get(p_name) == r_ver:
+                continue
+            new_updates.append(p)
+
+        if not new_updates:
+            return
+
+        lines = [
+            "🔔【XBNEXT 插件更新提醒】",
+            "检测到以下插件发布了新版本：",
+            "━━━━━━━━━━━━━━",
+        ]
+        for p in new_updates:
+            nick = p.get("nickname", p.get("name"))
+            lines.append(f"• {nick}：{p.get('status_text')}")
+        lines.append("━━━━━━━━━━━━━━")
+        lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
+        msg = "\n".join(lines)
+
+        ctx = getattr(self._runtime, "context", None)
+        ok, err = await send_private_notification(ctx, updater.notify_qq, msg)
+        log = getattr(self._runtime, "log", None)
+        if ok:
+            for p in new_updates:
+                notified_map[p.get("name")] = str(p.get("remote_version") or "")
+            if notified_file:
+                try:
+                    import json
+                    notified_file.write_text(json.dumps(notified_map, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+            if log and hasattr(log, "info"):
+                log.info(f"[插件更新推送] 已成功向 QQ {updater.notify_qq} 发送新版本提醒")
+        else:
+            if log and hasattr(log, "warning"):
+                log.warning(f"[插件更新推送] 向 QQ {updater.notify_qq} 推送失败: {err}")
+
     async def _schedule_loop(self) -> None:
         """后台定时检测更新循环（首轮 60 秒后开始计算目标时间，分段睡眠支持热改生效）。"""
         try:
@@ -177,7 +298,7 @@ class UpdaterFeature(Feature):
                 if cur_updater.schedule_time != target_time:
                     continue
 
-                if cur_updater.enabled and cur_updater.schedule_enabled and cur_updater.api_key:
+                if cur_updater.enabled and (cur_updater.schedule_enabled or cur_updater.notify_enabled) and cur_updater.api_key:
                     try:
                         log = getattr(self._runtime, "log", None)
                         if log and hasattr(log, "info"):
@@ -185,12 +306,16 @@ class UpdaterFeature(Feature):
                         res = await cur_updater.check_updates()
                         has_update = res.get("has_new_version", False)
                         plugins = res.get("plugins") or []
-                        update_names = [p.get("nickname", p.get("name")) for p in plugins if p.get("has_update")]
+                        updates = [p for p in plugins if p.get("has_update")]
+                        update_names = [p.get("nickname", p.get("name")) for p in updates]
                         if log and hasattr(log, "info"):
                             if has_update:
                                 log.info(f"[插件定时更新] 自动检测完成，发现 {len(update_names)} 个插件有新版本：{', '.join(update_names)}")
                             else:
                                 log.info("[插件定时更新] 自动检测完成，所有选定插件均已处于最新状态。")
+
+                        if has_update and cur_updater.notify_enabled and cur_updater.notify_qq:
+                            await self._dispatch_update_notification(cur_updater, updates)
                     except Exception as ex:
                         log = getattr(self._runtime, "log", None)
                         if log and hasattr(log, "warning"):
@@ -322,4 +447,4 @@ class UpdaterFeature(Feature):
         )
 
 
-__all__ = ["UpdaterFeature", "UpdaterService", "DEFAULT_TARGET_PLUGINS"]
+__all__ = ["UpdaterFeature", "UpdaterService", "DEFAULT_TARGET_PLUGINS", "send_private_notification"]

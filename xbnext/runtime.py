@@ -72,9 +72,11 @@ class XbnextRuntime:
         config: Any = None,
         kv_store: Any = None,
         logger: Any = None,
+        context: Any = None,
     ):
         self.conf = Config(config)
         self.log = logger
+        self.context = context
         self.kv = KV(owner=kv_store, logger=logger)
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()

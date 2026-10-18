@@ -411,6 +411,79 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
+    async def updater_test_notify_route() -> Any:
+        try:
+            from ..features.updater import send_private_notification
+            payload, err = await read_json()
+            if err is not None:
+                payload = {}
+            target_qq = (payload or {}).get("qq")
+            if not target_qq:
+                target_qq = runtime.conf.get("update_notify_qq", "")
+            target_qq = str(target_qq or "").strip()
+            if not target_qq:
+                return _err("请先填写接收通知的 QQ 账号", astrbot_web)
+
+            test_msg = (
+                "🔔【XBNEXT 插件更新通知测试】\n"
+                "恭喜！测试通知发送成功。\n"
+                "当前推送通道畅通，当检测到插件有新版本时，将自动推送至本 QQ。"
+            )
+            ok, msg_err = await send_private_notification(context, target_qq, test_msg)
+            if not ok:
+                return _err(f"发送测试通知失败: {msg_err}", astrbot_web)
+            return _ok({"message": f"测试通知已成功发送至 QQ: {target_qq}"}, astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
+    async def webhook_github_route() -> Any:
+        try:
+            from ..features.updater import send_private_notification
+            payload, err = await read_json()
+            if err is not None or not isinstance(payload, dict):
+                return _err("无效的 Webhook 请求体", astrbot_web)
+
+            notify_enabled = bool(runtime.conf.get("enable_update_notify", False))
+            target_qq = str(runtime.conf.get("update_notify_qq", "") or "").strip()
+            if not notify_enabled or not target_qq:
+                return _ok({"message": "Webhook 已接收（通知开关未开启或未配置 QQ，跳过推送）"}, astrbot_web)
+
+            repository = payload.get("repository") or {}
+            repo_name = repository.get("full_name") or repository.get("name") or "未知仓库"
+            ref = str(payload.get("ref") or "").replace("refs/heads/", "")
+            commits = payload.get("commits") or []
+            pusher = (payload.get("pusher") or {}).get("name") or ""
+
+            commit_lines = []
+            for c in commits[:5]:
+                msg = str(c.get("message") or "").strip().split("\n")[0]
+                cid = str(c.get("id") or "")[:7]
+                commit_lines.append(f"• [{cid}] {msg}")
+
+            lines = [
+                "🚀【GitHub 实时推送提醒】",
+                f"仓库：{repo_name}" + (f" ({ref})" if ref else ""),
+            ]
+            if pusher:
+                lines.append(f"推送人：{pusher}")
+            if commit_lines:
+                lines.append("提交信息：")
+                lines.extend(commit_lines)
+            lines.append("━━━━━━━━━━━━━━")
+            lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
+
+            push_msg = "\n".join(lines)
+            ok, msg_err = await send_private_notification(context, target_qq, push_msg)
+            if not ok:
+                log = getattr(runtime, "log", None)
+                if log and hasattr(log, "warning"):
+                    log.warning(f"[Webhook推送] 发送给 QQ {target_qq} 失败: {msg_err}")
+                return _err(f"Webhook 推送失败: {msg_err}", astrbot_web)
+
+            return _ok({"message": f"Webhook 实时推送已成功发送至 QQ: {target_qq}"}, astrbot_web)
+        except Exception as exc:  # noqa: BLE001
+            return _err(exc, astrbot_web)
+
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
@@ -423,6 +496,8 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/updater/plugins", updater_plugins_route, ["GET"], "XBNEXT 获取已安装插件列表")
         register(f"{base}/updater/check", updater_check_route, ["POST"], "XBNEXT 检查插件更新")
         register(f"{base}/updater/apply", updater_apply_route, ["POST"], "XBNEXT 执行一键更新")
+        register(f"{base}/updater/test_notify", updater_test_notify_route, ["POST"], "XBNEXT 发送测试更新通知")
+        register(f"{base}/webhook/github", webhook_github_route, ["POST"], "XBNEXT 接收 GitHub Webhook 推送")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True

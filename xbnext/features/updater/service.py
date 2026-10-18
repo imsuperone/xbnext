@@ -318,6 +318,32 @@ class UpdaterService:
             return list(DEFAULT_TARGET_PLUGINS)
         return [normalize_plugin_name(x) for x in items]
 
+    @property
+    def notify_enabled(self) -> bool:
+        if self.conf is None:
+            return False
+        getter = getattr(self.conf, "get", None)
+        if callable(getter):
+            return bool(getter("enable_update_notify", False))
+        return False
+
+    @property
+    def notify_qq(self) -> str:
+        if self.conf is None:
+            return ""
+        getter = getattr(self.conf, "get", None)
+        val = getter("update_notify_qq", "") if callable(getter) else ""
+        return str(val or "").strip()
+
+    @property
+    def notify_third_party(self) -> bool:
+        if self.conf is None:
+            return False
+        getter = getattr(self.conf, "get", None)
+        if callable(getter):
+            return bool(getter("update_notify_third_party", False))
+        return False
+
     def _auth_headers(self) -> Dict[str, str]:
         return {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater",
@@ -367,8 +393,14 @@ class UpdaterService:
         for p in installed:
             name = p.get("name") or ""
             norm_name = normalize_plugin_name(name)
-            if name not in targets and norm_name not in targets:
-                continue
+            is_target = (name in targets or norm_name in targets)
+            if not is_target:
+                if not (self.notify_third_party and selected_names is None):
+                    continue
+                install_src = p.get("install_source") or {}
+                repo_check = p.get("repo") or install_src.get("repo") or ""
+                if not repo_check:
+                    continue
 
             ver = str(p.get("version") or "未知")
             install_src = p.get("install_source") or {}

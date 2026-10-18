@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.14" />
+  <link rel="stylesheet" href="./style.css?v=0.2.15" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.14">0.2.14</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.15">0.2.15</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -62,6 +62,14 @@
       <button type="button" class="cat-tab active" data-tab="tab-switches">
         <span class="cat-icon">🎛️</span>
         <span class="cat-title">功能开关</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-groups">
+        <span class="cat-icon">👥</span>
+        <span class="cat-title">群聊管理</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-updater">
+        <span class="cat-icon">🔄</span>
+        <span class="cat-title">插件更新</span>
       </button>
       <button type="button" class="cat-tab" data-tab="tab-tuning">
         <span class="cat-icon">⚙️</span>
@@ -283,12 +291,15 @@
             <span class="field-hint">以逗号分隔平台标识（如 <code>onebot, matrix</code>）；留空或填 <code>all</code> 表示所有平台。上方勾选或添加会自动保存更新。</span>
           </div>
         </div>
+      </section>
 
+      <!-- ==================== Tab 2: 群聊管理 ==================== -->
+      <section class="settings-section" data-section="tab-groups">
         <div class="m3-card">
           <div class="card-row-split">
             <div>
               <h2 class="card-title">群聊总开关与分群独立功能控制</h2>
-              <p class="card-desc">控制本插件在哪些群聊生效，并支持为每个群单独开关整个插件或单独开关某一项功能（未单独设置的项默认跟随上方全局开关）。</p>
+              <p class="card-desc">控制本插件在哪些群聊生效，并支持为每个群单独开关整个插件或单独开关某一项功能（未单独设置的项默认跟随全局开关）。</p>
             </div>
             <button type="button" class="m3-btn secondary-btn" id="grpSwitchRefreshBtn">🔄 刷新群列表</button>
           </div>
@@ -310,9 +321,14 @@
           <div id="grpSwitchTableWrap" class="group-switch-table-wrap">
             <div class="card-note">正在加载群聊列表…</div>
           </div>
+          <div id="grpPaginationBar" class="group-pagination-bar" style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <!-- 由 JS 动态渲染分页控制器 -->
+          </div>
         </div>
+      </section>
 
-        <div class="sub-group-header">🔄 插件更新</div>
+      <!-- ==================== Tab 3: 插件更新 ==================== -->
+      <section class="settings-section" data-section="tab-updater">
         <div class="m3-card" id="card_updater">
           <div class="card-row-split">
             <div>
@@ -371,6 +387,59 @@
           </div>
 
           <div id="updaterResultBox" style="display: none; margin-top: 14px; padding: 12px; border-radius: 8px; border: 1px solid var(--m3-sys-color-divider); background: var(--m3-sys-color-surface-container); white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.6;"></div>
+        </div>
+
+        <!-- 卡片 2: 更新主动通知与 QQ 推送配置 -->
+        <div class="m3-card" id="card_update_notify" style="margin-top: 16px;">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">新版本主动推送通知 (QQ 私聊)</h2>
+              <p class="card-desc">当检测到插件发布了新版本时，自动通过机器人给管理员发送 QQ 私聊消息提醒。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_update_notify" data-key="enable_update_notify" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="form-label" for="inp_update_notify_qq">接收通知的 QQ 号</label>
+            <div style="display: flex; gap: 8px; align-items: center; max-width: 520px;">
+              <input type="text" class="m3-input" id="inp_update_notify_qq" data-key="update_notify_qq" placeholder="例如：2574644146" style="flex: 1;" />
+              <button type="button" class="m3-btn secondary-btn" id="btn_test_notify" style="white-space: nowrap; padding: 8px 14px;">🔔 发送测试通知</button>
+            </div>
+            <span class="field-hint">填写你的个人 QQ 账号。点击「发送测试通知」可立即向该账号下发测试私聊消息以验证通道是否正常。</span>
+          </div>
+
+          <div class="card-row-split" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
+              <label class="form-label" style="margin-bottom: 2px;">全盘监控第三方插件更新</label>
+              <p class="card-desc" style="margin: 0; font-size: 12px;">自动读取已安装的所有第三方插件 metadata.yaml，监控 GitHub 远程最新版本并一并纳入更新提醒。默认关闭。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_update_notify_third_party" data-key="update_notify_third_party" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 卡片 3: GitHub Webhook 极速秒级推送 -->
+        <div class="m3-card" id="card_github_webhook" style="margin-top: 16px;">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">GitHub Webhook 实时推送 (自有仓库极速通知)</h2>
+              <p class="card-desc">针对你拥有权限的 GitHub 仓库，可在仓库 Webhooks 中配置此端点，实现 push 代码后 1 秒内直接 QQ 收到通知。</p>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label">Webhook 接收端点 URL</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" class="m3-input" id="inp_webhook_url" readonly style="flex: 1; font-family: monospace; background: var(--m3-sys-color-surface-container);" />
+              <button type="button" class="m3-btn secondary-btn" id="btn_copy_webhook_url" style="white-space: nowrap;">📋 复制链接</button>
+            </div>
+            <span class="field-hint">配置方法：在 GitHub 仓库 $\rightarrow$ Settings $\rightarrow$ Webhooks $\rightarrow$ Add webhook，将上面 URL 填入 Payload URL，Content type 选 <code>application/json</code> 即可。</span>
+          </div>
         </div>
       </section>
 
@@ -661,7 +730,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.14"></script>
-  <script src="./app.js?v=0.2.14"></script>
+  <script src="./api.js?v=0.2.15"></script>
+  <script src="./app.js?v=0.2.15"></script>
 </body>
 </html>
