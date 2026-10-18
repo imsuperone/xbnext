@@ -2148,21 +2148,25 @@
     if ($("accentResetBtn")) $("accentResetBtn").addEventListener("click", resetAccent);
     if ($("refreshAllBtn")) $("refreshAllBtn").addEventListener("click", function () {
       loadState().then(function () {
-        _tabLoaded["tab-tuning"] = true;
-        grpLoadAll(true);
+        var activeTab = document.querySelector(".cat-tab.active");
+        var activeTarget = activeTab ? activeTab.getAttribute("data-tab") : "";
+        if (activeTarget && activeTarget !== "tab-switches" && activeTarget !== "tab-runtime") {
+          _tabLoaded[activeTarget] = false;
+          ensureTabLoaded(activeTarget);
+        }
         toast("已刷新", "ok");
       }).catch(function () {});
-      _tabLoaded["tab-profile"] = true;
-      pfLoad(false);
     });
 
     loadState().then(function () {
       reveal();
       // 揭开后再套一次主题色：data-boot 期间的内联变量可能被首帧覆盖
       applyAccent(CONFIG.ui_accent_color || "");
-      grpLoadAll(true);
-      setTimeout(function () { ensureTabLoaded("tab-tuning"); }, 120);
-      setTimeout(function () { ensureTabLoaded("tab-profile"); }, 280);
+      var activeTab = document.querySelector(".cat-tab.active");
+      var activeTarget = activeTab ? activeTab.getAttribute("data-tab") : "";
+      if (activeTarget && activeTarget !== "tab-switches" && activeTarget !== "tab-runtime") {
+        ensureTabLoaded(activeTarget);
+      }
     }, reveal);
   }
 

@@ -217,7 +217,8 @@ class UpdaterFeature(Feature):
 
     async def _dispatch_update_notification(self, updater: UpdaterService, updates: List[Dict[str, Any]]) -> None:
         """格式化并在有新版本未通知时发送私聊通知。"""
-        if not updates or not updater.notify_qq:
+        qq_list = updater.notify_qqs
+        if not updates or not qq_list:
             return
 
         notified_path = getattr(self._runtime, "data_dir", None)
@@ -256,9 +257,16 @@ class UpdaterFeature(Feature):
         msg = "\n".join(lines)
 
         ctx = getattr(self._runtime, "context", None)
-        ok, err = await send_private_notification(ctx, updater.notify_qq, msg)
         log = getattr(self._runtime, "log", None)
-        if ok:
+        any_ok = False
+        for q in qq_list:
+            ok, err = await send_private_notification(ctx, q, msg)
+            if ok:
+                any_ok = True
+            elif log and hasattr(log, "warning"):
+                log.warning(f"[定时更新通知] 发送给 QQ {q} 失败: {err}")
+
+        if any_ok:
             for p in new_updates:
                 notified_map[p.get("name")] = str(p.get("remote_version") or "")
             if notified_file:
@@ -268,10 +276,10 @@ class UpdaterFeature(Feature):
                 except Exception:
                     pass
             if log and hasattr(log, "info"):
-                log.info(f"[插件更新推送] 已成功向 QQ {updater.notify_qq} 发送新版本提醒")
+                log.info(f"[插件更新推送] 已成功向 QQ {', '.join(qq_list)} 发送新版本提醒")
         else:
             if log and hasattr(log, "warning"):
-                log.warning(f"[插件更新推送] 向 QQ {updater.notify_qq} 推送失败: {err}")
+                log.warning(f"[插件更新推送] 向 QQ {', '.join(qq_list)} 推送失败: {err}")
 
     async def _schedule_loop(self) -> None:
         """后台定时检测更新循环（首轮 60 秒后开始计算目标时间，分段睡眠支持热改生效）。"""

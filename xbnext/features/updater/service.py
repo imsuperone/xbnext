@@ -336,6 +336,18 @@ class UpdaterService:
         return str(val or "").strip()
 
     @property
+    def notify_qqs(self) -> List[str]:
+        raw = self.notify_qq
+        if not raw:
+            return []
+        items = [x.strip() for x in re.split(r"[,，;；\s\n\r]+", str(raw)) if x.strip()]
+        valid: List[str] = []
+        for x in items:
+            if x.isdigit() and x not in valid:
+                valid.append(x)
+        return valid
+
+    @property
     def notify_third_party(self) -> bool:
         if self.conf is None:
             return False

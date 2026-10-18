@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.15" />
+  <link rel="stylesheet" href="./style.css?v=0.2.16" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.15">0.2.15</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.16">0.2.16</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -403,12 +403,12 @@
           </div>
 
           <div class="form-group" style="margin-top: 14px;">
-            <label class="form-label" for="inp_update_notify_qq">接收通知的 QQ 号</label>
+            <label class="form-label" for="inp_update_notify_qq">接收通知的 QQ 号（支持多个，逗号隔开）</label>
             <div style="display: flex; gap: 8px; align-items: center; max-width: 520px;">
-              <input type="text" class="m3-input" id="inp_update_notify_qq" data-key="update_notify_qq" placeholder="例如：2574644146" style="flex: 1;" />
+              <input type="text" class="m3-input" id="inp_update_notify_qq" data-key="update_notify_qq" placeholder="例如：10000, 10001" style="flex: 1;" />
               <button type="button" class="m3-btn secondary-btn" id="btn_test_notify" style="white-space: nowrap; padding: 8px 14px;">🔔 发送测试通知</button>
             </div>
-            <span class="field-hint">填写你的个人 QQ 账号。点击「发送测试通知」可立即向该账号下发测试私聊消息以验证通道是否正常。</span>
+            <span class="field-hint">填写接收更新提醒的管理员 QQ 账号（支持多个，使用英文或中文逗号隔开，例如 <code>10000, 10001</code>）。点击「发送测试通知」可向所有填写的 QQ 测试下发私聊消息。</span>
           </div>
 
           <div class="card-row-split" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
@@ -438,7 +438,8 @@
               <input type="text" class="m3-input" id="inp_webhook_url" readonly style="flex: 1; font-family: monospace; background: var(--m3-sys-color-surface-container);" />
               <button type="button" class="m3-btn secondary-btn" id="btn_copy_webhook_url" style="white-space: nowrap;">📋 复制链接</button>
             </div>
-            <span class="field-hint">配置方法：在 GitHub 仓库 $\rightarrow$ Settings $\rightarrow$ Webhooks $\rightarrow$ Add webhook，将上面 URL 填入 Payload URL，Content type 选 <code>application/json</code> 即可。</span>
+            <span class="field-hint">配置方法：在 GitHub 仓库 $\rightarrow$ Settings $\rightarrow$ Webhooks $\rightarrow$ Add webhook，将上面 URL 填入 Payload URL，Content type 选 <code>application/json</code> 即可。<br>
+            🔒 <b>隐私保护提示</b>：此链接由浏览器根据你当前浏览器访问的地址动态生成，代码中绝无硬编码你的域名或 IP，其他部署访问只会显示其自身地址，绝不会泄露你的个人信息。</span>
           </div>
         </div>
       </section>
@@ -621,7 +622,7 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="pfUid">用户 ID</label>
-            <input type="text" class="m3-input" id="pfUid" placeholder="2574644146" autocomplete="off" />
+            <input type="text" class="m3-input" id="pfUid" placeholder="10000" autocomplete="off" />
             <span class="field-hint">平台 + 群号 + 用户 ID 共同定位一份档案；新建时可手填，编辑已有档案时平台与用户 ID 不可改。</span>
           </div>
           <div class="form-group">
@@ -730,7 +731,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.15"></script>
-  <script src="./app.js?v=0.2.15"></script>
+  <script src="./api.js?v=0.2.16"></script>
+  <script src="./app.js?v=0.2.16"></script>
 </body>
 </html>

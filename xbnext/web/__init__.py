@@ -413,6 +413,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def updater_test_notify_route() -> Any:
         try:
+            import re
             from ..features.updater import send_private_notification
             payload, err = await read_json()
             if err is not None:
@@ -420,32 +421,47 @@ def register_web_api(context: Any, runtime: Any) -> bool:
             target_qq = (payload or {}).get("qq")
             if not target_qq:
                 target_qq = runtime.conf.get("update_notify_qq", "")
-            target_qq = str(target_qq or "").strip()
-            if not target_qq:
-                return _err("请先填写接收通知的 QQ 账号", astrbot_web)
+            raw_qq = str(target_qq or "").strip()
+            qq_list = [q for q in re.split(r"[,;，；\s]+", raw_qq) if q.strip().isdigit()]
+            if not qq_list:
+                return _err("请先填写接收通知的有效 QQ 账号（支持多个，逗号隔开）", astrbot_web)
 
             test_msg = (
                 "🔔【XBNEXT 插件更新通知测试】\n"
                 "恭喜！测试通知发送成功。\n"
                 "当前推送通道畅通，当检测到插件有新版本时，将自动推送至本 QQ。"
             )
-            ok, msg_err = await send_private_notification(context, target_qq, test_msg)
-            if not ok:
-                return _err(f"发送测试通知失败: {msg_err}", astrbot_web)
-            return _ok({"message": f"测试通知已成功发送至 QQ: {target_qq}"}, astrbot_web)
+            success_qqs = []
+            failed_errors = []
+            for q in qq_list:
+                ok, msg_err = await send_private_notification(context, q, test_msg)
+                if ok:
+                    success_qqs.append(q)
+                else:
+                    failed_errors.append(f"{q}: {msg_err}")
+
+            if not success_qqs:
+                return _err(f"发送测试通知失败: {'; '.join(failed_errors)}", astrbot_web)
+
+            info_msg = f"测试通知已成功发送至 QQ: {', '.join(success_qqs)}"
+            if failed_errors:
+                info_msg += f"（部分发送失败: {', '.join(failed_errors)}）"
+            return _ok({"message": info_msg, "success": success_qqs, "failed": failed_errors}, astrbot_web)
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
     async def webhook_github_route() -> Any:
         try:
             from ..features.updater import send_private_notification
+            from ..features.updater.service import UpdaterService
             payload, err = await read_json()
             if err is not None or not isinstance(payload, dict):
                 return _err("无效的 Webhook 请求体", astrbot_web)
 
             notify_enabled = bool(runtime.conf.get("enable_update_notify", False))
-            target_qq = str(runtime.conf.get("update_notify_qq", "") or "").strip()
-            if not notify_enabled or not target_qq:
+            updater = UpdaterService(runtime.conf)
+            qq_list = updater.notify_qqs
+            if not notify_enabled or not qq_list:
                 return _ok({"message": "Webhook 已接收（通知开关未开启或未配置 QQ，跳过推送）"}, astrbot_web)
 
             repository = payload.get("repository") or {}
@@ -473,14 +489,22 @@ def register_web_api(context: Any, runtime: Any) -> bool:
             lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
 
             push_msg = "\n".join(lines)
-            ok, msg_err = await send_private_notification(context, target_qq, push_msg)
-            if not ok:
-                log = getattr(runtime, "log", None)
-                if log and hasattr(log, "warning"):
-                    log.warning(f"[Webhook推送] 发送给 QQ {target_qq} 失败: {msg_err}")
-                return _err(f"Webhook 推送失败: {msg_err}", astrbot_web)
+            log = getattr(runtime, "log", None)
+            success_qqs = []
+            failed_errors = []
+            for q in qq_list:
+                ok, msg_err = await send_private_notification(context, q, push_msg)
+                if ok:
+                    success_qqs.append(q)
+                else:
+                    if log and hasattr(log, "warning"):
+                        log.warning(f"[Webhook推送] 发送给 QQ {q} 失败: {msg_err}")
+                    failed_errors.append(f"{q}: {msg_err}")
 
-            return _ok({"message": f"Webhook 实时推送已成功发送至 QQ: {target_qq}"}, astrbot_web)
+            if not success_qqs:
+                return _err(f"Webhook 推送失败: {'; '.join(failed_errors)}", astrbot_web)
+
+            return _ok({"message": f"Webhook 实时推送已成功发送至 QQ: {', '.join(success_qqs)}"}, astrbot_web)
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
