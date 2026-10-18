@@ -295,17 +295,6 @@ class UpdaterService:
             return bool(getter("enable_updater_schedule", True))
         return True
 
-    @property
-    def schedule_interval_hours(self) -> int:
-        if self.conf is None:
-            return 12
-        getter = getattr(self.conf, "get", None)
-        val = getter("updater_schedule_interval_hours", 12) if callable(getter) else 12
-        try:
-            h = int(val)
-            return max(1, min(72, h))
-        except Exception:
-            return 12
 
     @property
     def schedule_time(self) -> str:

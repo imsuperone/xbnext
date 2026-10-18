@@ -233,32 +233,32 @@
   },
   "enable_updater_schedule": {
     "type": "bool",
-    "description": "周期自动检测更新",
-    "hint": "每隔设定时间（默认每 12 小时）在后台自动检测选定插件是否有新版本。平时完全休眠 0 资源占用。默认开启。",
+    "description": "每日定时自动更新",
+    "hint": "每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认开启。",
     "default": true,
     "collapsed": true,
     "condition": { "enable_updater": true }
   },
-  "updater_schedule_interval_hours": {
-    "type": "int",
-    "description": "自动检测周期 (小时)",
-    "hint": "自动检测插件更新的间隔时间（单位：小时），默认 12 小时。",
-    "default": 12,
+  "updater_schedule_time": {
+    "type": "string",
+    "description": "每日自动更新时间 (HH:MM)",
+    "hint": "每日执行自动检测与热重载更新的时间点（24 小时制 HH:MM，默认 04:30）。",
+    "default": "04:30",
     "collapsed": true,
     "condition": { "enable_updater": true, "enable_updater_schedule": true }
   },
   "enable_update_notify": {
     "type": "bool",
     "description": "更新主动通知 (QQ私聊)",
-    "hint": "检测到插件有新版本时，自动向指定 QQ 发送私聊消息通知。默认关闭。",
-    "default": false,
+    "hint": "定时更新任务完成时，若有插件更新成功，自动向指定 QQ 发送更新明细报告；无更新时完全静默不打扰。默认开启。",
+    "default": true,
     "collapsed": true,
     "condition": { "enable_updater": true }
   },
   "update_notify_qq": {
     "type": "string",
     "description": "接收通知 QQ",
-    "hint": "接收插件新版本提醒的 QQ 账号。默认留空。",
+    "hint": "接收插件更新成功提醒的 QQ 账号（支持多个，逗号隔开）。默认留空。",
     "default": "",
     "collapsed": true,
     "condition": { "enable_updater": true, "enable_update_notify": true }

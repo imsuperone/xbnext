@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.17" />
+  <link rel="stylesheet" href="./style.css?v=0.2.18" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.17">0.2.17</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.18">0.2.18</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -365,8 +365,8 @@
 
           <div class="card-row-split" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
-              <label class="form-label" style="margin-bottom: 2px;">周期自动检测更新</label>
-              <p class="card-desc" style="margin: 0; font-size: 12px;">默认每 12 小时在后台自动检测选定插件是否有新版本，平时完全休眠 0 资源占用。默认开启。</p>
+              <label class="form-label" style="margin-bottom: 2px;">每日定时自动更新</label>
+              <p class="card-desc" style="margin: 0; font-size: 12px;">每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_updater_schedule" data-key="enable_updater_schedule" />
@@ -375,9 +375,9 @@
           </div>
 
           <div class="form-group" style="margin-top: 10px;">
-            <label class="form-label" for="inp_updater_schedule_interval_hours">自动检测周期 (小时)</label>
-            <input type="number" class="m3-input" id="inp_updater_schedule_interval_hours" data-key="updater_schedule_interval_hours" placeholder="12" min="1" max="72" />
-            <span class="field-hint">自动检测更新的间隔小时数（默认 <code>12</code> 小时，支持 1~72 小时）。</span>
+            <label class="form-label" for="inp_updater_schedule_time">每日更新时间 (HH:MM)</label>
+            <input type="text" class="m3-input" id="inp_updater_schedule_time" data-key="updater_schedule_time" placeholder="04:30" style="max-width: 220px;" />
+            <span class="field-hint">每日执行自动检测与热重载更新的时间点（24 小时制 <code>HH:MM</code>，默认 <code>04:30</code>）。</span>
           </div>
 
           <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -394,7 +394,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">新版本主动推送通知 (QQ 私聊)</h2>
-              <p class="card-desc">当检测到插件发布了新版本时，自动通过机器人给管理员发送 QQ 私聊消息提醒。默认开启。</p>
+              <p class="card-desc">当定时更新任务完成时，如果有插件更新成功，自动向设定的 QQ 号发送更新明细报告；无更新时完全静默不打扰。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_update_notify" data-key="enable_update_notify" />
@@ -711,7 +711,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.17"></script>
-  <script src="./app.js?v=0.2.17"></script>
+  <script src="./api.js?v=0.2.18"></script>
+  <script src="./app.js?v=0.2.18"></script>
 </body>
 </html>
