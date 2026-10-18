@@ -450,64 +450,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
-    async def webhook_github_route() -> Any:
-        try:
-            from ..features.updater import send_private_notification
-            from ..features.updater.service import UpdaterService
-            payload, err = await read_json()
-            if err is not None or not isinstance(payload, dict):
-                return _err("无效的 Webhook 请求体", astrbot_web)
-
-            notify_enabled = bool(runtime.conf.get("enable_update_notify", False))
-            updater = UpdaterService(runtime.conf)
-            qq_list = updater.notify_qqs
-            if not notify_enabled or not qq_list:
-                return _ok({"message": "Webhook 已接收（通知开关未开启或未配置 QQ，跳过推送）"}, astrbot_web)
-
-            repository = payload.get("repository") or {}
-            repo_name = repository.get("full_name") or repository.get("name") or "未知仓库"
-            ref = str(payload.get("ref") or "").replace("refs/heads/", "")
-            commits = payload.get("commits") or []
-            pusher = (payload.get("pusher") or {}).get("name") or ""
-
-            commit_lines = []
-            for c in commits[:5]:
-                msg = str(c.get("message") or "").strip().split("\n")[0]
-                cid = str(c.get("id") or "")[:7]
-                commit_lines.append(f"• [{cid}] {msg}")
-
-            lines = [
-                "🚀【GitHub 实时推送提醒】",
-                f"仓库：{repo_name}" + (f" ({ref})" if ref else ""),
-            ]
-            if pusher:
-                lines.append(f"推送人：{pusher}")
-            if commit_lines:
-                lines.append("提交信息：")
-                lines.extend(commit_lines)
-            lines.append("━━━━━━━━━━━━━━")
-            lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
-
-            push_msg = "\n".join(lines)
-            log = getattr(runtime, "log", None)
-            success_qqs = []
-            failed_errors = []
-            for q in qq_list:
-                ok, msg_err = await send_private_notification(context, q, push_msg)
-                if ok:
-                    success_qqs.append(q)
-                else:
-                    if log and hasattr(log, "warning"):
-                        log.warning(f"[Webhook推送] 发送给 QQ {q} 失败: {msg_err}")
-                    failed_errors.append(f"{q}: {msg_err}")
-
-            if not success_qqs:
-                return _err(f"Webhook 推送失败: {'; '.join(failed_errors)}", astrbot_web)
-
-            return _ok({"message": f"Webhook 实时推送已成功发送至 QQ: {', '.join(success_qqs)}"}, astrbot_web)
-        except Exception as exc:  # noqa: BLE001
-            return _err(exc, astrbot_web)
-
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
@@ -521,7 +463,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/updater/check", updater_check_route, ["POST"], "XBNEXT 检查插件更新")
         register(f"{base}/updater/apply", updater_apply_route, ["POST"], "XBNEXT 执行一键更新")
         register(f"{base}/updater/test_notify", updater_test_notify_route, ["POST"], "XBNEXT 发送测试更新通知")
-        register(f"{base}/webhook/github", webhook_github_route, ["POST"], "XBNEXT 接收 GitHub Webhook 推送")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True

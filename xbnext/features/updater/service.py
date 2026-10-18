@@ -289,11 +289,23 @@ class UpdaterService:
     @property
     def schedule_enabled(self) -> bool:
         if self.conf is None:
-            return False
+            return True
         getter = getattr(self.conf, "get", None)
         if callable(getter):
-            return bool(getter("enable_updater_schedule", False))
-        return False
+            return bool(getter("enable_updater_schedule", True))
+        return True
+
+    @property
+    def schedule_interval_hours(self) -> int:
+        if self.conf is None:
+            return 12
+        getter = getattr(self.conf, "get", None)
+        val = getter("updater_schedule_interval_hours", 12) if callable(getter) else 12
+        try:
+            h = int(val)
+            return max(1, min(72, h))
+        except Exception:
+            return 12
 
     @property
     def schedule_time(self) -> str:
@@ -321,11 +333,11 @@ class UpdaterService:
     @property
     def notify_enabled(self) -> bool:
         if self.conf is None:
-            return False
+            return True
         getter = getattr(self.conf, "get", None)
         if callable(getter):
-            return bool(getter("enable_update_notify", False))
-        return False
+            return bool(getter("enable_update_notify", True))
+        return True
 
     @property
     def notify_qq(self) -> str:
@@ -364,17 +376,73 @@ class UpdaterService:
             "Content-Type": "application/json",
         }
 
+    def scan_local_plugins_sync(self) -> List[Dict[str, Any]]:
+        """当未配置 OpenAPI 密钥或接口不可用时，优雅扫描本地已安装插件 metadata.yaml。"""
+        KNOWN_REPOS = {
+            "astrbot_plugin_xbnext": "https://github.com/imsuperone/xbnext",
+            "astrbot_plugin_xbbot_beta": "https://github.com/imsuperone/xbtest",
+            "astrbot_plugin_xbbot": "https://github.com/imsuperone/xb",
+            "astrbot_plugin_xbimg": "https://github.com/imsuperone/xbimg",
+            "astrbot_plugin_xb2img": "https://github.com/imsuperone/xb2img",
+            "astrbot_plugin_xbdoc": "https://github.com/imsuperone/xbdoc",
+        }
+        found: List[Dict[str, Any]] = []
+        seen = set()
+        for base in ("data/plugins", "plugins", ".", ".."):
+            if not os.path.isdir(base):
+                continue
+            try:
+                for item in os.listdir(base):
+                    p_dir = os.path.join(base, item)
+                    meta_path = os.path.join(p_dir, "metadata.yaml")
+                    if os.path.isfile(meta_path):
+                        try:
+                            with open(meta_path, "r", encoding="utf-8") as f:
+                                text = f.read()
+                            name = extract_metadata_field(text, "name") or item
+                            norm = normalize_plugin_name(name)
+                            if norm in seen:
+                                continue
+                            seen.add(norm)
+                            ver = extract_metadata_field(text, "version") or "未知"
+                            repo = extract_metadata_field(text, "repo") or KNOWN_REPOS.get(norm, "")
+                            disp = extract_metadata_field(text, "display_name") or get_plugin_display_name({"name": name}, p_dir)
+                            found.append({
+                                "name": name,
+                                "version": ver,
+                                "repo": repo,
+                                "display_name": disp,
+                                "root_dir_name": item,
+                            })
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # 补齐未在本地扫描到的已知默认目标插件，支持直接远端探测
+        for tgt in self.target_plugins:
+            norm_tgt = normalize_plugin_name(tgt)
+            if norm_tgt not in seen:
+                seen.add(norm_tgt)
+                found.append({
+                    "name": norm_tgt,
+                    "version": "未知",
+                    "repo": KNOWN_REPOS.get(norm_tgt, ""),
+                    "display_name": get_plugin_display_name({"name": norm_tgt}),
+                    "root_dir_name": norm_tgt,
+                })
+        return found
+
     def fetch_installed_plugins_sync(self) -> Tuple[bool, List[Dict[str, Any]], str]:
-        """通过 OpenAPI 查询 AstrBot 当前已安装的所有插件。"""
+        """通过 OpenAPI 查询 AstrBot 当前已安装的所有插件。未配置密钥时自动回退本地扫描。"""
         if not self.api_key:
-            return False, [], "未配置 OpenAPI 密钥（需前往 WebUI 填写并保存）。"
+            return True, self.scan_local_plugins_sync(), ""
         url = f"{self.api_url}/api/v1/plugins"
         status, data = _http_request(url, headers=self._auth_headers(), timeout=10)
         if status != 200:
-            err_msg = data.get("message") if isinstance(data, dict) else str(data)
-            return False, [], f"OpenAPI 请求失败 (HTTP {status}): {err_msg}"
+            return True, self.scan_local_plugins_sync(), ""
         if not isinstance(data, dict) or "data" not in data:
-            return False, [], "OpenAPI 返回结构异常"
+            return True, self.scan_local_plugins_sync(), ""
         return True, data.get("data") or [], ""
 
     async def fetch_installed_plugins(self) -> Tuple[bool, List[Dict[str, Any]], str]:
@@ -385,17 +453,12 @@ class UpdaterService:
         if not self.enabled:
             return {
                 "ok": False,
-                "error": "插件一键更新功能未开启。请在 XBNEXT WebUI「功能开关」中启用并配置 OpenAPI 密钥。",
-            }
-        if not self.api_key:
-            return {
-                "ok": False,
-                "error": "未配置 OpenAPI 密钥。请在 XBNEXT WebUI「功能开关」中填入 API Key。",
+                "error": "插件一键更新功能未开启。请在 XBNEXT WebUI「功能开关」中启用。",
             }
 
         ok, installed, err = self.fetch_installed_plugins_sync()
-        if not ok:
-            return {"ok": False, "error": err}
+        if not ok or not installed:
+            installed = self.scan_local_plugins_sync()
 
         raw_targets = selected_names if selected_names is not None else self.target_plugins
         targets = {normalize_plugin_name(x) for x in raw_targets if x}

@@ -2107,27 +2107,6 @@
         });
       });
     }
-
-    var hookInp = $("inp_webhook_url");
-    if (hookInp) {
-      try {
-        var baseOrigin = window.location.origin;
-        if (!baseOrigin || baseOrigin === "null") baseOrigin = "http://你的域名或IP:6185";
-        hookInp.value = baseOrigin + "/api/plugins/astrbot_plugin_xbnext/webhook/github";
-      } catch (e) {
-        hookInp.value = "http://你的域名或IP:6185/api/plugins/astrbot_plugin_xbnext/webhook/github";
-      }
-    }
-    if ($("btn_copy_webhook_url")) {
-      $("btn_copy_webhook_url").addEventListener("click", function () {
-        var val = $("inp_webhook_url") ? $("inp_webhook_url").value : "";
-        if (val) {
-          _copyText(val).then(function (ok) {
-            toast(ok ? "Webhook URL 已复制到剪贴板！" : "复制失败，请手动选中复制", ok ? "ok" : "bad");
-          });
-        }
-      });
-    }
   }
 
   /* ========================================================================

@@ -233,17 +233,17 @@
   },
   "enable_updater_schedule": {
     "type": "bool",
-    "description": "定时自动检测更新",
-    "hint": "每天在设定时刻自动检测选定插件是否有新版本。默认关闭。",
-    "default": false,
+    "description": "周期自动检测更新",
+    "hint": "每隔设定时间（默认每 12 小时）在后台自动检测选定插件是否有新版本。平时完全休眠 0 资源占用。默认开启。",
+    "default": true,
     "collapsed": true,
     "condition": { "enable_updater": true }
   },
-  "updater_schedule_time": {
-    "type": "string",
-    "description": "自动检测更新时间",
-    "hint": "每日定时触发检查更新的时刻（24小时制 HH:MM），默认 04:30。",
-    "default": "04:30",
+  "updater_schedule_interval_hours": {
+    "type": "int",
+    "description": "自动检测周期 (小时)",
+    "hint": "自动检测插件更新的间隔时间（单位：小时），默认 12 小时。",
+    "default": 12,
     "collapsed": true,
     "condition": { "enable_updater": true, "enable_updater_schedule": true }
   },

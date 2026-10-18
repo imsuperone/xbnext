@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.16" />
+  <link rel="stylesheet" href="./style.css?v=0.2.17" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.16">0.2.16</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.17">0.2.17</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -365,8 +365,8 @@
 
           <div class="card-row-split" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
-              <label class="form-label" style="margin-bottom: 2px;">定时自动检测更新</label>
-              <p class="card-desc" style="margin: 0; font-size: 12px;">每天在指定时间自动检查选定插件是否有新版本；若有更新将自动拉取并热重载。默认关闭。</p>
+              <label class="form-label" style="margin-bottom: 2px;">周期自动检测更新</label>
+              <p class="card-desc" style="margin: 0; font-size: 12px;">默认每 12 小时在后台自动检测选定插件是否有新版本，平时完全休眠 0 资源占用。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_updater_schedule" data-key="enable_updater_schedule" />
@@ -375,9 +375,9 @@
           </div>
 
           <div class="form-group" style="margin-top: 10px;">
-            <label class="form-label" for="inp_updater_schedule_time">每日自动检测时间</label>
-            <input type="text" class="m3-input" id="inp_updater_schedule_time" data-key="updater_schedule_time" placeholder="04:30" />
-            <span class="field-hint">24 小时制 <code>HH:MM</code>，例如 <code>04:30</code>。仅在「定时自动检测更新」及「插件一键更新与检查」开启时生效。</span>
+            <label class="form-label" for="inp_updater_schedule_interval_hours">自动检测周期 (小时)</label>
+            <input type="number" class="m3-input" id="inp_updater_schedule_interval_hours" data-key="updater_schedule_interval_hours" placeholder="12" min="1" max="72" />
+            <span class="field-hint">自动检测更新的间隔小时数（默认 <code>12</code> 小时，支持 1~72 小时）。</span>
           </div>
 
           <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -394,7 +394,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">新版本主动推送通知 (QQ 私聊)</h2>
-              <p class="card-desc">当检测到插件发布了新版本时，自动通过机器人给管理员发送 QQ 私聊消息提醒。默认关闭。</p>
+              <p class="card-desc">当检测到插件发布了新版本时，自动通过机器人给管理员发送 QQ 私聊消息提醒。默认开启。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_update_notify" data-key="enable_update_notify" />
@@ -420,26 +420,6 @@
               <input type="checkbox" id="sw_update_notify_third_party" data-key="update_notify_third_party" />
               <span class="switch-slider"></span>
             </label>
-          </div>
-        </div>
-
-        <!-- 卡片 3: GitHub Webhook 极速秒级推送 -->
-        <div class="m3-card" id="card_github_webhook" style="margin-top: 16px;">
-          <div class="card-row-split">
-            <div>
-              <h2 class="card-title">GitHub Webhook 实时推送 (自有仓库极速通知)</h2>
-              <p class="card-desc">针对你拥有权限的 GitHub 仓库，可在仓库 Webhooks 中配置此端点，实现 push 代码后 1 秒内直接 QQ 收到通知。</p>
-            </div>
-          </div>
-
-          <div class="form-group" style="margin-top: 12px;">
-            <label class="form-label">Webhook 接收端点 URL</label>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <input type="text" class="m3-input" id="inp_webhook_url" readonly style="flex: 1; font-family: monospace; background: var(--m3-sys-color-surface-container);" />
-              <button type="button" class="m3-btn secondary-btn" id="btn_copy_webhook_url" style="white-space: nowrap;">📋 复制链接</button>
-            </div>
-            <span class="field-hint">配置方法：在 GitHub 仓库 $\rightarrow$ Settings $\rightarrow$ Webhooks $\rightarrow$ Add webhook，将上面 URL 填入 Payload URL，Content type 选 <code>application/json</code> 即可。<br>
-            🔒 <b>隐私保护提示</b>：此链接由浏览器根据你当前浏览器访问的地址动态生成，代码中绝无硬编码你的域名或 IP，其他部署访问只会显示其自身地址，绝不会泄露你的个人信息。</span>
           </div>
         </div>
       </section>
@@ -731,7 +711,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.16"></script>
-  <script src="./app.js?v=0.2.16"></script>
+  <script src="./api.js?v=0.2.17"></script>
+  <script src="./app.js?v=0.2.17"></script>
 </body>
 </html>

@@ -251,7 +251,9 @@ class UpdaterFeature(Feature):
         ]
         for p in new_updates:
             nick = p.get("nickname", p.get("name"))
-            lines.append(f"• {nick}：{p.get('status_text')}")
+            cur_v = format_version(p.get("local_version") or p.get("version") or "未知")
+            new_v = format_version(p.get("remote_version") or "最新")
+            lines.append(f"• {nick} {cur_v} -> {new_v}")
         lines.append("━━━━━━━━━━━━━━")
         lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
         msg = "\n".join(lines)
@@ -276,60 +278,54 @@ class UpdaterFeature(Feature):
                 except Exception:
                     pass
             if log and hasattr(log, "info"):
-                log.info(f"[插件更新推送] 已成功向 QQ {', '.join(qq_list)} 发送新版本提醒")
+                log.info(f"[插件更新推送] 已成功向设定通道 {', '.join(qq_list)} 发送新版本提醒")
         else:
             if log and hasattr(log, "warning"):
-                log.warning(f"[插件更新推送] 向 QQ {', '.join(qq_list)} 推送失败: {err}")
+                log.warning(f"[插件更新推送] 向设定通道 {', '.join(qq_list)} 推送失败: {err}")
 
     async def _schedule_loop(self) -> None:
-        """后台定时检测更新循环（首轮 60 秒后开始计算目标时间，分段睡眠支持热改生效）。"""
+        """后台定时检测更新循环（默认每 12 小时检查一次更新）。"""
         try:
-            await asyncio.sleep(60)
+            # 启动 30 秒后进行首次检测
+            await asyncio.sleep(30)
             while True:
                 conf = getattr(self._runtime, "conf", None)
                 updater = UpdaterService(conf)
-                target_time = updater.schedule_time
-                now = datetime.now()
-                delay = next_schedule_delay(now, target_time)
 
-                while delay > 0:
-                    step = min(delay, 1800.0)
-                    await asyncio.sleep(step)
-                    delay -= step
-                    cur_conf = getattr(self._runtime, "conf", None)
-                    cur_updater = UpdaterService(cur_conf)
-                    if cur_updater.schedule_time != target_time:
-                        break
-
-                cur_conf = getattr(self._runtime, "conf", None)
-                cur_updater = UpdaterService(cur_conf)
-                if cur_updater.schedule_time != target_time:
-                    continue
-
-                if cur_updater.enabled and (cur_updater.schedule_enabled or cur_updater.notify_enabled) and cur_updater.api_key:
+                if updater.enabled and (updater.schedule_enabled or updater.notify_enabled):
                     try:
                         log = getattr(self._runtime, "log", None)
                         if log and hasattr(log, "info"):
-                            log.info(f"[插件定时更新] 开始执行每日定时插件检测 (设定时刻: {cur_updater.schedule_time})...")
-                        res = await cur_updater.check_updates()
+                            log.info(f"[插件定时更新] 开始执行自动检测 (周期: {updater.schedule_interval_hours} 小时)...")
+                        res = await updater.check_updates()
                         has_update = res.get("has_new_version", False)
                         plugins = res.get("plugins") or []
                         updates = [p for p in plugins if p.get("has_update")]
                         update_names = [p.get("nickname", p.get("name")) for p in updates]
                         if log and hasattr(log, "info"):
                             if has_update:
-                                log.info(f"[插件定时更新] 自动检测完成，发现 {len(update_names)} 个插件有新版本：{', '.join(update_names)}")
+                                log.info(f"[插件定时更新] 检测完成，发现 {len(update_names)} 个插件有新版本：{', '.join(update_names)}")
                             else:
-                                log.info("[插件定时更新] 自动检测完成，所有选定插件均已处于最新状态。")
+                                log.info("[插件定时更新] 检测完成，选定插件均处于最新状态。")
 
-                        if has_update and cur_updater.notify_enabled and cur_updater.notify_qq:
-                            await self._dispatch_update_notification(cur_updater, updates)
+                        if has_update and updater.notify_enabled and updater.notify_qqs:
+                            await self._dispatch_update_notification(updater, updates)
                     except Exception as ex:
                         log = getattr(self._runtime, "log", None)
                         if log and hasattr(log, "warning"):
                             log.warning(f"[插件定时更新] 自动检测异常: {ex!r}")
 
-                await asyncio.sleep(65)
+                # 计算休眠时间：默认 12 小时（12 * 3600 秒），分段休眠以支持热改配置即时生效
+                interval_hours = updater.schedule_interval_hours
+                total_delay = max(3600.0, float(interval_hours * 3600))
+                while total_delay > 0:
+                    step = min(total_delay, 300.0)
+                    await asyncio.sleep(step)
+                    total_delay -= step
+                    cur_conf = getattr(self._runtime, "conf", None)
+                    cur_updater = UpdaterService(cur_conf)
+                    if cur_updater.schedule_interval_hours != interval_hours:
+                        break
         except asyncio.CancelledError:
             pass
         except Exception:
