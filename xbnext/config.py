@@ -101,6 +101,21 @@ class Config:
         except Exception:  # noqa: BLE001
             return str(default)
 
+    def list(self, key: str, default: Any = None) -> list:
+        """读列表项；非列表做类型兼容转换。"""
+        try:
+            val = self.get(key, default)
+            if isinstance(val, (list, tuple)):
+                return list(val)
+            if isinstance(val, str):
+                import re
+                return [x.strip() for x in re.split(r"[,;，；\s]+", val) if x.strip()]
+            if default is not None:
+                return list(default) if isinstance(default, (list, tuple)) else []
+            return []
+        except Exception:  # noqa: BLE001
+            return []
+
     def enabled(self, key: str) -> bool:
         """功能总开关的统一读法（``enable_*`` 都走这里）。"""
         return self.bool(key, bool(schema_default(key)))

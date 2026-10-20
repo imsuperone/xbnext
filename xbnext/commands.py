@@ -46,6 +46,8 @@ MENU = (
     "• /xbnext profile 自述 内容 — 设置自述\n"
     "• /xbnext profile 称呼: — 删除字段\n"
     "• /xbnext profile 清空 — 清空当前档案\n"
+    "📮 问题反馈\n"
+    "• /xbnext issue 问题 [附截图] — 提交问题与截图反馈\n"
     "💡 提示：WebUI 控制台可管理全部配置与档案。"
 )
 

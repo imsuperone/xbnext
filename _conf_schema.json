@@ -11,7 +11,9 @@
     "hint": "label = 失效图片标注成中文说明（推荐）；strip = 直接删占位文本；keep = 只记日志不改写。默认 label。",
     "default": "label",
     "collapsed": true,
-    "condition": { "enable_quote_clean": true }
+    "condition": {
+      "enable_quote_clean": true
+    }
   },
   "quote_drop_dead_images": {
     "type": "bool",
@@ -19,7 +21,9 @@
     "hint": "把引用里已失效的本地图片路径从待发列表移除，正文 [Image] 一并标注失效；只删能证实不存在的，链接类一律保留。默认开启。",
     "default": true,
     "collapsed": true,
-    "condition": { "enable_quote_clean": true }
+    "condition": {
+      "enable_quote_clean": true
+    }
   },
   "enable_face_translate": {
     "type": "bool",
@@ -33,7 +37,9 @@
     "hint": "{name} 替换成表情中文名，取不到名字时用表情 ID。默认 [表情:{name}]。",
     "default": "[表情:{name}]",
     "collapsed": true,
-    "condition": { "enable_face_translate": true }
+    "condition": {
+      "enable_face_translate": true
+    }
   },
   "face_auto_update": {
     "type": "bool",
@@ -41,7 +47,9 @@
     "hint": "定期从 QQ 表情权威源拉取新增表情 ID，只补内置表缺口、不覆盖，不影响翻译本身。默认开启。",
     "default": true,
     "collapsed": true,
-    "condition": { "enable_face_translate": true }
+    "condition": {
+      "enable_face_translate": true
+    }
   },
   "face_update_time": {
     "type": "string",
@@ -49,7 +57,10 @@
     "hint": "每天几点自动更新表情表，24 小时制 HH:MM（如 04:30）；格式非法按 04:30 处理。默认 04:30。",
     "default": "04:30",
     "collapsed": true,
-    "condition": { "enable_face_translate": true, "face_auto_update": true }
+    "condition": {
+      "enable_face_translate": true,
+      "face_auto_update": true
+    }
   },
   "enable_reply_attribution": {
     "type": "bool",
@@ -63,7 +74,9 @@
     "hint": "单个会话最多保留多少条「回给谁」记录，超出先淘汰旧的。默认 50。",
     "default": 50,
     "collapsed": true,
-    "condition": { "enable_reply_attribution": true }
+    "condition": {
+      "enable_reply_attribution": true
+    }
   },
   "reply_scope_depth": {
     "type": "int",
@@ -71,7 +84,9 @@
     "hint": "注入说明最多回溯多少轮对话；数值越大说明越长。默认 3。",
     "default": 3,
     "collapsed": true,
-    "condition": { "enable_reply_attribution": true }
+    "condition": {
+      "enable_reply_attribution": true
+    }
   },
   "enable_user_profile": {
     "type": "bool",
@@ -85,7 +100,9 @@
     "hint": "档案超过这个字数会被截断后再注入，防止挤占上下文。默认 600。",
     "default": 600,
     "collapsed": true,
-    "condition": { "enable_user_profile": true }
+    "condition": {
+      "enable_user_profile": true
+    }
   },
   "enable_recall_cancel": {
     "type": "bool",
@@ -98,7 +115,9 @@
     "description": "撤回先询问再取消",
     "hint": "撤回时先问一句「要取消这次回复吗」（群里会 @ 执行撤回的人），只有撤回者本人的回答算数。回「是」取消并撤回回复，回「否」保留；10 秒内不回复自动取消，流程结束询问消息自动撤回。仅在「撤回取消请求」开启时生效。默认关闭。",
     "default": false,
-    "condition": { "enable_recall_cancel": true }
+    "condition": {
+      "enable_recall_cancel": true
+    }
   },
   "enable_image_slim": {
     "type": "bool",
@@ -118,7 +137,9 @@
     "hint": "每项一个会话 UMO（如 aiocqhttp:GroupMessage:群号），逗号 / 顿号 / 换行分隔；也可在会话里发 /xbnext token 一键加进 / 移出。留空 = 都不显示。仅在「Token 用量展示」开启时生效。",
     "default": "",
     "collapsed": true,
-    "condition": { "enable_token_usage": true }
+    "condition": {
+      "enable_token_usage": true
+    }
   },
   "enable_tts_limit": {
     "type": "bool",
@@ -132,7 +153,9 @@
     "hint": "回复文本超过该字数时不转语音直接发文字（0 = 不限制）。默认 100 字。",
     "default": 100,
     "collapsed": true,
-    "condition": { "enable_tts_limit": true }
+    "condition": {
+      "enable_tts_limit": true
+    }
   },
   "group_mode": {
     "type": "string",
@@ -213,7 +236,9 @@
     "hint": "AstrBot Web 控制台「开放接口」生成的 API Key（格式如 abk_...，需具备插件管理权限）。默认留空。",
     "default": "",
     "collapsed": true,
-    "condition": { "enable_updater": true }
+    "condition": {
+      "enable_updater": true
+    }
   },
   "updater_api_url": {
     "type": "string",
@@ -221,7 +246,9 @@
     "hint": "AstrBot 服务的基础地址。若在同一服务器部署默认使用 http://127.0.0.1:6185，远程部署填写实际访问域名或 IP。默认 http://127.0.0.1:6185。",
     "default": "http://127.0.0.1:6185",
     "collapsed": true,
-    "condition": { "enable_updater": true }
+    "condition": {
+      "enable_updater": true
+    }
   },
   "updater_plugins": {
     "type": "string",
@@ -229,7 +256,9 @@
     "hint": "需要一键检查与更新的插件标识（逗号分隔或由控制台多选勾选，默认预设 xb 系列插件）。",
     "default": "astrbot_plugin_xbimg, astrbot_plugin_xb2img, astrbot_plugin_xbdoc, astrbot_plugin_xbbot, astrbot_plugin_xbbot_beta, astrbot_plugin_xbnext",
     "collapsed": true,
-    "condition": { "enable_updater": true }
+    "condition": {
+      "enable_updater": true
+    }
   },
   "enable_updater_schedule": {
     "type": "bool",
@@ -237,7 +266,9 @@
     "hint": "每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认开启。",
     "default": true,
     "collapsed": true,
-    "condition": { "enable_updater": true }
+    "condition": {
+      "enable_updater": true
+    }
   },
   "updater_schedule_time": {
     "type": "string",
@@ -245,7 +276,10 @@
     "hint": "每日执行自动检测与热重载更新的时间点（24 小时制 HH:MM，默认 04:30）。",
     "default": "04:30",
     "collapsed": true,
-    "condition": { "enable_updater": true, "enable_updater_schedule": true }
+    "condition": {
+      "enable_updater": true,
+      "enable_updater_schedule": true
+    }
   },
   "enable_update_notify": {
     "type": "bool",
@@ -253,7 +287,9 @@
     "hint": "定时更新任务完成时，若有插件更新成功，自动向指定 QQ 发送更新明细报告；无更新时完全静默不打扰。默认开启。",
     "default": true,
     "collapsed": true,
-    "condition": { "enable_updater": true }
+    "condition": {
+      "enable_updater": true
+    }
   },
   "update_notify_qq": {
     "type": "string",
@@ -261,7 +297,10 @@
     "hint": "接收插件更新成功提醒的 QQ 账号（支持多个，逗号隔开）。默认留空。",
     "default": "",
     "collapsed": true,
-    "condition": { "enable_updater": true, "enable_update_notify": true }
+    "condition": {
+      "enable_updater": true,
+      "enable_update_notify": true
+    }
   },
   "update_notify_third_party": {
     "type": "bool",
@@ -269,6 +308,21 @@
     "hint": "开启后除预设 xb 系列插件外，自动扫描本地所有第三方插件的 metadata.yaml 并监控 GitHub 远端更新。默认关闭。",
     "default": false,
     "collapsed": true,
-    "condition": { "enable_updater": true, "enable_update_notify": true }
+    "condition": {
+      "enable_updater": true,
+      "enable_update_notify": true
+    }
+  },
+  "enable_issue": {
+    "type": "bool",
+    "description": "用户问题反馈功能开关",
+    "hint": "开启后用户可通过 /xbnext issue 提交问题与截图",
+    "default": true
+  },
+  "issue_receivers": {
+    "type": "list",
+    "description": "问题通知接收人QQ列表",
+    "hint": "当用户提交 /xbnext issue 时，系统将自动私信给这些 QQ 号码进行提醒",
+    "default": []
   }
 }

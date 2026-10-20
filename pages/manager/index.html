@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.18" />
+  <link rel="stylesheet" href="./style.css?v=0.2.19" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.18">0.2.18</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.19">0.2.19</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -82,6 +82,10 @@
       <button type="button" class="cat-tab" data-tab="tab-runtime">
         <span class="cat-icon">🧩</span>
         <span class="cat-title">运行状态</span>
+      </button>
+      <button type="button" class="cat-tab" data-tab="tab-issue">
+        <span class="cat-icon">📮</span>
+        <span class="cat-title">问题反馈</span>
       </button>
       <button type="button" class="cat-tab" data-tab="tab-guide">
         <span class="cat-icon">📖</span>
@@ -695,6 +699,59 @@
           <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。要暴露子指令（像 <code>/xbnext profile</code>）就再填 <code>command</code> 并在 <code>main.py</code> 加一行静态转发。</span>
         </div>
 
+      <!-- ==================== Tab: 问题反馈 ==================== -->
+      <section class="settings-section" data-section="tab-issue">
+        <div class="sub-group-header">📮 用户问题提交与管理</div>
+
+        <!-- 卡片 1: 问题接收人配置 -->
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">问题接收人设置</h2>
+              <p class="card-desc">配置接收用户 <code>/xbnext issue</code> 反馈通知的管理员 QQ 号码（支持添加多个）。用户提交后，系统将第一时间通过私信推送反馈内容与附带截图。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_issue" data-key="enable_issue" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="field-row-wrap" style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <input type="text" id="newReceiverInput" class="m3-input" placeholder="输入管理员 QQ 号码后按回车或点击添加..." />
+            </div>
+            <button type="button" id="addReceiverBtn" class="m3-btn filled">添加接收人</button>
+            <button type="button" id="saveReceiversBtn" class="m3-btn tonal">保存接收人列表</button>
+          </div>
+          <div class="receiver-chips-wrap" id="receiverChipsList" style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px;">
+            <!-- 动态渲染接收人 QQ Chip 标签 -->
+          </div>
+        </div>
+
+        <!-- 卡片 2: 提交的问题列表 -->
+        <div class="m3-card">
+          <div class="card-header-between" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <h2 class="card-title">问题反馈记录</h2>
+              <p class="card-desc">用户通过 <code>/xbnext issue &lt;问题&gt; [截图]</code> 提交的问题、附带截图与时间日志。</p>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="issueFilterStatus" class="m3-select" style="min-width: 110px;">
+                <option value="all">全部状态</option>
+                <option value="pending">🟡 待处理</option>
+                <option value="resolved">🟢 已解决</option>
+              </select>
+              <button type="button" id="refreshIssuesBtn" class="m3-btn outlined">刷新列表</button>
+            </div>
+          </div>
+
+          <div id="issuesListContainer" class="issues-list-wrap">
+            <div class="empty-hint" style="padding: 24px; text-align: center; color: var(--on-surface-variant);">
+              正在加载问题反馈记录...
+            </div>
+          </div>
+        </div>
+      </section>
+
         <div class="m3-card">
           <h2 class="card-title">致谢与借鉴</h2>
           <p class="card-desc">本插件的设计与实现借鉴了以下项目：</p>
@@ -709,9 +766,18 @@
     </main>
   </div>
 
+    <!-- 截图大图预览 Modal -->
+  <div id="imageLightboxModal" class="lightbox-modal" style="display: none;">
+    <div class="lightbox-backdrop" id="lightboxBackdrop"></div>
+    <div class="lightbox-content">
+      <img id="lightboxImage" src="" alt="截图预览" />
+      <button type="button" class="lightbox-close" id="lightboxCloseBtn">✕</button>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.18"></script>
-  <script src="./app.js?v=0.2.18"></script>
+  <script src="./api.js?v=0.2.19"></script>
+  <script src="./app.js?v=0.2.19"></script>
 </body>
 </html>

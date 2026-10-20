@@ -715,10 +715,15 @@ class RecallFeature(Feature):
         退回原发送会触发二次发送（如 xbimg 双发两张图）。"""
         if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
             return True
-        if getattr(exc, "retcode", None) == 1200:
+        if getattr(exc, "retcode", None) == 1200 or getattr(exc, "status_code", None) == 1200:
             return True
         msg = f"{exc} {repr(exc)} {getattr(exc, 'message', '')} {getattr(exc, 'wording', '')}".lower()
-        return "retcode=1200" in msg or "retcode': 1200" in msg or "timeout" in msg
+        return (
+            "retcode=1200" in msg
+            or "retcode': 1200" in msg
+            or "timeout" in msg
+            or "nodeikernelmsgservice" in msg
+        )
 
     async def _send_captured(
         self, event: Any, trigger_id: str, chain: Any

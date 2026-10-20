@@ -34,6 +34,7 @@ from .recall import RecallFeature
 from .tokenline import TokenLineFeature
 from .ttslimit import TtsLimitFeature
 from .updater import UpdaterFeature
+from .issue import IssueFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
@@ -46,6 +47,7 @@ FEATURES: Tuple[Feature, ...] = (
     TokenLineFeature(),
     TtsLimitFeature(),
     UpdaterFeature(),
+    IssueFeature(),
 )
 
 
@@ -70,6 +72,10 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     if name_lower in ("updater", "检查更新", "查更新", "check_update", "check", "一键更新", "更新", "update", "升级"):
         for feat in FEATURES:
             if getattr(feat, "command", "") == "updater":
+                return feat
+    if name_lower in ("issue", "反馈", "问题", "提问", "意见"):
+        for feat in FEATURES:
+            if getattr(feat, "command", "") == "issue":
                 return feat
     for feat in FEATURES:
         if feat.command and feat.command == name:
