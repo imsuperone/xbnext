@@ -248,14 +248,6 @@
     updaterApply: function (payload) { return postJson("updater/apply", payload); },
     /** 发送测试更新通知：updaterTestNotify({qq: "..."}) */
     updaterTestNotify: function (payload) { return postJson("updater/test_notify", payload); },
-    /** 获取问题反馈列表与接收人配置 */
-    issues: function () { return getJson("issues", null); },
-    /** 保存问题接收人QQ列表：saveIssueReceivers({receivers: [...]}) */
-    saveIssueReceivers: function (payload) { return postJson("issue_receivers", payload); },
-    /** 更新问题处理状态：updateIssueStatus({id: "...", status: "..."}) */
-    updateIssueStatus: function (payload) { return postJson("issue_status", payload); },
-    /** 删除问题反馈：deleteIssue({id: "..."}) */
-    deleteIssue: function (payload) { return postJson("issue_delete", payload); },
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };

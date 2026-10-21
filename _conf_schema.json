@@ -312,17 +312,5 @@
       "enable_updater": true,
       "enable_update_notify": true
     }
-  },
-  "enable_issue": {
-    "type": "bool",
-    "description": "用户问题反馈功能开关",
-    "hint": "开启后用户可通过 /xbnext issue 提交问题与截图；默认关闭以防止恶意滥用",
-    "default": false
-  },
-  "issue_receivers": {
-    "type": "list",
-    "description": "问题通知接收人QQ列表",
-    "hint": "当用户提交 /xbnext issue 时，系统将自动私信给这些 QQ 号码进行提醒",
-    "default": []
   }
 }

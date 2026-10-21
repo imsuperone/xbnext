@@ -300,10 +300,6 @@
     } else if (target === "tab-updater" && !_tabLoaded["tab-updater"]) {
       _tabLoaded["tab-updater"] = true;
       fetchUpdaterPlugins(true);
-    } else if (target === "tab-issue" && !_tabLoaded["tab-issue"]) {
-      _tabLoaded["tab-issue"] = true;
-      loadIssuesData(true);
-    }
   }
 
   function initTabs() {
@@ -562,15 +558,6 @@
     applyConditions();
     renderPlatformManager();
     renderUpdaterPlugins();
-    // 初始化接收人 QQ 缓存并渲染，确保开屏即见已保存的管理 QQ
-    if (CONFIG.issue_receivers) {
-      if (Array.isArray(CONFIG.issue_receivers)) {
-        _receiversCache = CONFIG.issue_receivers.slice();
-      } else if (typeof CONFIG.issue_receivers === "string") {
-        _receiversCache = CONFIG.issue_receivers.split(/[,;\s]+/).filter(Boolean);
-      }
-      renderReceiverChips();
-    }
   }
 
   /**
@@ -2133,7 +2120,6 @@
     initTokenline();
     initGroupSwitch();
     initUpdater();
-    initIssueModule();
     watchSystemTheme();
 
     if ($("themeToggleBtn")) $("themeToggleBtn").addEventListener("click", toggleTheme);
@@ -2163,262 +2149,8 @@
   }
 
 
-  /* ==================================================================
-   * 问题反馈与接收人管理 (Issue Feature)
-   * ================================================================== */
-  var _issuesCache = [];
-  var _receiversCache = [];
+  
 
-  window.loadIssuesData = loadIssuesData;
-  function loadIssuesData(silent) {
-    if (!silent) toast("正在加载问题反馈数据...", "info");
-    return API.issues().then(function (res) {
-      if (!res) return;
-      _issuesCache = Array.isArray(res.issues) ? res.issues : [];
-      if (Array.isArray(res.receivers) && res.receivers.length) {
-        _receiversCache = res.receivers.slice();
-      } else if ((!_receiversCache || !_receiversCache.length) && Array.isArray(CONFIG.issue_receivers)) {
-        _receiversCache = CONFIG.issue_receivers.slice();
-      }
-      renderReceiverChips();
-      renderIssuesList();
-      if (!silent) toast("问题反馈数据已更新", "ok");
-    }).catch(function (err) {
-      var c = $("issuesListContainer");
-      if (c) {
-        c.innerHTML = '<div class="empty-hint" style="padding: 32px; text-align: center; color: var(--error, #e53935); font-size: 14px;">⚠️ 加载问题反馈失败：' + escapeHtml(err && err.message || String(err)) + '<br><button type="button" class="btn" style="margin-top: 12px; font-size: 13px;" onclick="loadIssuesData(false)">点击重试</button></div>';
-      }
-      renderReceiverChips();
-      toast("加载问题反馈失败: " + (err && err.message || err), "bad");
-    });
-  }
-
-  function renderReceiverChips() {
-    var box = $("receiverChipsList");
-    if (!box) return;
-    box.innerHTML = "";
-    if (!_receiversCache || !_receiversCache.length) {
-      box.innerHTML = '<span style="color: var(--on-surface-variant); font-size: 13px;">暂未配置问题接收人，请在上方输入管理员 QQ 号添加。</span>';
-      return;
-    }
-    _receiversCache.forEach(function (qq) {
-      var chip = document.createElement("div");
-      chip.className = "receiver-chip";
-      chip.innerHTML = '<span>👤 QQ ' + escapeHtml(qq) + '</span><button type="button" class="receiver-chip-del" title="移除该接收人">✕</button>';
-      chip.querySelector(".receiver-chip-del").addEventListener("click", function () {
-        removeReceiver(qq);
-      });
-      box.appendChild(chip);
-    });
-  }
-
-  function addReceiverFromInput() {
-    var input = $("newReceiverInput");
-    if (!input) return;
-    var val = (input.value || "").trim();
-    if (!val) {
-      toast("请输入管理员 QQ 号码", "info");
-      return;
-    }
-    var qqs = val.replace(/[,;，；]/g, " ").split(/\s+/);
-    var added = 0;
-    qqs.forEach(function (q) {
-      var cq = q.trim();
-      if (/^\d{5,12}$/.test(cq) && _receiversCache.indexOf(cq) === -1) {
-        _receiversCache.push(cq);
-        added++;
-      }
-    });
-    if (!added) {
-      toast("请输入 5-12 位的有效纯数字 QQ 号码（未重复）", "info");
-      return;
-    }
-    input.value = "";
-    renderReceiverChips();
-    saveReceivers(true);
-  }
-
-  function removeReceiver(qq) {
-    _receiversCache = _receiversCache.filter(function (q) { return q !== qq; });
-    renderReceiverChips();
-    saveReceivers(true);
-  }
-
-  function saveReceivers(silent) {
-    CONFIG.issue_receivers = _receiversCache.slice();
-    // 同时经由核心 setting 配置管道与专用路由保存，确保 100% 写入 config.json
-    API.setting({ key: "issue_receivers", value: _receiversCache }).then(function () {
-      if (!silent) toast("已保存问题通知接收人列表", "ok");
-    }).catch(function () {
-      return API.saveIssueReceivers({ receivers: _receiversCache });
-    }).then(function () {
-      if (!silent) toast("已保存问题通知接收人列表", "ok");
-    }).catch(function (err) {
-      toast("保存接收人失败: " + (err && err.message || err), "bad");
-    });
-  }
-
-  function renderIssuesList() {
-    var container = $("issuesListContainer");
-    if (!container) return;
-    var filter = ($("issueFilterStatus") ? $("issueFilterStatus").value : "all") || "all";
-    var list = _issuesCache.filter(function (it) {
-      if (filter === "all") return true;
-      return it.status === filter;
-    });
-
-    if (!list.length) {
-      container.innerHTML = '<div class="empty-hint" style="padding: 32px; text-align: center; color: var(--on-surface-variant); font-size: 14px;">🎉 当前筛选条件下没有问题反馈记录</div>';
-      return;
-    }
-
-    container.innerHTML = "";
-    list.forEach(function (issue) {
-      var card = document.createElement("div");
-      card.className = "issue-card";
-
-      var statusText = issue.status === "resolved" ? "🟢 已解决" : (issue.status === "closed" ? "⚪ 已关闭" : "🟡 待处理");
-      var statusClass = issue.status === "resolved" ? "resolved" : "pending";
-
-      var userStr = issue.user_name ? (escapeHtml(issue.user_name) + ' (' + escapeHtml(issue.user_id) + ')') : escapeHtml(issue.user_id || "未知");
-      var grpStr = issue.group_name ? (escapeHtml(issue.group_name) + (issue.group_id ? ' (' + escapeHtml(issue.group_id) + ')' : '')) : (issue.group_id ? ('群 ' + escapeHtml(issue.group_id)) : '私聊');
-
-      var headerHtml = '<div class="issue-header">' +
-        '<div class="issue-meta">' +
-          '<span class="issue-id-tag">' + escapeHtml(issue.id) + '</span>' +
-          '<span>🕒 ' + escapeHtml(issue.time || "") + '</span>' +
-          '<span>👤 ' + userStr + '</span>' +
-          '<span>👥 ' + grpStr + '</span>' +
-        '</div>' +
-        '<span class="issue-badge ' + statusClass + '">' + statusText + '</span>' +
-      '</div>';
-
-      var bodyHtml = '<div class="issue-text">' + escapeHtml(issue.content || "（无文字描述）") + '</div>';
-
-      var thumbsHtml = '';
-      if (Array.isArray(issue.images) && issue.images.length > 0) {
-        thumbsHtml = '<div class="issue-thumbs">';
-        issue.images.forEach(function (src) {
-          thumbsHtml += '<img class="issue-thumb-img" src="' + escapeHtml(src) + '" alt="截图" title="点击查看大图" />';
-        });
-        thumbsHtml += '</div>';
-      }
-
-      var nextActionBtn = issue.status === "resolved"
-        ? '<button type="button" class="m3-btn outlined reopen-btn">标记为待处理</button>'
-        : '<button type="button" class="m3-btn tonal resolve-btn">标记为已解决</button>';
-
-      var actionsHtml = '<div class="issue-actions">' +
-        nextActionBtn +
-        '<button type="button" class="m3-btn text del-btn" style="color: #ba1a1a;">删除记录</button>' +
-      '</div>';
-
-      card.innerHTML = headerHtml + bodyHtml + thumbsHtml + actionsHtml;
-
-      // 绑定图片点击查看大图
-      var imgs = card.querySelectorAll(".issue-thumb-img");
-      Array.prototype.forEach.call(imgs, function (img) {
-        img.addEventListener("click", function () {
-          openLightbox(img.src);
-        });
-      });
-
-      // 状态切换按钮
-      var resolveBtn = card.querySelector(".resolve-btn");
-      if (resolveBtn) {
-        resolveBtn.addEventListener("click", function () {
-          changeIssueStatus(issue.id, "resolved");
-        });
-      }
-      var reopenBtn = card.querySelector(".reopen-btn");
-      if (reopenBtn) {
-        reopenBtn.addEventListener("click", function () {
-          changeIssueStatus(issue.id, "pending");
-        });
-      }
-      // 删除按钮
-      var delBtn = card.querySelector(".del-btn");
-      if (delBtn) {
-        delBtn.addEventListener("click", function () {
-          if (confirm("确定要删除反馈记录 " + issue.id + " 吗？")) {
-            deleteIssueRecord(issue.id);
-          }
-        });
-      }
-
-      container.appendChild(card);
-    });
-  }
-
-  function changeIssueStatus(id, newStatus) {
-    API.updateIssueStatus({ id: id, status: newStatus }).then(function () {
-      toast("已更新状态为 " + (newStatus === "resolved" ? "已解决" : "待处理"), "ok");
-      for (var i = 0; i < _issuesCache.length; i++) {
-        if (_issuesCache[i].id === id) {
-          _issuesCache[i].status = newStatus;
-          break;
-        }
-      }
-      renderIssuesList();
-    }).catch(function (err) {
-      toast("更新状态失败: " + (err && err.message || err), "bad");
-    });
-  }
-
-  function deleteIssueRecord(id) {
-    API.deleteIssue({ id: id }).then(function () {
-      toast("已删除问题记录", "ok");
-      _issuesCache = _issuesCache.filter(function (it) { return it.id !== id; });
-      renderIssuesList();
-    }).catch(function (err) {
-      toast("删除失败: " + (err && err.message || err), "bad");
-    });
-  }
-
-  function openLightbox(src) {
-    var modal = $("imageLightboxModal");
-    var img = $("lightboxImage");
-    if (!modal || !img) return;
-    img.src = src;
-    modal.style.display = "flex";
-  }
-
-  function closeLightbox() {
-    var modal = $("imageLightboxModal");
-    if (modal) modal.style.display = "none";
-  }
-
-  function initIssueModule() {
-    if ($("addReceiverBtn")) {
-      $("addReceiverBtn").addEventListener("click", addReceiverFromInput);
-    }
-    if ($("newReceiverInput")) {
-      $("newReceiverInput").addEventListener("keypress", function (e) {
-        if (e.key === "Enter") addReceiverFromInput();
-      });
-    }
-    if ($("saveReceiversBtn")) {
-      $("saveReceiversBtn").addEventListener("click", function () {
-        saveReceivers(false);
-      });
-    }
-    if ($("refreshIssuesBtn")) {
-      $("refreshIssuesBtn").addEventListener("click", function () {
-        loadIssuesData(false);
-      });
-    }
-    if ($("issueFilterStatus")) {
-      $("issueFilterStatus").addEventListener("change", function () {
-        renderIssuesList();
-      });
-    }
-    if ($("lightboxCloseBtn")) {
-      $("lightboxCloseBtn").addEventListener("click", closeLightbox);
-    }
-    if ($("lightboxBackdrop")) {
-      $("lightboxBackdrop").addEventListener("click", closeLightbox);
-    }
-  }
 
     if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

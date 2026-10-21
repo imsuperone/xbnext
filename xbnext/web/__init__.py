@@ -450,54 +450,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
-    async def issues_route() -> Any:
-        try:
-            from ..features.issue import service as issue_service
-            issues = issue_service.load_issues()
-            receivers = runtime.conf.list("issue_receivers") or []
-            return _ok({"issues": issues, "receivers": receivers}, astrbot_web)
-        except Exception as exc:  # noqa: BLE001
-            return _err(exc, astrbot_web)
-
-    async def issue_receivers_route() -> Any:
-        try:
-            import re
-            payload, err = await read_json()
-            if err is not None:
-                return err
-            raw_recvs = (payload or {}).get("receivers") or []
-            if isinstance(raw_recvs, str):
-                receivers = [r.strip() for r in re.split(r"[,;，；\s]+", raw_recvs) if r.strip().isdigit()]
-            elif isinstance(raw_recvs, list):
-                receivers = [str(r).strip() for r in raw_recvs if str(r).strip().isdigit()]
-            else:
-                receivers = []
-            res = await switches.apply_conf(runtime.conf, "issue_receivers", receivers)
-            return _ok({"receivers": receivers, "result": res}, astrbot_web)
-        except Exception as exc:  # noqa: BLE001
-            return _err(exc, astrbot_web)
-
-    async def issue_status_route() -> Any:
-        try:
-            from ..features.issue import service as issue_service
-            payload, err = await read_json()
-            if err is not None:
-                return err
-            issue_id = str((payload or {}).get("id") or "").strip()
-            status = str((payload or {}).get("status") or "resolved").strip()
-            issues = issue_service.load_issues()
-            found = False
-            for it in issues:
-                if it.get("id") == issue_id:
-                    it["status"] = status
-                    found = True
-                    break
-            if found:
-                issue_service.save_issues(issues)
-                return _ok({"id": issue_id, "status": status}, astrbot_web)
-            return _err(f"未找到编号为 {issue_id} 的问题", astrbot_web)
-        except Exception as exc:  # noqa: BLE001
-            return _err(exc, astrbot_web)
 
     async def version_route() -> Any:
         return _ok({
@@ -507,23 +459,9 @@ def register_web_api(context: Any, runtime: Any) -> bool:
             "plugin": PLUGIN_NAME,
         }, astrbot_web)
 
-    async def issue_delete_route() -> Any:
-        try:
-            from ..features.issue import service as issue_service
-            payload, err = await read_json()
-            if err is not None:
-                return err
-            issue_id = str((payload or {}).get("id") or "").strip()
-            issues = issue_service.load_issues()
-            new_issues = [it for it in issues if it.get("id") != issue_id]
-            issue_service.save_issues(new_issues)
-            return _ok({"id": issue_id, "deleted": True}, astrbot_web)
-        except Exception as exc:  # noqa: BLE001
-            return _err(exc, astrbot_web)
-
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
-        register(f"{base}/version", version_route, ["GET"], "XBNEXT ???????")
+        register(f"{base}/version", version_route, ["GET"], "XBNEXT 版本信息")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
         register(f"{base}/setting", setting, ["POST"], "XBNEXT 写入配置项")
         register(f"{base}/profiles", profiles, ["GET"], "XBNEXT 用户档案列表")
@@ -535,10 +473,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         register(f"{base}/updater/check", updater_check_route, ["POST"], "XBNEXT 检查插件更新")
         register(f"{base}/updater/apply", updater_apply_route, ["POST"], "XBNEXT 执行一键更新")
         register(f"{base}/updater/test_notify", updater_test_notify_route, ["POST"], "XBNEXT 发送测试更新通知")
-        register(f"{base}/issues", issues_route, ["GET"], "XBNEXT 用户问题列表")
-        register(f"{base}/issue_receivers", issue_receivers_route, ["POST"], "XBNEXT 配置问题接收人")
-        register(f"{base}/issue_status", issue_status_route, ["POST"], "XBNEXT 变更问题状态")
-        register(f"{base}/issue_delete", issue_delete_route, ["POST"], "XBNEXT 删除问题反馈")
     except Exception:  # noqa: BLE001  重复注册等，交给调用方记日志
         return False
     return True
