@@ -13,6 +13,7 @@ import re
 import ssl
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_TARGET_PLUGINS = [
@@ -194,20 +195,18 @@ def compare_versions(v1: str, v2: str) -> int:
 
 
 def _get_local_version(p: Dict[str, Any], local_dir: str) -> str:
-    """获取本地插件版本，优先从 OpenAPI 插件信息读取，次选本地 metadata.yaml。"""
-    v = str(p.get("version") or "").strip()
-    if v and v != "未知":
-        return v
+    """获取本地插件真实版本：优先从本地实际 metadata.yaml 磁盘文件读取，次选 OpenAPI 缓存信息。"""
     if local_dir and os.path.isdir(local_dir):
         meta_file = os.path.join(local_dir, "metadata.yaml")
         if os.path.isfile(meta_file):
             try:
                 with open(meta_file, "r", encoding="utf-8") as f:
                     v_meta = extract_version_from_yaml(f.read())
-                    if v_meta:
+                    if v_meta and v_meta != "未知":
                         return v_meta
             except Exception:
                 pass
+    v = str(p.get("version") or "").strip()
     return v or "未知"
 
 
@@ -471,12 +470,16 @@ class UpdaterService:
             repo_url = p.get("repo") or install_src.get("repo") or ""
             root_dir = install_src.get("root_dir_name") or name
 
-            # 探测本地目录（通常在 data/plugins/<root_dir>）
+            # 探测本地目录（包含同级目录、插件根目录等）
             local_dir = ""
-            for base_dir in ("data/plugins", "plugins", ".", ".."):
+            _plugins_container = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+            search_bases = (_plugins_container, "data/plugins", "plugins", ".", "..")
+            for base_dir in search_bases:
+                if not os.path.isdir(base_dir):
+                    continue
                 for cand in (root_dir, name, norm_name):
                     c_path = os.path.join(base_dir, cand)
-                    if os.path.isdir(c_path):
+                    if os.path.isdir(c_path) and os.path.isfile(os.path.join(c_path, "metadata.yaml")):
                         local_dir = c_path
                         break
                 if local_dir:
@@ -494,15 +497,15 @@ class UpdaterService:
                 if cmp_res < 0:
                     is_update_available = True
                     has_new_version = True
-                    status_text = f"{format_version(local_ver)} → {format_version(remote_ver)}"
+                    status_text = f"可更新 (本地: {format_version(local_ver)} → 远端: {format_version(remote_ver)})"
                 elif cmp_res == 0:
-                    status_text = f"最新 ({format_version(local_ver)})"
+                    status_text = f"最新 (本地: {format_version(local_ver)} | 远端: {format_version(remote_ver)})"
                 else:
-                    status_text = f"较新 ({format_version(local_ver)})"
+                    status_text = f"最新 (本地: {format_version(local_ver)} | 远端: {format_version(remote_ver)})"
             elif remote_ver:
-                status_text = f"云端 {format_version(remote_ver)}"
-            elif local_ver:
-                status_text = f"本地 {format_version(local_ver)}"
+                status_text = f"远端: {format_version(remote_ver)} (本地未知)"
+            elif local_ver and local_ver != "未知":
+                status_text = f"最新 (本地: {format_version(local_ver)})"
             else:
                 status_text = "未知版本"
 
