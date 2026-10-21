@@ -316,8 +316,8 @@
   "enable_issue": {
     "type": "bool",
     "description": "用户问题反馈功能开关",
-    "hint": "开启后用户可通过 /xbnext issue 提交问题与截图",
-    "default": true
+    "hint": "开启后用户可通过 /xbnext issue 提交问题与截图；默认关闭以防止恶意滥用",
+    "default": false
   },
   "issue_receivers": {
     "type": "list",

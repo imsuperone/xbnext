@@ -2160,9 +2160,10 @@
   var _issuesCache = [];
   var _receiversCache = [];
 
+  window.loadIssuesData = loadIssuesData;
   function loadIssuesData(silent) {
     if (!silent) toast("正在加载问题反馈数据...", "info");
-    return window.api.issues().then(function (res) {
+    return API.issues().then(function (res) {
       if (!res) return;
       _issuesCache = Array.isArray(res.issues) ? res.issues : [];
       _receiversCache = Array.isArray(res.receivers) ? res.receivers.slice() : [];
@@ -2170,6 +2171,10 @@
       renderIssuesList();
       if (!silent) toast("问题反馈数据已更新", "ok");
     }).catch(function (err) {
+      var c = $("issuesListContainer");
+      if (c) {
+        c.innerHTML = '<div class="empty-hint" style="padding: 32px; text-align: center; color: var(--error, #e53935); font-size: 14px;">⚠️ 加载问题反馈失败：' + escapeHtml(err && err.message || String(err)) + '<br><button type="button" class="btn" style="margin-top: 12px; font-size: 13px;" onclick="loadIssuesData(false)">点击重试</button></div>';
+      }
       toast("加载问题反馈失败: " + (err && err.message || err), "bad");
     });
   }
@@ -2226,7 +2231,7 @@
   }
 
   function saveReceivers(silent) {
-    window.api.saveIssueReceivers({ receivers: _receiversCache }).then(function () {
+    API.saveIssueReceivers({ receivers: _receiversCache }).then(function () {
       if (!silent) toast("已保存问题通知接收人列表", "ok");
     }).catch(function (err) {
       toast("保存接收人失败: " + (err && err.message || err), "bad");
@@ -2326,7 +2331,7 @@
   }
 
   function changeIssueStatus(id, newStatus) {
-    window.api.updateIssueStatus({ id: id, status: newStatus }).then(function () {
+    API.updateIssueStatus({ id: id, status: newStatus }).then(function () {
       toast("已更新状态为 " + (newStatus === "resolved" ? "已解决" : "待处理"), "ok");
       for (var i = 0; i < _issuesCache.length; i++) {
         if (_issuesCache[i].id === id) {
@@ -2341,7 +2346,7 @@
   }
 
   function deleteIssueRecord(id) {
-    window.api.deleteIssue({ id: id }).then(function () {
+    API.deleteIssue({ id: id }).then(function () {
       toast("已删除问题记录", "ok");
       _issuesCache = _issuesCache.filter(function (it) { return it.id !== id; });
       renderIssuesList();

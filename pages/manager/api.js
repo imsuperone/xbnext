@@ -252,4 +252,5 @@
     channel: function () { return _channel; },
     prefix: function () { return _WORKING_PREFIX; }
   };
+  global.api = global.XbnextApi;
 })(window);
