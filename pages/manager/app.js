@@ -562,6 +562,15 @@
     applyConditions();
     renderPlatformManager();
     renderUpdaterPlugins();
+    // 初始化接收人 QQ 缓存并渲染，确保开屏即见已保存的管理 QQ
+    if (CONFIG.issue_receivers) {
+      if (Array.isArray(CONFIG.issue_receivers)) {
+        _receiversCache = CONFIG.issue_receivers.slice();
+      } else if (typeof CONFIG.issue_receivers === "string") {
+        _receiversCache = CONFIG.issue_receivers.split(/[,;\s]+/).filter(Boolean);
+      }
+      renderReceiverChips();
+    }
   }
 
   /**
@@ -2166,7 +2175,11 @@
     return API.issues().then(function (res) {
       if (!res) return;
       _issuesCache = Array.isArray(res.issues) ? res.issues : [];
-      _receiversCache = Array.isArray(res.receivers) ? res.receivers.slice() : [];
+      if (Array.isArray(res.receivers) && res.receivers.length) {
+        _receiversCache = res.receivers.slice();
+      } else if ((!_receiversCache || !_receiversCache.length) && Array.isArray(CONFIG.issue_receivers)) {
+        _receiversCache = CONFIG.issue_receivers.slice();
+      }
       renderReceiverChips();
       renderIssuesList();
       if (!silent) toast("问题反馈数据已更新", "ok");
@@ -2175,6 +2188,7 @@
       if (c) {
         c.innerHTML = '<div class="empty-hint" style="padding: 32px; text-align: center; color: var(--error, #e53935); font-size: 14px;">⚠️ 加载问题反馈失败：' + escapeHtml(err && err.message || String(err)) + '<br><button type="button" class="btn" style="margin-top: 12px; font-size: 13px;" onclick="loadIssuesData(false)">点击重试</button></div>';
       }
+      renderReceiverChips();
       toast("加载问题反馈失败: " + (err && err.message || err), "bad");
     });
   }
@@ -2231,7 +2245,13 @@
   }
 
   function saveReceivers(silent) {
-    API.saveIssueReceivers({ receivers: _receiversCache }).then(function () {
+    CONFIG.issue_receivers = _receiversCache.slice();
+    // 同时经由核心 setting 配置管道与专用路由保存，确保 100% 写入 config.json
+    API.setting({ key: "issue_receivers", value: _receiversCache }).then(function () {
+      if (!silent) toast("已保存问题通知接收人列表", "ok");
+    }).catch(function () {
+      return API.saveIssueReceivers({ receivers: _receiversCache });
+    }).then(function () {
       if (!silent) toast("已保存问题通知接收人列表", "ok");
     }).catch(function (err) {
       toast("保存接收人失败: " + (err && err.message || err), "bad");

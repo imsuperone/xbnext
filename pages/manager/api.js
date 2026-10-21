@@ -16,7 +16,7 @@
   "use strict";
 
   var PLUGIN_ID = "astrbot_plugin_xbnext";
-  var BRIDGE_TIMEOUT_MS = 30000;
+  var BRIDGE_TIMEOUT_MS = 3500;
   var HTTP_TIMEOUT_MS = 25000;
 
   var API_PREFIXES = [
@@ -208,9 +208,15 @@
     if (b && typeof b.apiPost === "function") {
       var p;
       try { p = b.apiPost(endpoint, data); }
-      catch (e) { return Promise.reject(e); }
-      _channel = "bridge";
-      return withTimeout(Promise.resolve(p), BRIDGE_TIMEOUT_MS, endpoint).then(unwrap);
+      catch (e) { return postWithProbe(endpoint, data); }
+      return withTimeout(Promise.resolve(p), BRIDGE_TIMEOUT_MS, endpoint).then(
+        function (res) { _channel = "bridge"; return unwrap(res); },
+        function () {
+          // bridge 超时或 POST 抛错时，平滑降级到 HTTP 探测管道
+          _channel = "http";
+          return postWithProbe(endpoint, data);
+        }
+      );
     }
     // 没有 bridge 或 bridge 只暴露了 apiGet → 走 HTTP（前缀先用 GET ping 探好）
     return postWithProbe(endpoint, data);
