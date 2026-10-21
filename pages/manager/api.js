@@ -226,6 +226,7 @@
     PLUGIN_ID: PLUGIN_ID,
     getBridge: getBridge,
     ping: function () { return getJson("ping", null); },
+    version: function () { return getJson("version", null); },
     state: function () { return getJson("state", null); },
     /** 写单个配置项：setting({key, value}) */
     setting: function (payload) { return postJson("setting", payload); },

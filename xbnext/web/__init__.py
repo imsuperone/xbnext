@@ -499,6 +499,14 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         except Exception as exc:  # noqa: BLE001
             return _err(exc, astrbot_web)
 
+    async def version_route() -> Any:
+        return _ok({
+            "ok": True,
+            "status": "ok",
+            "version": __version__,
+            "plugin": PLUGIN_NAME,
+        }, astrbot_web)
+
     async def issue_delete_route() -> Any:
         try:
             from ..features.issue import service as issue_service
@@ -515,6 +523,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     try:
         register(f"{base}/ping", ping, ["GET"], "XBNEXT 存活探测")
+        register(f"{base}/version", version_route, ["GET"], "XBNEXT ???????")
         register(f"{base}/state", state, ["GET"], "XBNEXT 运行状态")
         register(f"{base}/setting", setting, ["POST"], "XBNEXT 写入配置项")
         register(f"{base}/profiles", profiles, ["GET"], "XBNEXT 用户档案列表")
