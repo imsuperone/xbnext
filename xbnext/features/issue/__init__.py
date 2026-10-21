@@ -72,8 +72,8 @@ class IssueFeature(Feature):
         platform = platform_of(event) or "aiocqhttp"
 
         # 2. 文本长度检查（防止空字符或无意义的单一字符刷屏）
-        if not images and len(text_content) < 4:
-            return "⚠️ 反馈内容过短，请至少提供 4 个字符的问题描述（或附带具体截图说明）。"
+        if not images and len(text_content) < 2:
+            return "⚠️ 反馈内容过短，请至少提供 2 个字符的问题描述（或附带具体截图说明）。"
 
         if len(text_content) > 500:
             text_content = text_content[:500] + "（字数超限截断）"

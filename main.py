@@ -110,7 +110,7 @@ class XbnextPlugin(Star):
     # 指令
     # ------------------------------------------------------------------
     @filter.command("xbnext")
-    async def xbnext(self, event: AstrMessageEvent) -> None:
+    async def xbnext(self, event: AstrMessageEvent):
         """XBNEXT 统一指令入口：``/xbnext [status|profile ...]``。
 
         **单指令分发**（xbdoc / xbimg 同款）：菜单、状态、档案、未知提示
@@ -120,7 +120,11 @@ class XbnextPlugin(Star):
         """
         reply = await self.runtime.dispatch(event)
         if reply:
-            await event.send(event.plain_result(reply))
+            try:
+                res = event.plain_result(reply)
+            except Exception:
+                res = reply
+            yield res
 
     @filter.llm_tool(name="xbnext_save_profile")
     async def xbnext_save_profile(
