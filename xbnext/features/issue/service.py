@@ -74,10 +74,20 @@ def _save_local_image_copy(src_path_or_url: str) -> str:
         # 本地文件
         p = Path(src.replace("file:///", "").replace("file://", ""))
         if p.is_file():
-            suffix = p.suffix or ".png"
+            suffix = (p.suffix or ".png").lower()
             dest_name = f"issue_{int(time.time()*1000)}_{os.urandom(3).hex()}{suffix}"
             dest = _MEDIA_DIR / dest_name
             shutil.copy2(p, dest)
+            # 文件小于 3MB 时转换为 base64 data URI，确保 Web 管理端免路由直接渲染大图
+            try:
+                if p.stat().st_size <= 3 * 1024 * 1024:
+                    import base64
+                    mime = "image/png" if suffix in (".png",) else ("image/jpeg" if suffix in (".jpg", ".jpeg") else "image/webp")
+                    with open(p, "rb") as bf:
+                        b64 = base64.b64encode(bf.read()).decode("ascii")
+                        return f"data:{mime};base64,{b64}"
+            except Exception:
+                pass
             return f"/astrbot_plugin_xbnext/issue_media/{dest_name}"
         # http/https 外链保持原样（或记录外链）
         if src.startswith(("http://", "https://", "base64://", "/astrbot_plugin_xbnext/")):
