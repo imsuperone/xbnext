@@ -289,11 +289,11 @@ class UpdaterService:
     @property
     def schedule_enabled(self) -> bool:
         if self.conf is None:
-            return True
+            return False
         getter = getattr(self.conf, "get", None)
         if callable(getter):
             return bool(getter("enable_updater_schedule", False))
-        return True
+        return False
 
 
     @property
@@ -322,11 +322,11 @@ class UpdaterService:
     @property
     def notify_enabled(self) -> bool:
         if self.conf is None:
-            return True
+            return False
         getter = getattr(self.conf, "get", None)
         if callable(getter):
             return bool(getter("enable_update_notify", False))
-        return True
+        return False
 
     @property
     def notify_qq(self) -> str:
