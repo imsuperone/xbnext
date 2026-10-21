@@ -263,8 +263,8 @@
   "enable_updater_schedule": {
     "type": "bool",
     "description": "每日定时自动更新",
-    "hint": "每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认开启。",
-    "default": true,
+    "hint": "每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认关闭。",
+    "default": false,
     "collapsed": true,
     "condition": {
       "enable_updater": true
@@ -284,8 +284,8 @@
   "enable_update_notify": {
     "type": "bool",
     "description": "更新主动通知 (QQ私聊)",
-    "hint": "定时更新任务完成时，若有插件更新成功，自动向指定 QQ 发送更新明细报告；无更新时完全静默不打扰。默认开启。",
-    "default": true,
+    "hint": "定时更新任务完成时，若有插件更新成功，自动向指定 QQ 发送更新明细报告；无更新时完全静默不打扰。默认关闭。",
+    "default": false,
     "collapsed": true,
     "condition": {
       "enable_updater": true

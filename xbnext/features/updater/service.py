@@ -292,7 +292,7 @@ class UpdaterService:
             return True
         getter = getattr(self.conf, "get", None)
         if callable(getter):
-            return bool(getter("enable_updater_schedule", True))
+            return bool(getter("enable_updater_schedule", False))
         return True
 
 
@@ -325,7 +325,7 @@ class UpdaterService:
             return True
         getter = getattr(self.conf, "get", None)
         if callable(getter):
-            return bool(getter("enable_update_notify", True))
+            return bool(getter("enable_update_notify", False))
         return True
 
     @property

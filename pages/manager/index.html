@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.19" />
+  <link rel="stylesheet" href="./style.css?v=0.2.20" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.19">0.2.19</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.20">0.2.20</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -370,7 +370,7 @@
           <div class="card-row-split" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
               <label class="form-label" style="margin-bottom: 2px;">每日定时自动更新</label>
-              <p class="card-desc" style="margin: 0; font-size: 12px;">每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认开启。</p>
+              <p class="card-desc" style="margin: 0; font-size: 12px;">每天定时在设定的时间点（默认 04:30）自动检测并升级选定插件。如无更新则完全静默，有更新且升级完成自动向管理员推送通知报告。默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_updater_schedule" data-key="enable_updater_schedule" />
@@ -398,7 +398,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">新版本主动推送通知 (QQ 私聊)</h2>
-              <p class="card-desc">当定时更新任务完成时，如果有插件更新成功，自动向设定的 QQ 号发送更新明细报告；无更新时完全静默不打扰。默认开启。</p>
+              <p class="card-desc">当定时更新任务完成时，如果有插件更新成功，自动向设定的 QQ 号发送更新明细报告；无更新时完全静默不打扰。默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_update_notify" data-key="enable_update_notify" />
@@ -668,37 +668,6 @@
         </div>
       </section>
 
-      <!-- ==================== Tab 5: 使用指南 ==================== -->
-      <section class="settings-section" data-section="tab-guide">
-        <div class="m3-card">
-          <h2 class="card-title">指令</h2>
-          <p class="card-desc">指令只做转发，逻辑在 <code>xbnext/features/</code> 里。</p>
-          <div class="kv-list">
-            <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 KV 可用性</span></div>
-            <div class="kv-row"><span class="kv-k">/xbnext profile</span><span class="kv-v">查看自己的档案（或加 <code>@群友</code> 查看他人）</span></div>
-            <div class="kv-row"><span class="kv-k">… 小明 / 小明|学生</span><span class="kv-v">极简一键设称呼或「称呼|自述」</span></div>
-            <div class="kv-row"><span class="kv-k">… 称呼 小明</span><span class="kv-v">改称呼（别名：名字 / 昵称 / 叫我小明）</span></div>
-            <div class="kv-row"><span class="kv-k">… 自述 &lt;内容&gt;</span><span class="kv-v">改自述（别名：信息 / 描述 / 我是…）</span></div>
-            <div class="kv-row"><span class="kv-k">… 清空</span><span class="kv-v">删除自己的全部档案</span></div>
-          </div>
-          <span class="field-hint">支持<strong>对话直接创建</strong>：开启「用户档案注入」后，用户在聊天中直接对机器人说「以后叫我阿光，我是做后端的」，AI 会自动调用工具保存档案。</span>
-          <span class="field-hint">档案<strong>按群隔离</strong>：同一个人在不同群各存一份，私聊单独一份；回执抬头会标出当前范围（<code>群 123456</code> / <code>私聊</code>）。</span>
-          <span class="field-hint">控制台的「用户档案」页签按「平台 · 群」分组分类列出并编辑<strong>所有人</strong>的档案，支持一键快选群聊与近期发言群友。</span>
-        </div>
-
-        <div class="m3-card">
-          <h2 class="card-title">新增一个功能</h2>
-          <p class="card-desc">扩展点只有一处，详见 <code>xbnext/features/base.py</code> 顶部注释。</p>
-          <div class="kv-list">
-            <div class="kv-row"><span class="kv-k">①</span><span class="kv-v">建 <code>features/my_thing/</code>，写 Feature 子类</span></div>
-            <div class="kv-row"><span class="kv-k">②</span><span class="kv-v">填 key / name / description / order，实现 on_llm_request</span></div>
-            <div class="kv-row"><span class="kv-k">③</span><span class="kv-v">在 <code>_conf_schema.json</code> 加 <code>enable_my_thing</code></span></div>
-            <div class="kv-row"><span class="kv-k">④</span><span class="kv-v">在 <code>features/__init__.py</code> 的 FEATURES 加一行</span></div>
-            <div class="kv-row"><span class="kv-k">⑤</span><span class="kv-v">在 <code>tests/</code> 加测试</span></div>
-          </div>
-          <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。要暴露子指令（像 <code>/xbnext profile</code>）就再填 <code>command</code> 并在 <code>main.py</code> 加一行静态转发。</span>
-        </div>
-
       <!-- ==================== Tab: 问题反馈 ==================== -->
       <section class="settings-section" data-section="tab-issue">
         <div class="sub-group-header">📮 用户问题提交与管理</div>
@@ -752,6 +721,39 @@
         </div>
       </section>
 
+      <!-- ==================== Tab 5: 使用指南 ==================== -->
+      <section class="settings-section" data-section="tab-guide">
+        <div class="m3-card">
+          <h2 class="card-title">指令</h2>
+          <p class="card-desc">指令只做转发，逻辑在 <code>xbnext/features/</code> 里。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">/xbnext status</span><span class="kv-v">查看各功能开关与 KV 可用性</span></div>
+            <div class="kv-row"><span class="kv-k">/xbnext profile</span><span class="kv-v">查看自己的档案（或加 <code>@群友</code> 查看他人）</span></div>
+            <div class="kv-row"><span class="kv-k">… 小明 / 小明|学生</span><span class="kv-v">极简一键设称呼或「称呼|自述」</span></div>
+            <div class="kv-row"><span class="kv-k">… 称呼 小明</span><span class="kv-v">改称呼（别名：名字 / 昵称 / 叫我小明）</span></div>
+            <div class="kv-row"><span class="kv-k">… 自述 &lt;内容&gt;</span><span class="kv-v">改自述（别名：信息 / 描述 / 我是…）</span></div>
+            <div class="kv-row"><span class="kv-k">… 清空</span><span class="kv-v">删除自己的全部档案</span></div>
+          </div>
+          <span class="field-hint">支持<strong>对话直接创建</strong>：开启「用户档案注入」后，用户在聊天中直接对机器人说「以后叫我阿光，我是做后端的」，AI 会自动调用工具保存档案。</span>
+          <span class="field-hint">档案<strong>按群隔离</strong>：同一个人在不同群各存一份，私聊单独一份；回执抬头会标出当前范围（<code>群 123456</code> / <code>私聊</code>）。</span>
+          <span class="field-hint">控制台的「用户档案」页签按「平台 · 群」分组分类列出并编辑<strong>所有人</strong>的档案，支持一键快选群聊与近期发言群友。</span>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">新增一个功能</h2>
+          <p class="card-desc">扩展点只有一处，详见 <code>xbnext/features/base.py</code> 顶部注释。</p>
+          <div class="kv-list">
+            <div class="kv-row"><span class="kv-k">①</span><span class="kv-v">建 <code>features/my_thing/</code>，写 Feature 子类</span></div>
+            <div class="kv-row"><span class="kv-k">②</span><span class="kv-v">填 key / name / description / order，实现 on_llm_request</span></div>
+            <div class="kv-row"><span class="kv-k">③</span><span class="kv-v">在 <code>_conf_schema.json</code> 加 <code>enable_my_thing</code></span></div>
+            <div class="kv-row"><span class="kv-k">④</span><span class="kv-v">在 <code>features/__init__.py</code> 的 FEATURES 加一行</span></div>
+            <div class="kv-row"><span class="kv-k">⑤</span><span class="kv-v">在 <code>tests/</code> 加测试</span></div>
+          </div>
+          <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。要暴露子指令（像 <code>/xbnext profile</code>）就再填 <code>command</code> 并在 <code>main.py</code> 加一行静态转发。</span>
+        </div>
+
+
+
         <div class="m3-card">
           <h2 class="card-title">致谢与借鉴</h2>
           <p class="card-desc">本插件的设计与实现借鉴了以下项目：</p>
@@ -777,7 +779,7 @@
 
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.19"></script>
-  <script src="./app.js?v=0.2.19"></script>
+  <script src="./api.js?v=0.2.20"></script>
+  <script src="./app.js?v=0.2.20"></script>
 </body>
 </html>
