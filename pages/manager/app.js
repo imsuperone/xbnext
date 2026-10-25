@@ -300,6 +300,7 @@
     } else if (target === "tab-updater" && !_tabLoaded["tab-updater"]) {
       _tabLoaded["tab-updater"] = true;
       fetchUpdaterPlugins(true);
+    }
   }
 
   function initTabs() {

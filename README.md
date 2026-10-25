@@ -1,4 +1,4 @@
-# XBNEXT v0.2.24
+# XBNEXT v0.2.25
 
 > AstrBot 对话质量修正插件：修正引用、表情与身份指向等对话细节，附 Web 控制台。
 
@@ -9,7 +9,7 @@
 本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一个松耦合、异步、支持多消息平台部署，具有易用的插件系统和完善的大语言模型（LLM）接入功能的聊天机器人及开发框架，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
 
 - 插件 ID：`astrbot_plugin_xbnext`
-- 当前版本：`v0.2.24`
+- 当前版本：`v0.2.25`
 - 运行要求：AstrBot `>=3.4.0`，平台 `aiocqhttp`
 - 仓库：https://github.com/imsuperone/xbnext
 
