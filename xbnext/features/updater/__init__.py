@@ -336,7 +336,8 @@ class UpdaterFeature(Feature):
             await asyncio.sleep(30)
             while True:
                 conf = getattr(self._runtime, "conf", None)
-                updater = UpdaterService(conf)
+                ctx = getattr(self._runtime, "context", None)
+                updater = UpdaterService(conf, context=ctx)
                 sched_time = updater.schedule_time
 
                 # 计算到下一次 schedule_time（默认 04:30）的剩余秒数
@@ -348,13 +349,13 @@ class UpdaterFeature(Feature):
                     await asyncio.sleep(step)
                     total_delay -= step
                     cur_conf = getattr(self._runtime, "conf", None)
-                    cur_updater = UpdaterService(cur_conf)
+                    cur_updater = UpdaterService(cur_conf, context=ctx)
                     if cur_updater.schedule_time != sched_time:
                         sched_time = cur_updater.schedule_time
                         total_delay = _calc_delay(sched_time)
 
                 conf = getattr(self._runtime, "conf", None)
-                updater = UpdaterService(conf)
+                updater = UpdaterService(conf, context=ctx)
                 if not (updater.enabled and updater.schedule_enabled):
                     await asyncio.sleep(70)
                     continue
@@ -405,7 +406,8 @@ class UpdaterFeature(Feature):
             return "⚠️ 权限不足：插件检查与更新指令仅限 AstrBot 管理员使用。"
 
         sub_arg = (args[0] if args else "").strip().lower()
-        updater = UpdaterService(conf)
+        ctx = getattr(self._runtime, "context", None)
+        updater = UpdaterService(conf, context=ctx)
 
         if not updater.enabled:
             return (

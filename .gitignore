@@ -8,10 +8,27 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets & credentials (strict privacy protection)
+.env
+.env.*
+*.key
+*.pem
+*.cert
+*.crt
+*.token
+*.secret
+credentials.json
+auth.json
+secrets.json
+webdav_secret.json
+**/webdav_secret.json
+
 # 日志与本地数据
 *.log
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 data/
 
@@ -31,6 +48,7 @@ backups/
 .vscode/
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # 本地 AI 文档与测试不进 GitHub
 aidoc/

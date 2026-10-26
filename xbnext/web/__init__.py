@@ -362,7 +362,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
     async def updater_plugins_route() -> Any:
         try:
             from ..features.updater.service import UpdaterService, get_plugin_display_name, DEFAULT_TARGET_PLUGINS
-            updater = UpdaterService(runtime.conf)
+            updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
             ok, installed, err_msg = await updater.fetch_installed_plugins()
             if not ok:
                 return _err(err_msg, astrbot_web)
@@ -381,6 +381,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
                     "nickname": nick,
                     "version": str(p.get("version") or ""),
                     "selected": is_selected,
+                    "is_market": bool(p.get("is_market", False)),
                 })
             return _ok(res, astrbot_web)
         except Exception as exc:  # noqa: BLE001
@@ -389,7 +390,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
     async def updater_check_route() -> Any:
         try:
             from ..features.updater.service import UpdaterService
-            updater = UpdaterService(runtime.conf)
+            updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
             payload, _ = await read_json()
             names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
             res = await updater.check_updates(names)
@@ -402,7 +403,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
     async def updater_apply_route() -> Any:
         try:
             from ..features.updater.service import UpdaterService
-            updater = UpdaterService(runtime.conf)
+            updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
             payload, _ = await read_json()
             names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
             force = bool((payload or {}).get("force", False)) if isinstance(payload, dict) else False

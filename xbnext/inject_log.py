@@ -118,10 +118,11 @@ async def load(kv: Any) -> List[Dict[str, Any]]:
     return [x for x in items if isinstance(x, dict)][:MAX_ITEMS]
 
 
-async def record(kv: Any, entry: Dict[str, Any]) -> bool:
+async def record(kv: Any, entry: Dict[str, Any], *, async_flush: bool = False) -> bool:
     """插到队首、截断到上限、写 KV；失败返回 ``False`` 不冒泡。
 
     全程持模块锁 —— 读-改-写不是原子的，并发收尾会互相覆盖丢记录。
+    支持 ``async_flush=True``，内存缓存即时生效，实际磁盘写入交由后台任务异步执行。
     """
     if kv is None:
         return False
@@ -130,6 +131,12 @@ async def record(kv: Any, entry: Dict[str, Any]) -> bool:
             items = await load(kv)
             items.insert(0, dict(entry))
             del items[MAX_ITEMS:]
-            return bool(await kv.set(KEY, {"items": items}))
+            setter = getattr(kv, "set", None)
+            if callable(setter):
+                try:
+                    return bool(await kv.set(KEY, {"items": items}, async_flush=async_flush))
+                except TypeError:
+                    return bool(await kv.set(KEY, {"items": items}))
+            return False
     except Exception:  # noqa: BLE001
         return False

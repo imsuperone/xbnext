@@ -275,11 +275,11 @@ class XbnextRuntime:
             self._info("本轮 " + "、".join(actions))
 
         # P16 · 注入记录：把发给模型的最终态存一份，供 WebUI「运行状态」
-        # 底部的「提示词注入记录」入口查看。KV 不可用时照常降级进内存缓存
-        # （本期可读、重启丢），只有 debug_log 打开才吭声 —— 不给日志加噪。
+        # 底部的「提示词注入记录」入口查看。采用 async_flush=True，内存缓存即时更新，
+        # 底层 KV 落盘交由后台任务异步执行，彻底消除请求发往模型前的磁盘 IO 阻塞（首字 TTFT 核心优化）。
         try:
             entry = inject_log.build_entry(event, actions, req)
-            if not await inject_log.record(self.kv, entry) and self.conf.bool("debug_log"):
+            if not await inject_log.record(self.kv, entry, async_flush=True) and self.conf.bool("debug_log"):
                 self._debug("注入记录未落盘（KV 不可用，本期仍可查看）")
         except Exception as exc:  # noqa: BLE001
             if self.conf.bool("debug_log"):

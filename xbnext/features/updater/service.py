@@ -11,10 +11,22 @@ import json
 import os
 import re
 import ssl
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+_MARKET_INDEX: Dict[str, Dict[str, Any]] = {}
+_MARKET_CACHE_TS: float = 0.0
+_MARKET_CACHE_TTL: float = 900.0  # 15 分钟
+
+
+def clear_market_cache() -> None:
+    """清空市场索引缓存（测试与调试辅助）。"""
+    global _MARKET_INDEX, _MARKET_CACHE_TS
+    _MARKET_INDEX = {}
+    _MARKET_CACHE_TS = 0.0
 
 DEFAULT_TARGET_PLUGINS = [
     "astrbot_plugin_xbimg",
@@ -49,9 +61,12 @@ def get_plugin_display_name(p: Dict[str, Any], local_dir: str = "") -> str:
             except Exception:
                 pass
 
-    # 2. 主动探测标准路径及同级开发工作区
+    # 2. 主动探测标准路径、同级开发工作区及容器目录
     if not disp:
-        for b in ("data/plugins", "plugins", ".", ".."):
+        _plugins_container = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+        for b in (_plugins_container, "data/plugins", "plugins", ".", ".."):
+            if not os.path.isdir(b):
+                continue
             for cand in (name, norm_name, name.replace("astrbot_plugin_", "")):
                 if not cand:
                     continue
@@ -66,6 +81,14 @@ def get_plugin_display_name(p: Dict[str, Any], local_dir: str = "") -> str:
                         pass
             if disp:
                 break
+
+    # 3. 尝试从已缓存的官方市场索引中读取 display_name
+    if not disp and _MARKET_INDEX:
+        m_item = _MARKET_INDEX.get(name) or _MARKET_INDEX.get(norm_name)
+        if not m_item and name.startswith("astrbot_plugin_"):
+            m_item = _MARKET_INDEX.get(name.replace("astrbot_plugin_", ""))
+        if m_item and isinstance(m_item, dict):
+            disp = str(m_item.get("display_name") or "").strip()
 
     if disp and disp != name:
         return f"{disp} ({name})"
@@ -210,17 +233,39 @@ def _get_local_version(p: Dict[str, Any], local_dir: str) -> str:
     return v or "未知"
 
 
-def _query_remote_version(repo_url: str, p: Dict[str, Any]) -> str:
-    """根据 github 仓库地址或 online_version 获取远程最新版本号。"""
+def _query_remote_version(
+    repo_url: str,
+    p: Dict[str, Any],
+    market_index: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str]:
+    """根据 online_version、AstrBot 官方市场或 GitHub 仓库地址获取远程最新版本号与仓库地址。
+    返回 (remote_version, resolved_repo_url)。
+    """
     online_ver = str(p.get("online_version") or "").strip()
     if online_ver:
-        return online_ver
+        return online_ver, repo_url
 
+    name = str(p.get("name") or "").strip()
+    norm_name = normalize_plugin_name(name)
+
+    # 1. 优先从 AstrBot 官方市场 Registry 索引获取（零网络等待，规避 GitHub 阻断）
+    if market_index:
+        m_item = market_index.get(name) or market_index.get(norm_name)
+        if not m_item and name.startswith("astrbot_plugin_"):
+            m_item = market_index.get(name.replace("astrbot_plugin_", ""))
+        if m_item and isinstance(m_item, dict):
+            m_ver = str(m_item.get("version") or "").strip()
+            m_repo = str(m_item.get("repo") or "").strip()
+            if m_ver:
+                return m_ver, (m_repo or repo_url)
+
+    # 2. 备选 GitHub 仓库检测
     if not repo_url or "github.com" not in repo_url:
-        return ""
+        return "", repo_url
+
     match = re.search(r"github\.com[/:]([^/]+)/([^/\.]+)", repo_url)
     if not match:
-        return ""
+        return "", repo_url
     owner, repo = match.group(1), match.group(2)
 
     headers = {
@@ -228,35 +273,36 @@ def _query_remote_version(repo_url: str, p: Dict[str, Any]) -> str:
         "Accept": "application/vnd.github.v3.raw",
     }
 
-    # 1. 优先 GitHub Contents API 直出 raw YAML
+    # 2.1 优先 GitHub Contents API
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/metadata.yaml"
-    status, body = _http_request(api_url, headers=headers, timeout=6)
+    status, body = _http_request(api_url, headers=headers, timeout=4)
     if status == 200 and isinstance(body, str):
         v = extract_version_from_yaml(body)
         if v:
-            return v
+            return v, repo_url
 
-    # 2. 备选 raw.githubusercontent.com / jsdelivr
+    # 2.2 备选 raw.githubusercontent.com / jsdelivr
     fallback_urls = [
         f"https://raw.githubusercontent.com/{owner}/{repo}/main/metadata.yaml",
         f"https://raw.githubusercontent.com/{owner}/{repo}/master/metadata.yaml",
         f"https://fastly.jsdelivr.net/gh/{owner}/{repo}@main/metadata.yaml",
     ]
     for raw_url in fallback_urls:
-        status, body = _http_request(raw_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        status, body = _http_request(raw_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
         if status == 200 and isinstance(body, str):
             v = extract_version_from_yaml(body)
             if v:
-                return v
+                return v, repo_url
 
-    return ""
+    return "", repo_url
 
 
 class UpdaterService:
     """管理插件检查更新与一键升级逻辑。"""
 
-    def __init__(self, conf: Any):
+    def __init__(self, conf: Any = None, context: Any = None):
         self.conf = conf
+        self.context = context
 
     @property
     def enabled(self) -> bool:
@@ -364,8 +410,87 @@ class UpdaterService:
             "Content-Type": "application/json",
         }
 
+    def fetch_market_registry_sync(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+        """获取 AstrBot 官方插件市场索引（内存缓存 15 分钟），按多种键名快速命中。"""
+        global _MARKET_INDEX, _MARKET_CACHE_TS
+        now = time.time()
+        if not force_refresh and _MARKET_INDEX and (now - _MARKET_CACHE_TS) < _MARKET_CACHE_TTL:
+            return _MARKET_INDEX
+
+        data = None
+        # 1. 若配置了 OpenAPI，优先从 AstrBot 本地市场端点读取（毫秒级极速）
+        if self.api_key:
+            status, resp_data = _http_request(
+                f"{self.api_url}/api/v1/plugins/market",
+                headers=self._auth_headers(),
+                timeout=5,
+            )
+            if status == 200:
+                if isinstance(resp_data, dict):
+                    data = resp_data.get("data") or resp_data.get("plugins") or resp_data
+                elif isinstance(resp_data, list):
+                    data = resp_data
+
+        # 2. 从官方市场 Registry 接口拉取
+        if not data or not isinstance(data, (dict, list)):
+            status, resp_data = _http_request(
+                "https://api.soulter.top/astrbot/plugins",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater"},
+                timeout=6,
+            )
+            if status == 200 and isinstance(resp_data, (dict, list)):
+                data = resp_data
+
+        if not data:
+            return _MARKET_INDEX or {}
+
+        raw_items = []
+        if isinstance(data, dict):
+            if isinstance(data.get("data"), list):
+                raw_items = data["data"]
+            elif isinstance(data.get("data"), dict) and isinstance(data["data"].get("plugins"), list):
+                raw_items = data["data"]["plugins"]
+            elif isinstance(data.get("plugins"), list):
+                raw_items = data["plugins"]
+            else:
+                raw_items = list(data.values())
+        elif isinstance(data, list):
+            raw_items = data
+
+        index: Dict[str, Dict[str, Any]] = {}
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            p_name = str(item.get("name") or "").strip()
+            if not p_name:
+                continue
+            norm = normalize_plugin_name(p_name)
+            short = p_name.replace("astrbot_plugin_", "").lower().replace("-", "_")
+
+            entry = {
+                "name": p_name,
+                "version": str(item.get("version") or "").strip(),
+                "repo": str(item.get("repo") or "").strip(),
+                "display_name": str(item.get("display_name") or "").strip(),
+                "author": str(item.get("author") or "").strip(),
+                "desc": str(item.get("desc") or "").strip(),
+                "raw": item,
+            }
+            index[p_name] = entry
+            if norm and norm not in index:
+                index[norm] = entry
+            if short and short not in index:
+                index[short] = entry
+
+        _MARKET_INDEX = index
+        _MARKET_CACHE_TS = now
+        return _MARKET_INDEX
+
+    async def fetch_market_registry(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+        return await asyncio.to_thread(self.fetch_market_registry_sync, force_refresh)
+
     def scan_local_plugins_sync(self) -> List[Dict[str, Any]]:
-        """当未配置 OpenAPI 密钥或接口不可用时，优雅扫描本地已安装插件 metadata.yaml。"""
+        """扫描已安装的插件。优先读取 AstrBot runtime context 实例，备选本地多级目录。"""
         KNOWN_REPOS = {
             "astrbot_plugin_xbnext": "https://github.com/imsuperone/xbnext",
             "astrbot_plugin_xbbot_beta": "https://github.com/imsuperone/xbtest",
@@ -376,12 +501,56 @@ class UpdaterService:
         }
         found: List[Dict[str, Any]] = []
         seen = set()
-        for base in ("data/plugins", "plugins", ".", ".."):
-            if not os.path.isdir(base):
-                continue
+
+        # 1. 优先从 AstrBot 运行时 Context 获取已装载的所有插件 (Stars)
+        if self.context and hasattr(self.context, "get_all_stars"):
+            try:
+                stars = self.context.get_all_stars()
+                if stars and isinstance(stars, (list, tuple)):
+                    for s in stars:
+                        name = str(getattr(s, "name", "") or "").strip()
+                        if not name:
+                            continue
+                        norm = normalize_plugin_name(name)
+                        if norm in seen or name in seen:
+                            continue
+                        seen.add(norm)
+                        seen.add(name)
+                        ver = str(getattr(s, "version", "") or "未知").strip()
+                        repo = str(getattr(s, "repo", "") or "").strip() or KNOWN_REPOS.get(norm, "")
+                        disp = str(getattr(s, "display_name", "") or "").strip()
+                        root_dir = str(getattr(s, "root_dir_name", "") or name).strip()
+                        found.append({
+                            "name": name,
+                            "version": ver,
+                            "repo": repo,
+                            "display_name": get_plugin_display_name({"name": name, "display_name": disp}),
+                            "root_dir_name": root_dir,
+                            "source": "runtime_star",
+                        })
+            except Exception:
+                pass
+
+        # 2. 备选扫描多级文件系统目录
+        _plugins_container = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+        astrbot_plugins_dir = ""
+        try:
+            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+            astrbot_plugins_dir = os.path.join(get_astrbot_data_path(), "plugins")
+        except Exception:
+            pass
+
+        search_bases = []
+        for b in (_plugins_container, astrbot_plugins_dir, "data/plugins", "plugins", ".", ".."):
+            if b and os.path.isdir(b) and b not in search_bases:
+                search_bases.append(b)
+
+        for base in search_bases:
             try:
                 for item in os.listdir(base):
                     p_dir = os.path.join(base, item)
+                    if not os.path.isdir(p_dir):
+                        continue
                     meta_path = os.path.join(p_dir, "metadata.yaml")
                     if os.path.isfile(meta_path):
                         try:
@@ -389,9 +558,10 @@ class UpdaterService:
                                 text = f.read()
                             name = extract_metadata_field(text, "name") or item
                             norm = normalize_plugin_name(name)
-                            if norm in seen:
+                            if norm in seen or name in seen:
                                 continue
                             seen.add(norm)
+                            seen.add(name)
                             ver = extract_metadata_field(text, "version") or "未知"
                             repo = extract_metadata_field(text, "repo") or KNOWN_REPOS.get(norm, "")
                             disp = extract_metadata_field(text, "display_name") or get_plugin_display_name({"name": name}, p_dir)
@@ -401,32 +571,81 @@ class UpdaterService:
                                 "repo": repo,
                                 "display_name": disp,
                                 "root_dir_name": item,
+                                "source": "filesystem",
                             })
                         except Exception:
                             pass
             except Exception:
                 pass
 
-
         return found
 
     def fetch_installed_plugins_sync(self) -> Tuple[bool, List[Dict[str, Any]], str]:
-        """通过 OpenAPI 查询 AstrBot 当前已安装的所有插件。未配置密钥时自动回退本地扫描。"""
+        """查询 AstrBot 当前已安装的所有插件。未配置密钥或请求异常时自动回退本地扫描。"""
+        local_plugins = self.scan_local_plugins_sync()
         if not self.api_key:
-            return True, self.scan_local_plugins_sync(), ""
+            return True, local_plugins, ""
+
         url = f"{self.api_url}/api/v1/plugins"
-        status, data = _http_request(url, headers=self._auth_headers(), timeout=10)
-        if status != 200:
-            return True, self.scan_local_plugins_sync(), ""
-        if not isinstance(data, dict) or "data" not in data:
-            return True, self.scan_local_plugins_sync(), ""
-        return True, data.get("data") or [], ""
+        status, data = _http_request(url, headers=self._auth_headers(), timeout=8)
+        if status != 200 or not data:
+            return True, local_plugins, ""
+
+        raw_list = []
+        if isinstance(data, list):
+            raw_list = data
+        elif isinstance(data, dict):
+            if isinstance(data.get("data"), list):
+                raw_list = data["data"]
+            elif isinstance(data.get("data"), dict) and isinstance(data["data"].get("plugins"), list):
+                raw_list = data["data"]["plugins"]
+            elif isinstance(data.get("plugins"), list):
+                raw_list = data["plugins"]
+
+        if not raw_list:
+            return True, local_plugins, ""
+
+        normalized: List[Dict[str, Any]] = []
+        seen = set()
+        for p in raw_list:
+            if not isinstance(p, dict):
+                continue
+            meta = p.get("info") or p.get("metadata") or {}
+            install_src = p.get("install_source") or {}
+            name = str(p.get("name") or meta.get("name") or "").strip()
+            if not name:
+                continue
+            norm = normalize_plugin_name(name)
+            seen.add(norm)
+            seen.add(name)
+            ver = str(p.get("version") or meta.get("version") or "未知").strip()
+            repo = str(p.get("repo") or meta.get("repo") or install_src.get("repo") or "").strip()
+            disp = str(p.get("display_name") or meta.get("display_name") or "").strip()
+            root_dir = str(install_src.get("root_dir_name") or p.get("root_dir_name") or name).strip()
+            normalized.append({
+                "name": name,
+                "version": ver,
+                "repo": repo,
+                "display_name": disp or get_plugin_display_name({"name": name, "display_name": disp}),
+                "root_dir_name": root_dir,
+                "source": "openapi",
+            })
+
+        for lp in local_plugins:
+            lp_name = lp.get("name") or ""
+            lp_norm = normalize_plugin_name(lp_name)
+            if lp_name not in seen and lp_norm not in seen:
+                seen.add(lp_name)
+                seen.add(lp_norm)
+                normalized.append(lp)
+
+        return True, normalized, ""
 
     async def fetch_installed_plugins(self) -> Tuple[bool, List[Dict[str, Any]], str]:
         return await asyncio.to_thread(self.fetch_installed_plugins_sync)
 
     def check_updates_sync(self, selected_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        """检查目标插件的更新状态。"""
+        """检查目标插件的更新状态。支持 AstrBot 市场插件与内置插件多维度检测。"""
         if not self.enabled:
             return {
                 "ok": False,
@@ -437,21 +656,31 @@ class UpdaterService:
         if not ok or not installed:
             installed = self.scan_local_plugins_sync()
 
+        market_index = self.fetch_market_registry_sync()
+
         raw_targets = selected_names if selected_names is not None else self.target_plugins
         targets = {normalize_plugin_name(x) for x in raw_targets if x}
+        raw_targets_set = {str(x).strip() for x in raw_targets if str(x).strip()}
         results = []
         has_new_version = False
 
         for p in installed:
-            name = p.get("name") or ""
+            name = str(p.get("name") or "").strip()
             norm_name = normalize_plugin_name(name)
-            is_target = (name in targets or norm_name in targets)
+            is_target = (name in targets or norm_name in targets or name in raw_targets_set)
             if not is_target:
                 if not (self.notify_third_party and selected_names is None):
                     continue
                 install_src = p.get("install_source") or {}
                 repo_check = p.get("repo") or install_src.get("repo") or ""
-                if not repo_check:
+                is_in_market = bool(
+                    market_index and (
+                        name in market_index
+                        or norm_name in market_index
+                        or name.replace("astrbot_plugin_", "") in market_index
+                    )
+                )
+                if not repo_check and not is_in_market:
                     continue
 
             ver = str(p.get("version") or "未知")
@@ -466,7 +695,9 @@ class UpdaterService:
             for base_dir in search_bases:
                 if not os.path.isdir(base_dir):
                     continue
-                for cand in (root_dir, name, norm_name):
+                for cand in (root_dir, name, norm_name, name.replace("astrbot_plugin_", "")):
+                    if not cand:
+                        continue
                     c_path = os.path.join(base_dir, cand)
                     if os.path.isdir(c_path) and os.path.isfile(os.path.join(c_path, "metadata.yaml")):
                         local_dir = c_path
@@ -474,9 +705,19 @@ class UpdaterService:
                 if local_dir:
                     break
 
-            nick = get_plugin_display_name(p, local_dir)
             local_ver = _get_local_version(p, local_dir)
-            remote_ver = _query_remote_version(repo_url, p)
+            remote_ver, repo_url = _query_remote_version(repo_url, p, market_index=market_index)
+
+            m_item = None
+            if market_index:
+                m_item = market_index.get(name) or market_index.get(norm_name)
+                if not m_item and name.startswith("astrbot_plugin_"):
+                    m_item = market_index.get(name.replace("astrbot_plugin_", ""))
+            is_market_plugin = bool(m_item)
+            if m_item and not p.get("display_name"):
+                p["display_name"] = m_item.get("display_name")
+
+            nick = get_plugin_display_name(p, local_dir)
 
             status_text = "已是最新版本"
             is_update_available = False
@@ -486,7 +727,8 @@ class UpdaterService:
                 if cmp_res < 0:
                     is_update_available = True
                     has_new_version = True
-                    status_text = f"可更新 (本地: {format_version(local_ver)} → 远端: {format_version(remote_ver)})"
+                    market_tag = " [市场]" if is_market_plugin else ""
+                    status_text = f"可更新{market_tag} (本地: {format_version(local_ver)} → 远端: {format_version(remote_ver)})"
                 elif cmp_res == 0:
                     status_text = f"最新 (本地: {format_version(local_ver)} | 远端: {format_version(remote_ver)})"
                 else:
@@ -494,7 +736,7 @@ class UpdaterService:
             elif remote_ver:
                 status_text = f"远端: {format_version(remote_ver)} (本地未知)"
             elif local_ver and local_ver != "未知":
-                status_text = f"最新 (本地: {format_version(local_ver)})"
+                status_text = f"本地: {format_version(local_ver)} (远端版本未检出)"
             else:
                 status_text = "未知版本"
 
@@ -505,6 +747,7 @@ class UpdaterService:
                 "local_version": local_ver,
                 "remote_version": remote_ver,
                 "repo": repo_url,
+                "is_market": is_market_plugin,
                 "has_update": is_update_available,
                 "status_text": status_text,
             })
@@ -519,7 +762,7 @@ class UpdaterService:
         return await asyncio.to_thread(self.check_updates_sync, selected_names)
 
     def apply_updates_sync(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
-        """执行一键更新与热重载。force=True 时强制拉取并重载所有选定插件。"""
+        """执行一键更新与热重载。支持 AstrBot 标准与旧版 API 自适应。"""
         if not self.enabled:
             return {
                 "ok": False,
@@ -537,7 +780,8 @@ class UpdaterService:
 
         raw_targets = selected_names if selected_names is not None else self.target_plugins
         targets = {normalize_plugin_name(x) for x in raw_targets if x}
-        
+        raw_targets_set = {str(x).strip() for x in raw_targets if str(x).strip()}
+
         # 非强制模式且未指定具体插件时，先检查是否有新版本
         if not force and not selected_names:
             chk = self.check_updates_sync()
@@ -557,21 +801,29 @@ class UpdaterService:
         for p in installed:
             name = p.get("name") or ""
             norm_name = normalize_plugin_name(name)
-            if name not in targets and norm_name not in targets:
+            if name not in targets and norm_name not in targets and name not in raw_targets_set:
                 continue
 
             nick = get_plugin_display_name(p)
-            update_url = f"{self.api_url}/api/v1/plugins/{name}/update"
-            reload_url = f"{self.api_url}/api/v1/plugins/{name}/reload"
+            update_payload = json.dumps({"name": name, "plugin_name": name}).encode("utf-8")
 
-            # 1. 执行更新
+            # 1. 执行更新：优先调用标准 /api/v1/plugins/update，404/405 时回退 /api/v1/plugins/{name}/update
+            update_url = f"{self.api_url}/api/v1/plugins/update"
             u_status, u_resp = _http_request(
                 update_url,
                 method="POST",
                 headers=self._auth_headers(),
-                data=json.dumps({"name": name}).encode("utf-8"),
+                data=update_payload,
                 timeout=45,
             )
+            if u_status in (404, 405):
+                u_status, u_resp = _http_request(
+                    f"{self.api_url}/api/v1/plugins/{name}/update",
+                    method="POST",
+                    headers=self._auth_headers(),
+                    data=update_payload,
+                    timeout=45,
+                )
 
             if u_status != 200:
                 err_msg = u_resp.get("message") if isinstance(u_resp, dict) else str(u_resp)
@@ -584,14 +836,23 @@ class UpdaterService:
                 })
                 continue
 
-            # 2. 执行热重载
+            # 2. 执行热重载：优先调用标准 /api/v1/plugins/reload，404/405 时回退 /api/v1/plugins/{name}/reload
+            reload_url = f"{self.api_url}/api/v1/plugins/reload"
             r_status, r_resp = _http_request(
                 reload_url,
                 method="POST",
                 headers=self._auth_headers(),
-                data=b"",
+                data=update_payload,
                 timeout=30,
             )
+            if r_status in (404, 405):
+                r_status, r_resp = _http_request(
+                    f"{self.api_url}/api/v1/plugins/{name}/reload",
+                    method="POST",
+                    headers=self._auth_headers(),
+                    data=b"",
+                    timeout=30,
+                )
 
             if r_status != 200:
                 err_msg = r_resp.get("message") if isinstance(r_resp, dict) else str(r_resp)

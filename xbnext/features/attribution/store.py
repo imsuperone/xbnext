@@ -145,7 +145,14 @@ class ReplyTargetStore:
                 return False
             items = await self.load(umo)
             items = push_item(items, clean, limit=self._limit)
-            if not await self._kv.set(self._key(umo), {"items": items}):
+            setter = getattr(self._kv, "set", None)
+            saved = False
+            if callable(setter):
+                try:
+                    saved = bool(await self._kv.set(self._key(umo), {"items": items}, async_flush=True))
+                except TypeError:
+                    saved = bool(await self._kv.set(self._key(umo), {"items": items}))
+            if not saved:
                 return False
         except Exception as exc:  # noqa: BLE001
             self._warn(f"写入回复索引失败 {umo}: {exc}")
@@ -199,7 +206,12 @@ class ReplyTargetStore:
             return []
 
     async def _save_sessions(self, sessions: List[str]) -> None:
-        await self._kv.set(INDEX_KEY, sessions)
+        setter = getattr(self._kv, "set", None)
+        if callable(setter):
+            try:
+                await self._kv.set(INDEX_KEY, sessions, async_flush=True)
+            except TypeError:
+                await self._kv.set(INDEX_KEY, sessions)
 
     def _warn(self, message: str) -> None:
         """写日志（前缀与安全跳过统一走 :mod:`xbnext.log`）。"""

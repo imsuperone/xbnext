@@ -16,6 +16,7 @@ AstrBot 的插件 KV 是**插件维度独立空间**（>= 4.9.2），由 Star �
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, Optional, Set
 
 from . import KV_PREFIX, log
@@ -87,8 +88,12 @@ class KV:
     # ------------------------------------------------------------------
     # 写
     # ------------------------------------------------------------------
-    async def set(self, key: str, value: Any) -> bool:
-        """写一个键（写穿）。失败返回 ``False``，缓存仍会更新以便本次会话可用。"""
+    async def set(self, key: str, value: Any, *, async_flush: bool = False) -> bool:
+        """写一个键（写穿）。失败返回 ``False``，缓存仍会更新以便本次会话可用。
+
+        若指定 ``async_flush=True``，则内存缓存立即更新生效，实际底层磁盘写入
+        由后台协程异步调度，不阻塞大模型调用链路（首字 TTFT 核心优化）。
+        """
         full = self.key(key)
         self._cache[full] = value
         self._loaded.add(full)
@@ -98,6 +103,18 @@ class KV:
         if not callable(putter):
             self._broken = True
             return False
+        if async_flush:
+            try:
+                loop = asyncio.get_running_loop()
+                async def _put_bg():
+                    try:
+                        await putter(full, value)
+                    except Exception as exc:  # noqa: BLE001
+                        self._log("warning", f"后台写入 KV 失败 {full}: {exc}")
+                loop.create_task(_put_bg())
+                return True
+            except RuntimeError:
+                pass
         try:
             await putter(full, value)
             return True
