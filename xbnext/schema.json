@@ -274,6 +274,12 @@
       "enable_tts_limit": true
     }
   },
+  "enable_wordplay": {
+    "type": "bool",
+    "description": "全语言谐音梗与双关",
+    "hint": "激活多语言声学发音与双轨谐音认知，秒懂中文、中英混合、日语空耳及世界语言双关并以傲娇机智人设自然接梗吐槽。默认开启。",
+    "default": true
+  },
   "group_mode": {
     "type": "string",
     "description": "群聊生效模式",

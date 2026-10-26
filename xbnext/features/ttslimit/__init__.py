@@ -14,6 +14,78 @@ from typing import Any, Optional
 from ... import log
 from ..base import Feature
 
+import os
+import re
+import wave
+import struct
+
+
+def smooth_tts_text(text: str) -> str:
+    """平滑优化 TTS 输入文本，防止尾音强感叹号导致 FishAudio 喷气/爆破音。"""
+    if not text or not isinstance(text, str):
+        return text
+    s = str(text).strip()
+    # 1. 语气词（如 喵、啦、呀、哇、捏、呢、哦、啊等）后紧跟的 ！替换为柔和的 ~
+    # 例如：啦喵！ -> 啦喵~ ； 大啦喵！ -> 大啦喵~
+    s = re.sub(r"([喵啦呀哇捏呢哦啊吖咯滴吧~～])([！!]+)", r"\1~", s)
+    # 2. 连续多个感叹号结尾收敛为 ~
+    s = re.sub(r"([！!]{2,})$", "~", s)
+    # 3. 句末单独的感叹号，若前面是软萌语气词，替换为 ~
+    s = re.sub(r"([喵啦呀哇捏呢哦啊吖咯滴吧])[！!]$", r"\1~", s)
+    return s
+
+
+def apply_wav_fade_out(file_path: str, fade_ms: int = 35) -> bool:
+    """对 wav 文件末尾施加线性淡出（Fade-out），消除硬切断时的电平爆音。"""
+    try:
+        if not file_path or not os.path.isfile(file_path):
+            return False
+        with wave.open(file_path, "rb") as wf:
+            params = wf.getparams()
+            n_channels = params.nchannels
+            sampwidth = params.sampwidth
+            framerate = params.framerate
+            n_frames = params.nframes
+            if n_frames <= 0 or sampwidth != 2:  # 标准 16-bit PCM
+                return False
+            frames_data = bytearray(wf.readframes(n_frames))
+
+        fade_frames = min(n_frames, int(framerate * fade_ms / 1000.0))
+        if fade_frames <= 0:
+            return False
+
+        bytes_per_frame = n_channels * 2
+        total_fade_bytes = fade_frames * bytes_per_frame
+        start_offset = len(frames_data) - total_fade_bytes
+
+        for i in range(fade_frames):
+            factor = 1.0 - (i / float(fade_frames))
+            frame_idx = start_offset + i * bytes_per_frame
+            for ch in range(n_channels):
+                offset = frame_idx + ch * 2
+                val = struct.unpack_from("<h", frames_data, offset)[0]
+                new_val = max(-32768, min(32767, int(val * factor)))
+                struct.pack_into("<h", frames_data, offset, new_val)
+
+        with wave.open(file_path, "wb") as wf:
+            wf.setparams(params)
+            wf.writeframes(frames_data)
+        return True
+    except Exception:
+        return False
+
+
+def smooth_audio_tail(res: Any) -> Any:
+    """对生成的 wav 音频在末尾施加 35ms 线性淡出。"""
+    try:
+        path = str(res) if res is not None else ""
+        if path and path.lower().endswith(".wav") and os.path.isfile(path):
+            apply_wav_fade_out(path, fade_ms=35)
+    except Exception:
+        pass
+    return res
+
+
 
 class TtsLimitFeature(Feature):
     """控制 AstrBot TTS 触发的最大字数上限。"""
@@ -131,7 +203,12 @@ class TtsLimitFeature(Feature):
                         f"TTS 字数超限（{clean_len} 字 > 上限 {limit} 字），已拦截 get_audio 语音合成",
                     )
                     return None
-            return await orig(text, *args, **kwargs)
+            # 1. 软化尾部强感叹号，避免 FishAudio 喷气爆音
+            target_text = smooth_tts_text(text)
+            res = await orig(target_text, *args, **kwargs)
+            # 2. 尾音 35ms 平滑淡出，消除直流跳变噗噗声
+            smooth_audio_tail(res)
+            return res
 
         try:
             inst._xbnext_orig_get_audio = orig
