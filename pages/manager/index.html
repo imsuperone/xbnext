@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.28" />
+  <link rel="stylesheet" href="./style.css?v=0.2.29" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.28">0.2.28</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.29">0.2.29</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -472,35 +472,6 @@
         </div>
 
         <div class="m3-card">
-          <h2 class="card-title">灵性主动交互与破冰设置</h2>
-          <p class="card-desc">仅在「灵性主动交互」开启时生效。配置冷场破冰、话题判定与记忆挖坟参数。</p>
-          <div class="card-row-split">
-            <div>
-              <label class="form-label">冷场定时破冰冒泡</label>
-              <span class="field-hint">群聊持续无消息时，在适宜时段（10:00~23:30）动态随机冒泡提问或吐槽，打破冷场。默认开启。</span>
-            </div>
-            <label class="m3-switch">
-              <input type="checkbox" id="sw_proactive_icebreaker" data-key="proactive_icebreaker" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-          <div class="form-group" style="margin-top: 12px;">
-            <label class="form-label" for="inp_proactive_idle_minutes">冷场判定基准时间 (分钟)</label>
-            <input type="number" class="m3-input" id="inp_proactive_idle_minutes" data-key="proactive_idle_minutes" min="15" max="1440" placeholder="90" />
-            <span class="field-hint">默认 <code>90</code> 分钟。系统会在基准时间的 0.8~1.5 倍动态浮动触发，避免死板规律。</span>
-          </div>
-          <div class="card-row-split" style="margin-top: 12px;">
-            <div>
-              <label class="form-label">记忆与档案挖坟联动</label>
-              <span class="field-hint">冷场破冰时，联动用户档案中记录的群友昵称、自述与历史话题主动关心或点名。默认开启。</span>
-            </div>
-            <label class="m3-switch">
-              <input type="checkbox" id="sw_proactive_dig_memory" data-key="proactive_dig_memory" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="m3-card">
           <h2 class="card-title">TTS 语音字数上限</h2>
           <p class="card-desc">仅在「TTS 字数上限」开启时生效。单次回复文本总字数超过此值时自动跳过语音合成直接发送文字（填 0 表示不限制）。</p>
           <div class="form-group">
@@ -577,6 +548,36 @@
             <label class="form-label">说明注入的回溯轮数</label>
             <input type="number" class="m3-input" id="inp_reply_scope_depth" data-key="reply_scope_depth" min="1" max="10" />
             <span class="field-hint">注入说明时最多回溯多少轮对话。越大说明越长、上下文占用越多。默认 3。</span>
+          </div>
+        </div>
+
+        <div class="m3-card">
+          <h2 class="card-title">灵性主动交互与破冰设置</h2>
+          <p class="card-desc">仅在「灵性主动交互」开启时生效。配置冷场破冰、话题判定与记忆挖坟参数。</p>
+          <div class="card-row-split">
+            <div>
+              <label class="form-label">冷场定时破冰冒泡</label>
+              <span class="field-hint">群聊持续无消息时，在适宜时段（10:00~23:30）动态随机冒泡提问或吐槽，打破冷场。默认开启。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_proactive_icebreaker" data-key="proactive_icebreaker" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_proactive_idle_minutes">冷场判定基准时间 (分钟)</label>
+            <input type="number" class="m3-input" id="inp_proactive_idle_minutes" data-key="proactive_idle_minutes" min="15" max="1440" placeholder="90" />
+            <span class="field-hint">默认 <code>90</code> 分钟。系统会在基准时间的 0.8~1.5 倍动态浮动触发，避免死板规律。</span>
+          </div>
+          <div class="card-row-split" style="margin-top: 12px;">
+            <div>
+              <label class="form-label">记忆与档案挖坟联动</label>
+              <span class="field-hint">冷场破冰时，联动用户档案中记录的群友昵称、自述与历史话题主动关心或点名。默认开启。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_proactive_dig_memory" data-key="proactive_dig_memory" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
         </div>
 
@@ -789,7 +790,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.28"></script>
-  <script src="./app.js?v=0.2.28"></script>
+  <script src="./api.js?v=0.2.29"></script>
+  <script src="./app.js?v=0.2.29"></script>
 </body>
 </html>
