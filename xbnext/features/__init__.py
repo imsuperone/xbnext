@@ -10,6 +10,7 @@
 ===== ===================== ===== ==========================================
 序号   功能                  order 需求
 ===== ===================== ===== ==========================================
+R10    botguard              5     多机器人互相接话刷屏对轰死循环
 R8     image_slim            15    历史旧图每轮重发，输入 token 浪费
 R2     quote_clean           20    引用占位误判成空白图片
 R3     face_translate        30    QQ 自带表情模型读不懂
@@ -26,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .base import Feature
 from .attribution import AttributionFeature
+from .botguard import BotGuardFeature
 from .face import FaceFeature
 from .imageslim import ImageSlimFeature
 from .profile import ProfileFeature
@@ -37,6 +39,7 @@ from .updater import UpdaterFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
+    BotGuardFeature(),
     ImageSlimFeature(),
     QuoteFeature(),
     FaceFeature(),
@@ -70,6 +73,10 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     if name_lower in ("updater", "检查更新", "查更新", "check_update", "check", "一键更新", "更新", "update", "升级"):
         for feat in FEATURES:
             if getattr(feat, "command", "") == "updater":
+                return feat
+    if name_lower in ("botguard", "防互怼", "防大乱斗", "机器人拦截", "bot_guard"):
+        for feat in FEATURES:
+            if getattr(feat, "command", "") == "botguard":
                 return feat
     for feat in FEATURES:
         if feat.command and feat.command == name:

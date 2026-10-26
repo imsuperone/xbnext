@@ -1,4 +1,34 @@
 {
+  "enable_bot_guard": {
+    "type": "bool",
+    "description": "机器人与黑名单拦截",
+    "hint": "在消息入口拦截指定机器人或黑名单账号的发言，杜绝多机器人互相接话、刷屏对轰与死循环烧 token。默认开启。",
+    "default": true
+  },
+  "bot_guard_blacklist": {
+    "type": "string",
+    "description": "拦截账号黑名单",
+    "hint": "需要拦截的机器人或用户 QQ 号（发送者 ID），多个账号用逗号、空格或换行分隔。默认留空（保护隐私，由管理员自行填入）。",
+    "default": "",
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true
+    }
+  },
+  "bot_guard_mode": {
+    "type": "string",
+    "description": "机器人拦截模式",
+    "hint": "drop = 彻底静默（推荐，入口掐断，零 token 浪费，最稳杜绝死循环）；no_active = 仅防唤醒与主动接话。默认 drop。",
+    "default": "drop",
+    "options": [
+      "drop",
+      "no_active"
+    ],
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true
+    }
+  },
   "enable_quote_clean": {
     "type": "bool",
     "description": "引用占位清洗",
