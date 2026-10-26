@@ -111,28 +111,62 @@ class BotGuardFeature(Feature):
             return
 
         try:
-            # 1. 破坏性指令防多 Bot 串台保护（群聊中的 /new, /reset 等必须 @ 当前机器人）
-            if ctx.conf.bool("bot_guard_require_at_for_reset", True):
+            # 1. 群聊全部指令需 @ 触发保护（防同群多 Bot 冲突串台，默认关闭，除 /xbnext 外）
+            req_all_cmds = ctx.conf.bool("bot_guard_require_at_for_commands", False)
+            req_reset_cmds = ctx.conf.bool("bot_guard_require_at_for_reset", False)
+            if req_all_cmds or req_reset_cmds:
                 if service.is_group_event(event):
                     msg_text = getattr(event, "message_str", "") or ""
                     if not msg_text:
                         msg_obj = getattr(event, "message_obj", None)
                         if msg_obj is not None:
                             msg_text = getattr(msg_obj, "raw_message", "") or ""
-                    if service.is_destructive_reset_command(msg_text):
+
+                    # 白名单指令（如 /xbnext 系列）无需 @，直接放行
+                    if not service.is_whitelisted_command(msg_text):
+                        is_target_cmd = False
+                        if req_all_cmds and service.is_command_message(msg_text):
+                            is_target_cmd = True
+                        elif req_reset_cmds and service.is_destructive_reset_command(msg_text):
+                            is_target_cmd = True
+
+                        if is_target_cmd:
+                            self_id = service.extract_self_id(event)
+                            if self_id and not service.is_at_self(event, self_id):
+                                self._stop_event_safely(event)
+                                log.emit(
+                                    self._log,
+                                    "info",
+                                    f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id})，已安全忽略防止多Bot冲突",
+                                )
+                                if ctx.conf.bool("debug_log"):
+                                    ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
+                                return
+
+            # 2. 群文字游戏与杂音指令拦截（防大模型接话与长期记忆被群游记录污染，默认关闭）
+            if ctx.conf.bool("bot_guard_filter_game_commands", False):
+                if service.is_group_event(event):
+                    msg_text = getattr(event, "message_str", "") or ""
+                    if not msg_text:
+                        msg_obj = getattr(event, "message_obj", None)
+                        if msg_obj is not None:
+                            msg_text = getattr(msg_obj, "raw_message", "") or ""
+                    game_words = ctx.conf.text("bot_guard_game_words", "")
+                    if service.is_game_or_noise_command(msg_text, game_words):
                         self_id = service.extract_self_id(event)
+                        # 未艾特本机器人时拦截，彻底避免被大模型或记忆插件收录
                         if self_id and not service.is_at_self(event, self_id):
                             self._stop_event_safely(event)
                             log.emit(
                                 self._log,
                                 "info",
-                                f"破坏性指令保护：群聊收到重置指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id})，已安全忽略防止多Bot冲突",
+                                f"游戏杂音拦截：已过滤群文字游戏指令 '{msg_text.strip()}'，防止长期记忆与上下文污染",
                             )
                             if ctx.conf.bool("debug_log"):
-                                ctx.note(f"BotGuard 拦截未@自身的破坏性指令：{msg_text.strip()}")
+                                ctx.note(f"BotGuard 拦截游戏指令：{msg_text.strip()}")
                             return
 
-            # 2. 黑名单账号拦截
+            # 3. 黑名单账号拦截
             blacklist_raw = ctx.conf.text("bot_guard_blacklist", "")
             blacklist = service.parse_blacklist(blacklist_raw)
             if not blacklist:

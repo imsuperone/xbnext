@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.30" />
+  <link rel="stylesheet" href="./style.css?v=0.2.31" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.30">0.2.30</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.31">0.2.31</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -476,13 +476,28 @@
           </div>
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
-              <label class="form-label" style="margin-bottom: 2px;">破坏性指令需 @ 触发 (防多Bot串台)</label>
-              <span class="field-hint">群聊中 <code>/new</code>、<code>/reset</code>、<code>/clear</code> 等清空会话指令必须 @ 机器人才生效，避免群内多机器人同时清空会话。默认开启。</span>
+              <label class="form-label" style="margin-bottom: 2px;">群聊全部指令需 @ 触发 (防多Bot冲突)</label>
+              <span class="field-hint">开启后，群聊中除 <code>/xbnext</code> 系列管理指令外，所有指令（以 <code>/</code>、<code>!</code>、<code>#</code> 开头）必须 @ 机器人才生效，避免多个机器人同时清空或触发。默认关闭。</span>
             </div>
             <label class="m3-switch">
-              <input type="checkbox" id="sw_bot_guard_require_at_for_reset" data-key="bot_guard_require_at_for_reset" />
+              <input type="checkbox" id="sw_bot_guard_require_at_for_commands" data-key="bot_guard_require_at_for_commands" />
               <span class="switch-slider"></span>
             </label>
+          </div>
+          <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
+              <label class="form-label" style="margin-bottom: 2px;">群文字游戏与杂音指令拦截 (防记忆污染)</label>
+              <span class="field-hint">开启后，自动拦截打劫、奴隶、搬砖、进监狱、冒险等纯群游指令（未@本机器人时），防止误接话与长期记忆被群游记录污染。默认关闭。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_bot_guard_filter_game_commands" data-key="bot_guard_filter_game_commands" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="inp_bot_guard_game_words">自定义群游拦截词</label>
+            <input type="text" class="m3-input" id="inp_bot_guard_game_words" data-key="bot_guard_game_words" placeholder="打劫,奴隶,打工,收工,搬砖,进监狱,探监,存款,取款,冒险,精灵,签到,抽卡" />
+            <span class="field-hint">选填。多个关键词以逗号或空格分隔。留空时使用内置默认游戏词表。</span>
           </div>
         </div>
 
@@ -820,7 +835,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.30"></script>
-  <script src="./app.js?v=0.2.30"></script>
+  <script src="./api.js?v=0.2.31"></script>
+  <script src="./app.js?v=0.2.31"></script>
 </body>
 </html>

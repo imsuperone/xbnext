@@ -18,6 +18,9 @@ __all__ = [
     "is_sender_blacklisted",
     "mask_id",
     "is_destructive_reset_command",
+    "is_whitelisted_command",
+    "is_command_message",
+    "is_game_or_noise_command",
     "is_group_event",
     "is_at_self",
 ]
@@ -242,4 +245,52 @@ def is_at_self(event: Any, self_id: str) -> bool:
             if f"qq={self_clean}" in val or f"[At:{self_clean}]" in val or f"[At: {self_clean}]" in val:
                 return True
 
+    return False
+
+
+def is_whitelisted_command(msg_str: str) -> bool:
+    """判定消息是否属于白名单指令（如 /xbnext 系列及其管理/更新指令），无需强制 @。"""
+    if not msg_str:
+        return False
+    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
+    return bool(re.match(r"^[!/#/]?\s*(?:xbnext|update)(?:\s|$)", stripped, re.I))
+
+
+def is_command_message(msg_str: str) -> bool:
+    """判定消息是否为机器人指令（以常见前缀 /、!、# 开头或为重置指令）。"""
+    if not msg_str:
+        return False
+    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
+    if not stripped:
+        return False
+    if re.match(r"^[!/#/！#]\s*\S+", stripped):
+        return True
+    if is_destructive_reset_command(msg_str):
+        return True
+    return False
+
+
+def is_game_or_noise_command(msg_str: str, keywords_raw: Any = None) -> bool:
+    """判定消息是否为群文字游戏或纯游戏交互指令（如打劫银行、奴隶打工、精灵冒险等）。"""
+    if not msg_str:
+        return False
+    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
+    if not stripped or len(stripped) > 50:
+        return False
+
+    default_words = [
+        "打劫", "奴隶", "打工", "收工", "搬砖", "进监狱", "探监",
+        "存款", "取款", "冒险", "精灵", "签到", "抽卡", "开箱", "钓鱼", "挖矿",
+    ]
+    words = set(default_words)
+    if keywords_raw:
+        if isinstance(keywords_raw, (list, tuple, set)):
+            words.update(str(x).strip() for x in keywords_raw if str(x).strip())
+        elif isinstance(keywords_raw, str):
+            tokens = re.split(r"[,，;\s\n]+", keywords_raw)
+            words.update(t.strip() for t in tokens if t.strip())
+
+    for w in words:
+        if stripped == w or stripped.startswith(w):
+            return True
     return False

@@ -32,8 +32,8 @@
   "bot_guard_require_at_for_reset": {
     "type": "bool",
     "description": "破坏性指令需@触发",
-    "hint": "群聊中 /new、/reset、/clear 等重置指令必须 @ 机器人才生效，避免群内多机器人同时清空会话。默认开启。",
-    "default": true,
+    "hint": "群聊中 /new、/reset、/clear 等重置指令必须 @ 机器人才生效，避免群内多机器人同时清空会话。默认关闭。",
+    "default": false,
     "collapsed": true,
     "condition": {
       "enable_bot_guard": true
@@ -428,6 +428,37 @@
     "condition": {
       "enable_updater": true,
       "enable_update_notify": true
+    }
+  },
+  "bot_guard_require_at_for_commands": {
+    "type": "bool",
+    "description": "群聊全部指令需@触发",
+    "hint": "开启后，群聊中除 /xbnext 等管理指令外，所有指令（以 /、!、# 开头）必须 @ 机器人才生效，避免多个机器人同时触发。默认关闭。",
+    "default": false,
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true
+    }
+  },
+  "bot_guard_filter_game_commands": {
+    "type": "bool",
+    "description": "群文字游戏与杂音指令拦截",
+    "hint": "开启后，自动拦截打劫、奴隶、搬砖、进监狱、冒险等纯群游指令，防止大模型误接话与长期记忆被群游记录污染。默认关闭。",
+    "default": false,
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true
+    }
+  },
+  "bot_guard_game_words": {
+    "type": "string",
+    "description": "自定义群游戏拦截词",
+    "hint": "需拦截的群文字游戏关键词，多个用逗号或空格分隔。留空时使用内置默认词表。",
+    "default": "",
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true,
+      "bot_guard_filter_game_commands": true
     }
   }
 }
