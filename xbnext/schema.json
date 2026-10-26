@@ -134,6 +134,43 @@
       "enable_user_profile": true
     }
   },
+  "enable_proactive": {
+    "type": "bool",
+    "description": "灵性主动交互",
+    "hint": "告别死板概率！意图感知智能插话、冷场破冰提问、记忆挖坟与好感度联动。默认关闭。",
+    "default": false
+  },
+  "proactive_icebreaker": {
+    "type": "bool",
+    "description": "定时冷场破冰冒泡",
+    "hint": "群聊长时间沉默冷清时，塔菲在适宜时段（10:00~23:30）动态随机冒泡提问或吐槽，打破冷场。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
+  "proactive_idle_minutes": {
+    "type": "int",
+    "description": "冷场判定基准时间 (分钟)",
+    "hint": "群聊无消息超过该基准时间的 0.8~1.5 倍时随机发起破冰。默认 90 分钟。",
+    "default": 90,
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true,
+      "proactive_icebreaker": true
+    }
+  },
+  "proactive_dig_memory": {
+    "type": "bool",
+    "description": "记忆与档案话题联动",
+    "hint": "破冰时结合群友档案与历史话题进行主动关心与八卦挖坟。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
   "enable_recall_cancel": {
     "type": "bool",
     "description": "撤回取消请求",

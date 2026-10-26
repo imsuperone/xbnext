@@ -30,6 +30,7 @@ from .attribution import AttributionFeature
 from .botguard import BotGuardFeature
 from .face import FaceFeature
 from .imageslim import ImageSlimFeature
+from .proactive import ProactiveFeature
 from .profile import ProfileFeature
 from .quote import QuoteFeature
 from .recall import RecallFeature
@@ -42,6 +43,7 @@ FEATURES: Tuple[Feature, ...] = (
     BotGuardFeature(),
     ImageSlimFeature(),
     QuoteFeature(),
+    ProactiveFeature(),
     FaceFeature(),
     AttributionFeature(),
     ProfileFeature(),
@@ -77,6 +79,10 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     if name_lower in ("botguard", "防互怼", "防大乱斗", "机器人拦截", "bot_guard"):
         for feat in FEATURES:
             if getattr(feat, "command", "") == "botguard":
+                return feat
+    if name_lower in ("proactive", "主动", "灵性主动", "破冰"):
+        for feat in FEATURES:
+            if getattr(feat, "command", "") == "proactive":
                 return feat
     for feat in FEATURES:
         if feat.command and feat.command == name:

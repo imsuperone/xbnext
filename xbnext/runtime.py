@@ -74,6 +74,17 @@ class XbnextRuntime:
         logger: Any = None,
         context: Any = None,
     ):
+        self.data_dir = resolve_data_dir()
+        if config is None or (
+            isinstance(config, dict)
+            and not hasattr(config, "save_config")
+            and not hasattr(config, "save_config_async")
+        ):
+            from .config import LocalAstrBotConfig
+            config = LocalAstrBotConfig(
+                file_path=self.data_dir / "config.json",
+                initial=config if isinstance(config, dict) else None,
+            )
         self.conf = Config(config)
         self.log = logger
         self.context = context
@@ -81,7 +92,6 @@ class XbnextRuntime:
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()
         self._loaded = False
-        self.data_dir = resolve_data_dir()
         self.seen_path = self.data_dir / "seen_groups.json"
         self._seen_groups: Dict[str, Dict[str, Any]] = {}
         self._seen_users: Dict[str, Dict[str, str]] = {}

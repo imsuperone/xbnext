@@ -42,6 +42,85 @@ def schema_default(key: str) -> Any:
     return None
 
 
+class LocalAstrBotConfig:
+    """当 AstrBot 宿主未提供 AstrBotConfig（如根目录无 _conf_schema.json 时传入 None）
+    时的独立本地持久化配置对象。
+
+    完全对齐 AstrBotConfig 鸭子类型（dict 读写 + save_config / save_config_async），
+    确保即使根目录不放 _conf_schema.json（让原生面板保持『这个插件没有其他配置项』），
+    WebUI 写入的配置依然能正确持久化落盘并热生效，不会因 None 报错导致开关自动回滚。
+    """
+
+    def __init__(self, file_path: Path, initial: Any = None):
+        self._path = Path(file_path)
+        self._data: dict = {}
+        self._load()
+        if isinstance(initial, dict):
+            for k, v in initial.items():
+                if v is not None and k not in self._data:
+                    self._data[k] = v
+
+    def _load(self) -> None:
+        if self._path.exists():
+            try:
+                data = json.loads(self._path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self._data.update(data)
+            except Exception:
+                pass
+
+    def save_config(self) -> bool:
+        """同步落盘配置（原子写入）。"""
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            import os
+            tmp = self._path.with_name(f"config.json.tmp.{os.getpid()}.{os.urandom(4).hex()}")
+            tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self._path)
+            return True
+        except Exception:
+            try:
+                self._path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+                return True
+            except Exception:
+                return False
+
+    async def save_config_async(self) -> bool:
+        """异步落盘配置。"""
+        import asyncio
+        return await asyncio.to_thread(self.save_config)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._data[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        self._data.pop(key, None)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._data
+
+    def items(self):
+        return self._data.items()
+
+    def keys(self):
+        return self._data.keys()
+
+    def values(self):
+        return self._data.values()
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 class Config:
     """插件配置的只读视图（直接包在 AstrBot 传入的配置对象上，热改即生效）。"""
 
@@ -236,4 +315,4 @@ class Config:
         return out
 
 
-__all__ = ["Config", "SCHEMA", "schema_default"]
+__all__ = ["Config", "LocalAstrBotConfig", "SCHEMA", "schema_default"]
