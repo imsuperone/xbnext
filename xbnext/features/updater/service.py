@@ -171,6 +171,28 @@ def _http_request(
         return 0, str(exc)
 
 
+def _extract_err_msg(resp: Any) -> str:
+    """从 HTTP 错误响应中提取可读的错误文本（兼顾 FastAPI 422 detail 与标准 message 格式）。"""
+    if isinstance(resp, dict):
+        if resp.get("message"):
+            return str(resp["message"])
+        if resp.get("detail"):
+            detail = resp["detail"]
+            if isinstance(detail, list) and detail:
+                first = detail[0]
+                if isinstance(first, dict):
+                    loc = ".".join(str(x) for x in first.get("loc", []))
+                    msg = first.get("msg", "")
+                    return f"{loc}: {msg}" if loc else msg
+                return str(first)
+            return str(detail)
+        if resp.get("error"):
+            return str(resp["error"])
+    elif isinstance(resp, list) and resp:
+        return str(resp[0])
+    return str(resp or "")
+
+
 def extract_version_from_yaml(text: str) -> str:
     """从 metadata.yaml 文本中提取 version 字段。"""
     if not text:
@@ -402,13 +424,15 @@ class UpdaterService:
             return bool(getter("update_notify_third_party", False))
         return False
 
-    def _auth_headers(self) -> Dict[str, str]:
-        return {
+    def _auth_headers(self, json_body: bool = True) -> Dict[str, str]:
+        headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater",
             "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
-            "Content-Type": "application/json",
         }
+        if json_body:
+            headers["Content-Type"] = "application/json"
+        return headers
 
     def fetch_market_registry_sync(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
         """获取 AstrBot 官方插件市场索引（内存缓存 15 分钟），按多种键名快速命中。"""
@@ -761,6 +785,66 @@ class UpdaterService:
     async def check_updates(self, selected_names: Optional[List[str]] = None) -> Dict[str, Any]:
         return await asyncio.to_thread(self.check_updates_sync, selected_names)
 
+    def _request_reload(self, target_name: str) -> Tuple[int, Any]:
+        """自适应热重载单个插件，兼容不同 AstrBot 版本的 OpenAPI 规范与回退端点。"""
+        name_clean = str(target_name).strip()
+        attempts = [
+            # 1. 优先调用标准全局重载端点 /api/v1/plugins/reload (无 Body - FastAPI 无参路由规范，规避 422 校验失败)
+            (f"{self.api_url}/api/v1/plugins/reload", None, False),
+            # 2. 专有插件重载端点 /api/v1/plugins/{name}/reload (无 Body)
+            (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", None, False),
+            # 3. 专有插件重载端点 /api/v1/plugins/{name}/reload (空 JSON: {})
+            (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", b"{}", True),
+            # 4. 标准全局重载端点 /api/v1/plugins/reload (空 JSON: {})
+            (f"{self.api_url}/api/v1/plugins/reload", b"{}", True),
+            # 5. Query 传参 /api/v1/plugins/reload?name={name}
+            (f"{self.api_url}/api/v1/plugins/reload?name={name_clean}", None, False),
+            (f"{self.api_url}/api/v1/plugins/reload?plugin_name={name_clean}", None, False),
+            # 6. JSON 载荷 /api/v1/plugins/reload (带 name 与 plugin_name，旧版兼容)
+            (f"{self.api_url}/api/v1/plugins/reload", json.dumps({"name": name_clean, "plugin_name": name_clean}).encode("utf-8"), True),
+            # 7. Dashboard 根级端点 /api/plugin/reload
+            (f"{self.api_url}/api/plugin/reload", None, False),
+            # 8. 失败插件重载端点 /api/v1/plugins/failed/{name}/reload
+            (f"{self.api_url}/api/v1/plugins/failed/{name_clean}/reload", None, False),
+        ]
+        last_status = 0
+        last_resp = None
+        for url, post_data, is_json in attempts:
+            status, resp = _http_request(
+                url,
+                method="POST",
+                headers=self._auth_headers(json_body=is_json),
+                data=post_data,
+                timeout=30,
+            )
+            if status == 200:
+                return status, resp
+            last_status = status
+            last_resp = resp
+
+        # 9. 若 HTTP 接口均受限，且当前运行在 AstrBot runtime 进程内，尝试通过 context / star_manager 内部重载
+        if self.context:
+            try:
+                star_mgr = getattr(self.context, "_star_manager", None) or getattr(self.context, "star_manager", None)
+                if star_mgr:
+                    for method_name in ("reload", "reload_star", "reload_plugin"):
+                        fn = getattr(star_mgr, method_name, None)
+                        if callable(fn):
+                            import inspect
+                            sig = inspect.signature(fn)
+                            if len(sig.parameters) >= 1:
+                                res = fn(name_clean)
+                            else:
+                                res = fn()
+                            if inspect.isawaitable(res):
+                                import asyncio
+                                asyncio.create_task(res)
+                            return 200, {"ok": True, "source": "context.star_manager"}
+            except Exception:
+                pass
+
+        return last_status, last_resp
+
     def apply_updates_sync(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
         """执行一键更新与热重载。支持 AstrBot 标准与旧版 API 自适应。"""
         if not self.enabled:
@@ -807,26 +891,26 @@ class UpdaterService:
             nick = get_plugin_display_name(p)
             update_payload = json.dumps({"name": name, "plugin_name": name}).encode("utf-8")
 
-            # 1. 执行更新：优先调用标准 /api/v1/plugins/update，404/405 时回退 /api/v1/plugins/{name}/update
+            # 1. 执行更新：优先调用标准 /api/v1/plugins/update，400/404/405/422 时回退 /api/v1/plugins/{name}/update
             update_url = f"{self.api_url}/api/v1/plugins/update"
             u_status, u_resp = _http_request(
                 update_url,
                 method="POST",
-                headers=self._auth_headers(),
+                headers=self._auth_headers(json_body=True),
                 data=update_payload,
                 timeout=45,
             )
-            if u_status in (404, 405):
+            if u_status in (400, 404, 405, 422):
                 u_status, u_resp = _http_request(
                     f"{self.api_url}/api/v1/plugins/{name}/update",
                     method="POST",
-                    headers=self._auth_headers(),
+                    headers=self._auth_headers(json_body=True),
                     data=update_payload,
                     timeout=45,
                 )
 
             if u_status != 200:
-                err_msg = u_resp.get("message") if isinstance(u_resp, dict) else str(u_resp)
+                err_msg = _extract_err_msg(u_resp)
                 results.append({
                     "name": name,
                     "nickname": nick,
@@ -836,26 +920,11 @@ class UpdaterService:
                 })
                 continue
 
-            # 2. 执行热重载：优先调用标准 /api/v1/plugins/reload，404/405 时回退 /api/v1/plugins/{name}/reload
-            reload_url = f"{self.api_url}/api/v1/plugins/reload"
-            r_status, r_resp = _http_request(
-                reload_url,
-                method="POST",
-                headers=self._auth_headers(),
-                data=update_payload,
-                timeout=30,
-            )
-            if r_status in (404, 405):
-                r_status, r_resp = _http_request(
-                    f"{self.api_url}/api/v1/plugins/{name}/reload",
-                    method="POST",
-                    headers=self._auth_headers(),
-                    data=b"",
-                    timeout=30,
-                )
+            # 2. 执行热重载：自适应适配不同 AstrBot 版本的重载接口
+            r_status, r_resp = self._request_reload(name)
 
             if r_status != 200:
-                err_msg = r_resp.get("message") if isinstance(r_resp, dict) else str(r_resp)
+                err_msg = _extract_err_msg(r_resp)
                 results.append({
                     "name": name,
                     "nickname": nick,
