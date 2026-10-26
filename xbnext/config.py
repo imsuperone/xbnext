@@ -14,15 +14,20 @@ import json
 from pathlib import Path
 from typing import Any
 
-_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "_conf_schema.json"
+_SCHEMA_PATH = Path(__file__).resolve().parent / "schema.json"
+_ROOT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "_conf_schema.json"
 
 
 def _load_schema() -> dict:
-    try:
-        data = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:  # noqa: BLE001  schema 读不到不能让插件起不来
-        return {}
+    for p in (_SCHEMA_PATH, _ROOT_SCHEMA_PATH):
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except Exception:  # noqa: BLE001
+                pass
+    return {}
 
 
 #: 配置 schema（含每个键的 type / default / condition）
