@@ -94,6 +94,20 @@
 
       <!-- ==================== Tab 1: 功能开关 ==================== -->
       <section class="settings-section active" data-section="tab-switches">
+        <div class="sub-group-header">🛡️ 安全与死循环防御</div>
+        <div class="m3-card">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">机器人与黑名单拦截</h2>
+              <p class="card-desc">在消息入口拦截指定机器人或黑名单账号的发言，杜绝多机器人互相接话、刷屏对轰与死循环烧 token。可在「参数微调」配置拦截 QQ 名单与模式。默认开启。</p>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_enable_bot_guard" data-key="enable_bot_guard" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
         <div class="sub-group-header">💬 消息清洗与转义</div>
         <div class="m3-card">
           <div class="card-row-split">
@@ -426,6 +440,23 @@
 
       <!-- ==================== Tab 2: 行为微调 ==================== -->
       <section class="settings-section" data-section="tab-tuning">
+        <div class="m3-card">
+          <h2 class="card-title">机器人与黑名单拦截设置</h2>
+          <p class="card-desc">仅在「机器人与黑名单拦截」开启时生效。屏蔽指定机器人的发言，杜绝死循环对轰与 Token 浪费。</p>
+          <div class="form-group">
+            <label class="form-label" for="inp_bot_guard_blacklist">拦截账号黑名单（QQ 号列表）</label>
+            <textarea class="m3-input m3-textarea" id="inp_bot_guard_blacklist" data-key="bot_guard_blacklist" rows="2" placeholder="输入需要拦截的机器人或用户 QQ 号，多个账号用逗号、空格或换行分隔"></textarea>
+            <span class="field-hint">默认留空保护隐私。填入需要屏蔽的机器人 QQ 后，其发言将在入口直接拦截。</span>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label">拦截模式</label>
+            <div class="m3-segmented-control" id="seg_bot_guard_mode" data-key="bot_guard_mode">
+              <button type="button" class="seg-item" data-val="drop">彻底静默 (drop，推荐)</button>
+              <button type="button" class="seg-item" data-val="no_active">仅防主动接话 (no_active)</button>
+            </div>
+            <span class="field-hint"><b>drop</b>：在入口彻底掐断对方消息，零消耗且最稳；<b>no_active</b>：对方艾特塔菲时拦截，但允许群内日常消息流入历史记忆。</span>
+          </div>
+        </div>
         <div class="m3-card">
           <h2 class="card-title">TTS 语音字数上限</h2>
           <p class="card-desc">仅在「TTS 字数上限」开启时生效。单次回复文本总字数超过此值时自动跳过语音合成直接发送文字（填 0 表示不限制）。</p>
