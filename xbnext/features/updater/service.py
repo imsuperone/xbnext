@@ -407,18 +407,7 @@ class UpdaterService:
             except Exception:
                 pass
 
-        # 补齐未在本地扫描到的已知默认目标插件，支持直接远端探测
-        for tgt in self.target_plugins:
-            norm_tgt = normalize_plugin_name(tgt)
-            if norm_tgt not in seen:
-                seen.add(norm_tgt)
-                found.append({
-                    "name": norm_tgt,
-                    "version": "未知",
-                    "repo": KNOWN_REPOS.get(norm_tgt, ""),
-                    "display_name": get_plugin_display_name({"name": norm_tgt}),
-                    "root_dir_name": norm_tgt,
-                })
+
         return found
 
     def fetch_installed_plugins_sync(self) -> Tuple[bool, List[Dict[str, Any]], str]:

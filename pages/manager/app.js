@@ -1837,13 +1837,13 @@
   /* ========================================================================
    * 插件更新
    * ====================================================================== */
-  var DEFAULT_TARGET_PLUGINS = [
-    { name: "astrbot_plugin_xbimg", nickname: "消息转图助手 (astrbot_plugin_xbimg)" },
-    { name: "astrbot_plugin_xb2img", nickname: "消息转图轻量版 (astrbot_plugin_xb2img)" },
-    { name: "astrbot_plugin_xbdoc", nickname: "文档记忆助手 (astrbot_plugin_xbdoc)" },
-    { name: "astrbot_plugin_xbbot", nickname: "小白机器人 (astrbot_plugin_xbbot)" },
-    { name: "astrbot_plugin_xbbot_beta", nickname: "小白测试版 (astrbot_plugin_xbbot_beta)" },
-    { name: "astrbot_plugin_xbnext", nickname: "XBNEXT (astrbot_plugin_xbnext)" }
+  var DEFAULT_TARGET_NAMES = [
+    "astrbot_plugin_xbimg",
+    "astrbot_plugin_xb2img",
+    "astrbot_plugin_xbdoc",
+    "astrbot_plugin_xbbot",
+    "astrbot_plugin_xbbot_beta",
+    "astrbot_plugin_xbnext"
   ];
 
   var _updaterInstalledPlugins = [];
@@ -1861,14 +1861,22 @@
     var wrap = $("updaterPluginsWrap");
     if (!wrap) return;
 
-    var list = (plugins && plugins.length) ? plugins : (_updaterInstalledPlugins.length ? _updaterInstalledPlugins : DEFAULT_TARGET_PLUGINS);
+    var list = (plugins && plugins.length) ? plugins : _updaterInstalledPlugins;
+    if (!list || !list.length) {
+      wrap.innerHTML = '<span class="field-hint" style="padding: 6px 0;">未检测到已安装插件或正在读取中...</span>';
+      return;
+    }
+
     var rawSaved = String(CONFIG.updater_plugins || "").trim();
     var savedTokens = rawSaved ? rawSaved.split(/[,，\s\n]+/).map(function (s) { return s.trim(); }).filter(Boolean) : [];
 
     var html = list.map(function (p) {
       var name = typeof p === "string" ? p : p.name;
       var nick = (typeof p === "object" && p.nickname) ? p.nickname : name;
-      var checked = (savedTokens.length === 0) || (savedTokens.indexOf(name) !== -1);
+      var isDefault = DEFAULT_TARGET_NAMES.indexOf(name) !== -1;
+      var checked = (typeof p === "object" && typeof p.selected === "boolean")
+        ? p.selected
+        : (isDefault || (savedTokens.length > 0 && savedTokens.indexOf(name) !== -1));
       return (
         '<label class="platform-chip-label">' +
           '<input type="checkbox" class="updater-plugin-cb" value="' + name + '"' + (checked ? ' checked' : '') + ' />' +
@@ -1917,6 +1925,7 @@
 
   function initUpdater() {
     renderUpdaterPlugins();
+    fetchUpdaterPlugins(true);
 
     if ($("btn_fetch_updater_plugins")) {
       $("btn_fetch_updater_plugins").addEventListener("click", function () {

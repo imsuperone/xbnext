@@ -372,8 +372,10 @@ def register_web_api(context: Any, runtime: Any) -> bool:
                 name = p.get("name") or ""
                 if not name:
                     continue
+                if name in ("builtin_commands", "astrbot") or name.startswith("astrbot.builtin"):
+                    continue
                 nick = get_plugin_display_name(p)
-                is_selected = name in targets or (not targets and name in DEFAULT_TARGET_PLUGINS)
+                is_selected = name in targets or name in DEFAULT_TARGET_PLUGINS
                 res.append({
                     "name": name,
                     "nickname": nick,
