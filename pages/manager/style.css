@@ -1211,3 +1211,17 @@ code {
 .sub-group-header:first-of-type {
   margin-top: 6px;
 }
+
+/* Inline button group for quick updater actions */
+.btn-group-inline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.btn-group-inline .m3-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  height: 28px;
+  line-height: 20px;
+}

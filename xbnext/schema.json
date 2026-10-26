@@ -29,6 +29,16 @@
       "enable_bot_guard": true
     }
   },
+  "bot_guard_require_at_for_reset": {
+    "type": "bool",
+    "description": "破坏性指令需@触发",
+    "hint": "群聊中 /new、/reset、/clear 等重置指令必须 @ 机器人才生效，避免群内多机器人同时清空会话。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": {
+      "enable_bot_guard": true
+    }
+  },
   "enable_quote_clean": {
     "type": "bool",
     "description": "引用占位清洗",
@@ -161,11 +171,51 @@
       "proactive_icebreaker": true
     }
   },
+  "proactive_intent_question": {
+    "type": "bool",
+    "description": "智能插话意图感知",
+    "hint": "自动识别群友提问、求助与情绪共鸣意图并主动参与互动。默认开启。",
+    "default": true,
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
+  "proactive_keywords": {
+    "type": "string",
+    "description": "主动插话关注关键词",
+    "hint": "主动插话关注的自定义关键词，多个用逗号或空格分隔。留空时根据自然互动意图感知。",
+    "default": "",
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
+  "proactive_reply_chance": {
+    "type": "int",
+    "description": "插话触发概率百分比",
+    "hint": "命中意图或关键词后的插话概率百分比（10~100）。默认 80%。",
+    "default": 80,
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
+  "proactive_prompt_hint": {
+    "type": "string",
+    "description": "主动插话系统引导词",
+    "hint": "主动插话注入的系统提示词引导。留空使用通用生动群友预设，支持自定义人设语气。",
+    "default": "",
+    "collapsed": true,
+    "condition": {
+      "enable_proactive": true
+    }
+  },
   "proactive_dig_memory": {
     "type": "bool",
     "description": "记忆与档案话题联动",
     "hint": "破冰时结合群友档案与历史话题进行主动关心与八卦挖坟。默认开启。",
-    "default": true,
+    "default": false,
     "collapsed": true,
     "condition": {
       "enable_proactive": true

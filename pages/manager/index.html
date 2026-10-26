@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.29" />
+  <link rel="stylesheet" href="./style.css?v=0.2.30" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.29">0.2.29</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.30">0.2.30</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -383,7 +383,12 @@
           <div class="form-group" style="margin-top: 12px;">
             <div class="card-row-split" style="margin-bottom: 6px;">
               <label class="form-label" style="margin-bottom: 0;">纳入更新的插件选择（多选）</label>
-              <button type="button" class="m3-btn secondary-btn" id="btn_fetch_updater_plugins" style="padding: 4px 10px; font-size: 12px;">🔄 获取插件列表</button>
+              <div class="btn-group-inline">
+                <button type="button" class="m3-btn secondary-btn" id="btn_updater_select_all">全选</button>
+                <button type="button" class="m3-btn secondary-btn" id="btn_updater_deselect_all">全不选</button>
+                <button type="button" class="m3-btn secondary-btn" id="btn_updater_invert">反选</button>
+                <button type="button" class="m3-btn secondary-btn" id="btn_fetch_updater_plugins">🔄 获取插件列表</button>
+              </div>
             </div>
             <span class="field-hint">勾选需要一键检查与更新的插件（默认预设 xb 系列插件；未安装的插件会自动静默跳过）。</span>
             <div id="updaterPluginsWrap" class="platform-chips-wrap" style="margin-top: 8px;"></div>
@@ -469,6 +474,16 @@
             </div>
             <span class="field-hint"><b>drop</b>：在入口彻底掐断对方消息，零消耗且最稳；<b>no_active</b>：对方艾特塔菲时拦截，但允许群内日常消息流入历史记忆。</span>
           </div>
+          <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
+              <label class="form-label" style="margin-bottom: 2px;">破坏性指令需 @ 触发 (防多Bot串台)</label>
+              <span class="field-hint">群聊中 <code>/new</code>、<code>/reset</code>、<code>/clear</code> 等清空会话指令必须 @ 机器人才生效，避免群内多机器人同时清空会话。默认开启。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_bot_guard_require_at_for_reset" data-key="bot_guard_require_at_for_reset" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
         </div>
 
         <div class="m3-card">
@@ -553,7 +568,7 @@
 
         <div class="m3-card">
           <h2 class="card-title">灵性主动交互与破冰设置</h2>
-          <p class="card-desc">仅在「灵性主动交互」开启时生效。配置冷场破冰、话题判定与记忆挖坟参数。</p>
+          <p class="card-desc">仅在「灵性主动交互」开启时生效。配置冷场破冰、自定义话题意图与插话灵敏度。</p>
           <div class="card-row-split">
             <div>
               <label class="form-label">冷场定时破冰冒泡</label>
@@ -571,13 +586,28 @@
           </div>
           <div class="card-row-split" style="margin-top: 12px;">
             <div>
-              <label class="form-label">记忆与档案挖坟联动</label>
-              <span class="field-hint">冷场破冰时，联动用户档案中记录的群友昵称、自述与历史话题主动关心或点名。默认开启。</span>
+              <label class="form-label">智能插话意图感知</label>
+              <span class="field-hint">自动识别群友提问、探讨求助与社交情绪共鸣意图，告别死板概率。默认开启。</span>
             </div>
             <label class="m3-switch">
-              <input type="checkbox" id="sw_proactive_dig_memory" data-key="proactive_dig_memory" />
+              <input type="checkbox" id="sw_proactive_intent_question" data-key="proactive_intent_question" />
               <span class="switch-slider"></span>
             </label>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_proactive_keywords">主动插话关注关键词</label>
+            <input type="text" class="m3-input" id="inp_proactive_keywords" data-key="proactive_keywords" placeholder="输入关注的话题词，多个用逗号或空格分隔，如：原神,外卖,猫猫,推荐" />
+            <span class="field-hint">选填。群消息命中关注关键词时即触发插话意图。留空时根据自然互动意图感知。</span>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_proactive_reply_chance">插话触发概率百分比 (%)</label>
+            <input type="number" class="m3-input" id="inp_proactive_reply_chance" data-key="proactive_reply_chance" min="10" max="100" placeholder="80" />
+            <span class="field-hint">默认 <code>80</code>%。命中话题或意图后执行概率判定，防止过度活跃导致聒噪；填 100 表示只要命中必插话。</span>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="inp_proactive_prompt_hint">主动插话系统引导词</label>
+            <textarea class="m3-input m3-textarea" id="inp_proactive_prompt_hint" data-key="proactive_prompt_hint" rows="2" placeholder="留空使用通用预设；支持自定义人设语气，如：请以生动幽默的群友口吻参与话题讨论..."></textarea>
+            <span class="field-hint">自定义向大模型注入的主动插话 System Prompt 引导词。留空使用通用生动群友预设。</span>
           </div>
         </div>
 
@@ -790,7 +820,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.29"></script>
-  <script src="./app.js?v=0.2.29"></script>
+  <script src="./api.js?v=0.2.30"></script>
+  <script src="./app.js?v=0.2.30"></script>
 </body>
 </html>

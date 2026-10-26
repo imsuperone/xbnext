@@ -111,6 +111,28 @@ class BotGuardFeature(Feature):
             return
 
         try:
+            # 1. 破坏性指令防多 Bot 串台保护（群聊中的 /new, /reset 等必须 @ 当前机器人）
+            if ctx.conf.bool("bot_guard_require_at_for_reset", True):
+                if service.is_group_event(event):
+                    msg_text = getattr(event, "message_str", "") or ""
+                    if not msg_text:
+                        msg_obj = getattr(event, "message_obj", None)
+                        if msg_obj is not None:
+                            msg_text = getattr(msg_obj, "raw_message", "") or ""
+                    if service.is_destructive_reset_command(msg_text):
+                        self_id = service.extract_self_id(event)
+                        if self_id and not service.is_at_self(event, self_id):
+                            self._stop_event_safely(event)
+                            log.emit(
+                                self._log,
+                                "info",
+                                f"破坏性指令保护：群聊收到重置指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id})，已安全忽略防止多Bot冲突",
+                            )
+                            if ctx.conf.bool("debug_log"):
+                                ctx.note(f"BotGuard 拦截未@自身的破坏性指令：{msg_text.strip()}")
+                            return
+
+            # 2. 黑名单账号拦截
             blacklist_raw = ctx.conf.text("bot_guard_blacklist", "")
             blacklist = service.parse_blacklist(blacklist_raw)
             if not blacklist:

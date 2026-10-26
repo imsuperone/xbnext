@@ -171,7 +171,8 @@ class ProactiveFeature(Feature):
 
         # 2. 灵性主动插话：向请求中注入提示词，引导模型以生动、真实的口吻插话
         if proactive_reason:
-            hint = service.build_proactive_prompt_hint(str(proactive_reason))
+            custom_hint = ctx.conf.text("proactive_prompt_hint", "")
+            hint = service.build_proactive_prompt_hint(str(proactive_reason), custom_hint=custom_hint)
             req = ctx.req
             if req is not None:
                 injected = False

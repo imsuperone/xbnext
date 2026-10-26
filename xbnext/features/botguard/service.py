@@ -17,6 +17,9 @@ __all__ = [
     "extract_self_id",
     "is_sender_blacklisted",
     "mask_id",
+    "is_destructive_reset_command",
+    "is_group_event",
+    "is_at_self",
 ]
 
 
@@ -168,3 +171,75 @@ def mask_id(uid: str) -> str:
     if len(uid_str) <= 6:
         return uid_str[:2] + "***" + uid_str[-1:]
     return uid_str[:3] + "***" + uid_str[-2:]
+
+
+def is_destructive_reset_command(msg_str: str) -> bool:
+    """判定消息是否包含清空会话的破坏性指令（如 /new, /reset, /clear, /重置, /清空）。"""
+    if not msg_str:
+        return False
+    # 移除首尾与常见 At CQ 码后再进行匹配
+    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
+    pattern = r"^[!/#/]?\s*(?:new|reset|clear|重置|清空)(?:\s|$|@)"
+    return bool(re.search(pattern, stripped, re.I))
+
+
+def is_group_event(event: Any) -> bool:
+    """判定当前事件是否发生在群聊场景中。"""
+    if event is None:
+        return False
+    is_priv = getattr(event, "is_private_chat", None)
+    if callable(is_priv):
+        try:
+            return not bool(is_priv())
+        except Exception:  # noqa: BLE001
+            pass
+    msg_obj = getattr(event, "message_obj", None)
+    if msg_obj is not None:
+        if getattr(msg_obj, "group_id", None):
+            return True
+        mtype = str(getattr(msg_obj, "message_type", "") or "").lower()
+        if "group" in mtype:
+            return True
+        if "private" in mtype:
+            return False
+    if getattr(event, "group_id", None):
+        return True
+    return False
+
+
+def is_at_self(event: Any, self_id: str) -> bool:
+    """判定事件中是否包含明确艾特自身（self_id）的段落。"""
+    if not event or not self_id:
+        return False
+    self_clean = str(self_id).strip()
+
+    # 1. 检查 event.get_messages() 或 message_obj.message 组件
+    messages = []
+    getter = getattr(event, "get_messages", None)
+    if callable(getter):
+        try:
+            messages = getter() or []
+        except Exception:  # noqa: BLE001
+            pass
+    if not messages:
+        msg_obj = getattr(event, "message_obj", None)
+        if msg_obj is not None:
+            messages = getattr(msg_obj, "message", []) or []
+
+    for comp in messages:
+        c_type = type(comp).__name__
+        if c_type == "At" or hasattr(comp, "qq") or hasattr(comp, "target"):
+            target_qq = str(getattr(comp, "qq", getattr(comp, "target", "")) or "").strip()
+            if target_qq == self_clean:
+                return True
+
+    # 2. 从 message_str / raw_message 中检查
+    for attr in ("message_str", "raw_message"):
+        val = getattr(event, attr, None)
+        if not val and getattr(event, "message_obj", None) is not None:
+            val = getattr(event.message_obj, attr, None)
+        if isinstance(val, str) and val:
+            if f"qq={self_clean}" in val or f"[At:{self_clean}]" in val or f"[At: {self_clean}]" in val:
+                return True
+
+    return False

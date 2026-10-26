@@ -1927,6 +1927,47 @@
     renderUpdaterPlugins();
     fetchUpdaterPlugins(true);
 
+    if ($("btn_updater_select_all")) {
+      $("btn_updater_select_all").addEventListener("click", function () {
+        var wrap = $("updaterPluginsWrap");
+        if (!wrap) return;
+        var cbs = wrap.querySelectorAll(".updater-plugin-cb");
+        if (!cbs.length) return;
+        Array.prototype.forEach.call(cbs, function (cb) { cb.checked = true; });
+        var selected = getSelectedUpdaterPlugins();
+        writeConfig("updater_plugins", selected, { quiet: true }).then(function () {
+          toast("已全选所有插件 (" + selected.length + ")", "ok");
+        });
+      });
+    }
+
+    if ($("btn_updater_deselect_all")) {
+      $("btn_updater_deselect_all").addEventListener("click", function () {
+        var wrap = $("updaterPluginsWrap");
+        if (!wrap) return;
+        var cbs = wrap.querySelectorAll(".updater-plugin-cb");
+        if (!cbs.length) return;
+        Array.prototype.forEach.call(cbs, function (cb) { cb.checked = false; });
+        writeConfig("updater_plugins", [], { quiet: true }).then(function () {
+          toast("已取消选择所有插件", "ok");
+        });
+      });
+    }
+
+    if ($("btn_updater_invert")) {
+      $("btn_updater_invert").addEventListener("click", function () {
+        var wrap = $("updaterPluginsWrap");
+        if (!wrap) return;
+        var cbs = wrap.querySelectorAll(".updater-plugin-cb");
+        if (!cbs.length) return;
+        Array.prototype.forEach.call(cbs, function (cb) { cb.checked = !cb.checked; });
+        var selected = getSelectedUpdaterPlugins();
+        writeConfig("updater_plugins", selected, { quiet: true }).then(function () {
+          toast("已反选插件 (" + selected.length + ")", "ok");
+        });
+      });
+    }
+
     if ($("btn_fetch_updater_plugins")) {
       $("btn_fetch_updater_plugins").addEventListener("click", function () {
         fetchUpdaterPlugins(false);
