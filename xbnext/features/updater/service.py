@@ -37,6 +37,17 @@ DEFAULT_TARGET_PLUGINS = [
     "astrbot_plugin_xbnext",
 ]
 
+KNOWN_REPOS: Dict[str, str] = {
+    "astrbot_plugin_xbnext": "https://github.com/imsuperone/xbnext",
+    "astrbot_plugin_xbbot_beta": "https://github.com/imsuperone/xbtest",
+    "astrbot_plugin_xbbot": "https://github.com/imsuperone/xb",
+    "astrbot_plugin_xbimg": "https://github.com/imsuperone/xbimg",
+    "astrbot_plugin_xb2img": "https://github.com/imsuperone/xb2img",
+    "astrbot_plugin_xbdoc": "https://github.com/imsuperone/xbdoc",
+    "astrbot_plugin_pokepro": "https://github.com/imsuperone/pokepro",
+    "astrbot_plugin_stealer": "https://github.com/imsuperone/stealer",
+}
+
 def extract_metadata_field(text: str, field: str) -> str:
     """从 metadata.yaml 文本中提取指定字段（如 display_name / name / version）。"""
     if not text:
@@ -317,6 +328,179 @@ def _query_remote_version(
                 return v, repo_url
 
     return "", repo_url
+
+
+def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> Tuple[bool, str]:
+    """通过系统 Git 真实拉取远端仓库代码。
+    
+    层级拉取机制：
+    1. safe.directory 自动修复，防止容器/Linux 属主误判拦截
+    2. 自动检测上游追踪分支与远端（优先当前 remote 或 origin）
+    3. 强制模式下自动重置工作区（git reset --hard），彻底解决本地冲突与脏文件阻塞
+    4. 捕获真实 Git 输出，精准返回拉取状态或失败根因
+    """
+    if not local_dir or not os.path.isdir(os.path.join(local_dir, ".git")):
+        return False, "非 Git 仓库"
+
+    import subprocess
+    try:
+        # 1. 修复安全目录配置
+        try:
+            subprocess.run(
+                ["git", "config", "--global", "--add", "safe.directory", "*"],
+                cwd=local_dir, timeout=5, capture_output=True
+            )
+        except Exception:
+            pass
+
+        # 2. 探测当前分支
+        branch = ""
+        try:
+            res_b = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=local_dir, timeout=8, capture_output=True, text=True
+            )
+            if res_b.returncode == 0:
+                branch = res_b.stdout.strip()
+        except Exception:
+            pass
+        if not branch or branch == "HEAD":
+            branch = "main"
+
+        # 3. 探测追踪 remote
+        remote = ""
+        try:
+            res_r = subprocess.run(
+                ["git", "config", "--get", f"branch.{branch}.remote"],
+                cwd=local_dir, timeout=8, capture_output=True, text=True
+            )
+            if res_r.returncode == 0:
+                remote = res_r.stdout.strip()
+        except Exception:
+            pass
+        if not remote:
+            try:
+                res_all_r = subprocess.run(
+                    ["git", "remote"],
+                    cwd=local_dir, timeout=8, capture_output=True, text=True
+                )
+                if res_all_r.returncode == 0:
+                    remotes = res_all_r.stdout.split()
+                    if "origin" in remotes:
+                        remote = "origin"
+                    elif remotes:
+                        remote = remotes[0]
+            except Exception:
+                pass
+        if not remote:
+            remote = "origin"
+
+        # 4. 执行拉取：强制更新时先行清理工作区脏文件以避免拒绝合入
+        if force:
+            try:
+                subprocess.run(
+                    ["git", "reset", "--hard"],
+                    cwd=local_dir, timeout=10, capture_output=True
+                )
+            except Exception:
+                pass
+
+            res_fetch = subprocess.run(
+                ["git", "fetch", remote, branch, "--prune"],
+                cwd=local_dir, timeout=timeout, capture_output=True, text=True
+            )
+            if res_fetch.returncode == 0:
+                res_reset = subprocess.run(
+                    ["git", "reset", "--hard", f"{remote}/{branch}"],
+                    cwd=local_dir, timeout=10, capture_output=True, text=True
+                )
+                if res_reset.returncode == 0:
+                    out = (res_reset.stdout or res_fetch.stdout or "强制重置至最新提交").strip()
+                    return True, out
+
+        # 常规 pull 模式（或 force reset 回退）
+        res_pull = subprocess.run(
+            ["git", "pull", remote, branch],
+            cwd=local_dir, timeout=timeout, capture_output=True, text=True
+        )
+        if res_pull.returncode == 0:
+            out = (res_pull.stdout or "拉取成功").strip()
+            return True, out
+        err = (res_pull.stderr or res_pull.stdout or f"exit code {res_pull.returncode}").strip()
+        return False, err
+    except subprocess.TimeoutExpired:
+        return False, f"Git 操作超时 ({timeout}s)"
+    except Exception as ex:
+        return False, str(ex)
+
+
+def _download_github_archive(repo_url: str, local_dir: str, timeout: int = 40) -> Tuple[bool, str]:
+    """当 Git 不可用或目录非 Git 仓库时，直接从 GitHub 归档包拉取最新源码并解压覆盖。
+    严格保留原有的 data/ 目录与用户数据库、配置，防止数据损毁。
+    """
+    if not repo_url or "github.com" not in repo_url or not local_dir or not os.path.isdir(local_dir):
+        return False, "无有效仓库地址或本地目录"
+
+    m = re.search(r"github\.com[/:]([^/]+)/([^/\.]+)", repo_url)
+    if not m:
+        return False, f"无法从 {repo_url} 解析 GitHub 仓库信息"
+    owner, repo = m.group(1), m.group(2)
+
+    import io
+    import zipfile
+    import urllib.request
+
+    zip_urls = [
+        f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
+        f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip",
+        f"https://ghproxy.net/https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
+        f"https://mirror.ghproxy.com/https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
+    ]
+
+    zip_bytes = None
+    for u in zip_urls:
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 AstrBot-Updater"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    zip_bytes = resp.read()
+                    if zip_bytes:
+                        break
+        except Exception:
+            continue
+
+    if not zip_bytes:
+        return False, "下载 GitHub 源码归档包失败（网络连接受限）"
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        # GitHub zip 顶层目录如 repo-main/
+        namelist = zf.namelist()
+        if not namelist:
+            return False, "下载的归档包为空"
+        prefix = namelist[0].split("/")[0] + "/"
+
+        for member in zf.infolist():
+            rel_name = member.filename
+            if rel_name.startswith(prefix):
+                rel_name = rel_name[len(prefix):]
+            if not rel_name or rel_name.endswith("/"):
+                continue
+            # 严格保护 data 目录与运行时数据库、本地缓存
+            parts = rel_name.replace("\\", "/").split("/")
+            if parts and parts[0] == "data":
+                continue
+            if rel_name in ("config.json", "data.db", "storage.db", "xb.db"):
+                continue
+
+            target_path = os.path.join(local_dir, rel_name)
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with zf.open(member) as src_f, open(target_path, "wb") as dst_f:
+                dst_f.write(src_f.read())
+
+        return True, "已直接从 GitHub 归档包拉取并覆盖最新源码"
+    except Exception as ex:
+        return False, f"解压更新失败: {ex}"
 
 
 class UpdaterService:
@@ -604,6 +788,35 @@ class UpdaterService:
 
         return found
 
+    def find_plugin_local_dir(self, p: Dict[str, Any]) -> str:
+        """多级探测插件本地代码所在目录（含 AstrBot 部署根目录、父级容器与备用目录）。"""
+        name = str(p.get("name") or "").strip()
+        norm_name = normalize_plugin_name(name)
+        install_src = p.get("install_source") or {}
+        root_dir = str(install_src.get("root_dir_name") or p.get("root_dir_name") or name).strip()
+
+        _plugins_container = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+        astrbot_plugins_dir = ""
+        try:
+            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+            astrbot_plugins_dir = os.path.join(get_astrbot_data_path(), "plugins")
+        except Exception:
+            pass
+
+        search_bases = []
+        for b in (_plugins_container, astrbot_plugins_dir, "data/plugins", "plugins", ".", "..", "/AstrBot/data/plugins"):
+            if b and os.path.isdir(b) and b not in search_bases:
+                search_bases.append(b)
+
+        for base in search_bases:
+            for cand in (root_dir, name, norm_name, name.replace("astrbot_plugin_", "")):
+                if not cand:
+                    continue
+                c_path = os.path.join(base, cand)
+                if os.path.isdir(c_path) and os.path.isfile(os.path.join(c_path, "metadata.yaml")):
+                    return c_path
+        return ""
+
     def fetch_installed_plugins_sync(self) -> Tuple[bool, List[Dict[str, Any]], str]:
         """查询 AstrBot 当前已安装的所有插件。未配置密钥或请求异常时自动回退本地扫描。"""
         local_plugins = self.scan_local_plugins_sync()
@@ -713,21 +926,7 @@ class UpdaterService:
             root_dir = install_src.get("root_dir_name") or name
 
             # 探测本地目录（包含同级目录、插件根目录等）
-            local_dir = ""
-            _plugins_container = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
-            search_bases = (_plugins_container, "data/plugins", "plugins", ".", "..")
-            for base_dir in search_bases:
-                if not os.path.isdir(base_dir):
-                    continue
-                for cand in (root_dir, name, norm_name, name.replace("astrbot_plugin_", "")):
-                    if not cand:
-                        continue
-                    c_path = os.path.join(base_dir, cand)
-                    if os.path.isdir(c_path) and os.path.isfile(os.path.join(c_path, "metadata.yaml")):
-                        local_dir = c_path
-                        break
-                if local_dir:
-                    break
+            local_dir = self.find_plugin_local_dir(p)
 
             local_ver = _get_local_version(p, local_dir)
             remote_ver, repo_url = _query_remote_version(repo_url, p, market_index=market_index)
@@ -845,8 +1044,39 @@ class UpdaterService:
 
         return last_status, last_resp
 
+    def _request_astrot_update_api(self, name: str, timeout: int = 40) -> Tuple[int, Any]:
+        """请求 AstrBot OpenAPI / Dashboard 插件更新接口。"""
+        if not self.api_key:
+            return 0, None
+        update_payload = json.dumps({"name": name, "plugin_name": name}).encode("utf-8")
+        attempts = [
+            (f"{self.api_url}/api/v1/plugins/update", update_payload, True),
+            (f"{self.api_url}/api/plugin/update", json.dumps({"plugin_name": name, "name": name, "proxy": ""}).encode("utf-8"), True),
+            (f"{self.api_url}/api/v1/plugins/{name}/update", update_payload, True),
+            (f"{self.api_url}/api/plugin/update", json.dumps({"plugin_name": name}).encode("utf-8"), True),
+            (f"{self.api_url}/api/v1/plugins/update?name={name}", None, False),
+        ]
+        last_s = 0
+        last_r = None
+        for url, data, is_json in attempts:
+            status, resp = _http_request(
+                url, method="POST",
+                headers=self._auth_headers(json_body=is_json),
+                data=data, timeout=timeout
+            )
+            if status == 200:
+                if isinstance(resp, dict) and (resp.get("status") == "error" or resp.get("ok") is False):
+                    last_s = 200
+                    last_r = resp
+                    continue
+                return status, resp
+            if status != 0:
+                last_s = status
+                last_r = resp
+        return last_s, last_r
+
     def apply_updates_sync(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
-        """执行一键更新与热重载。支持 AstrBot 标准与旧版 API 自适应。"""
+        """执行一键更新与热重载。支持 Git 源码拉取、GitHub 归档包与 AstrBot OpenAPI 多阶自适应。"""
         if not self.enabled:
             return {
                 "ok": False,
@@ -889,38 +1119,56 @@ class UpdaterService:
                 continue
 
             nick = get_plugin_display_name(p)
-            update_payload = json.dumps({"name": name, "plugin_name": name}).encode("utf-8")
+            local_dir = self.find_plugin_local_dir(p)
+            before_ver = _get_local_version(p, local_dir)
 
-            # 1. 执行更新：优先调用标准 /api/v1/plugins/update，400/404/405/422 时回退 /api/v1/plugins/{name}/update
-            update_url = f"{self.api_url}/api/v1/plugins/update"
-            u_status, u_resp = _http_request(
-                update_url,
-                method="POST",
-                headers=self._auth_headers(json_body=True),
-                data=update_payload,
-                timeout=45,
-            )
-            if u_status in (400, 404, 405, 422):
-                u_status, u_resp = _http_request(
-                    f"{self.api_url}/api/v1/plugins/{name}/update",
-                    method="POST",
-                    headers=self._auth_headers(json_body=True),
-                    data=update_payload,
-                    timeout=45,
-                )
+            update_ok = False
+            update_details = []
 
-            if u_status != 200:
-                err_msg = _extract_err_msg(u_resp)
+            # 1. 优先尝试本地 Git 真实拉取 (直接在 .git 目录执行，最精准从 GitHub 仓库拉取最新 commit)
+            if local_dir and os.path.isdir(os.path.join(local_dir, ".git")):
+                git_ok, git_msg = _git_pull_plugin(local_dir, force=force)
+                if git_ok:
+                    update_ok = True
+                    update_details.append(f"Git: {git_msg}")
+                else:
+                    update_details.append(f"Git失败: {git_msg}")
+
+            # 2. 若无 .git 或 Git 失败，尝试直接从 GitHub 归档包 (zip) 下载覆盖
+            if not update_ok and local_dir:
+                repo_url = p.get("repo") or KNOWN_REPOS.get(norm_name) or ""
+                if repo_url and "github.com" in repo_url:
+                    zip_ok, zip_msg = _download_github_archive(repo_url, local_dir)
+                    if zip_ok:
+                        update_ok = True
+                        update_details.append(f"GitHub归档: {zip_msg}")
+                    else:
+                        update_details.append(f"GitHub归档失败: {zip_msg}")
+
+            # 3. 联动 AstrBot OpenAPI / Dashboard 核心更新接口
+            u_status, u_resp = self._request_astrot_update_api(name)
+            if u_status == 200:
+                if isinstance(u_resp, dict) and (u_resp.get("status") == "error" or u_resp.get("ok") is False):
+                    update_details.append(f"API: {_extract_err_msg(u_resp)}")
+                else:
+                    update_ok = True
+                    update_details.append("OpenAPI更新已触发")
+            elif u_status != 0:
+                update_details.append(f"API失败({u_status}): {_extract_err_msg(u_resp)}")
+
+            # 4. 若上述更新方式均未成功且无本地目录可操作
+            if not update_ok:
+                err_summary = "; ".join(update_details) or "未找到可用更新源或本地目录"
                 results.append({
                     "name": name,
                     "nickname": nick,
                     "ok": False,
                     "stage": "update",
-                    "message": f"更新失败 ({u_status}): {err_msg}",
+                    "message": f"更新失败: {err_summary}",
                 })
                 continue
 
-            # 2. 执行热重载：自适应适配不同 AstrBot 版本的重载接口
+            # 5. 执行热重载：自适应适配不同 AstrBot 版本的重载接口
             r_status, r_resp = self._request_reload(name)
 
             if r_status != 200:
@@ -934,12 +1182,23 @@ class UpdaterService:
                 })
                 continue
 
+            # 6. 版本真实比对与状态汇报（杜绝假更新假汇报）
+            after_ver = _get_local_version(p, local_dir)
+            if before_ver and after_ver and before_ver != "未知" and after_ver != "未知" and before_ver != after_ver:
+                msg = f"更新并重载成功 ({format_version(before_ver)} → {format_version(after_ver)})"
+            elif after_ver and after_ver != "未知":
+                msg = f"更新并重载成功 ({format_version(after_ver)})"
+            else:
+                msg = "更新并重载成功"
+
             results.append({
                 "name": name,
                 "nickname": nick,
                 "ok": True,
                 "stage": "done",
-                "message": "更新并重载成功",
+                "message": msg,
+                "before_version": before_ver,
+                "after_version": after_ver,
             })
 
         return {"ok": True, "results": results}
