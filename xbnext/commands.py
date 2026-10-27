@@ -79,9 +79,14 @@ def split(text: str, root: str = "xbnext") -> Tuple[str, List[str]]:
     if not tokens:
         return "", []
 
-    keys = {root.lower(), "/" + root.lower()}
+    keys = {root.lower(), "/" + root.lower(), "／" + root.lower()}
     index = next((i for i, t in enumerate(tokens) if t.lower() in keys), None)
     if index is None:
+        # 兼容无空格形态：如 /xbnext强制更新 或 xbnext一键更新
+        m = re.match(rf"^([/／]?{re.escape(root)})(\S+)$", tokens[0], re.I)
+        if m:
+            sub = m.group(2).lower()
+            return sub, tokens[1:]
         # 没有根命令 → 找第一个以 / 开头的 token（CQ/@ 前缀在它之前）
         index = next((i for i, t in enumerate(tokens) if t.startswith("/")), -1)
     rest = tokens[index + 1:]

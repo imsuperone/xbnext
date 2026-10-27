@@ -64,12 +64,30 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     @filter.event_message_type(filter.EventMessageType.ALL, priority=HOOK_PRIORITY)
     async def on_adapter_message(self, event: AstrMessageEvent) -> None:
-        """早期钩子：在 core 判定「空消息」之前补写 ``event.message_str``。
+        """早期钩子：标准化无空格指令并在 core 判定「空消息」之前补写 ``event.message_str``。
 
         纯表情（``@bot + 一个 QQ 表情`` / mface）的 ``message_str`` 是空的，
         core 会 ``skip llm request: empty message`` —— LLM 压根不被调用。
-        这里只做转发，业务在 ``runtime.handle_adapter_message``。
+        此外自动兼容如 ``/xbnext强制更新`` 等无空格触发词，格式化为带空格指令。
+        这里只做转发与预处理，业务在 ``runtime.handle_adapter_message``。
         """
+        try:
+            m_str = getattr(event, "message_str", None)
+            if isinstance(m_str, str):
+                import re as _re
+                m = _re.match(r"^([/／]?xbnext)(\S.*)$", m_str.strip(), _re.I)
+                if m:
+                    norm = f"{m.group(1)} {m.group(2)}"
+                    event.message_str = norm
+                    msg_obj = getattr(event, "message_obj", None)
+                    if msg_obj and hasattr(msg_obj, "message") and isinstance(msg_obj.message, list):
+                        for seg in msg_obj.message:
+                            txt = getattr(seg, "text", None)
+                            if isinstance(txt, str) and _re.match(r"^[/／]?xbnext\S+", txt, _re.I):
+                                seg.text = _re.sub(r"^([/／]?xbnext)(\S+)", r"\1 \2", txt, flags=_re.I)
+                                break
+        except Exception:
+            pass
         await self.runtime.handle_adapter_message(event)
 
     @filter.on_llm_request(priority=HOOK_PRIORITY)

@@ -434,7 +434,7 @@ def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> 
         return False, str(ex)
 
 
-def _download_github_archive(repo_url: str, local_dir: str, timeout: int = 40) -> Tuple[bool, str]:
+def _download_github_archive(repo_url: str, local_dir: str, branch: str = "", timeout: int = 40) -> Tuple[bool, str]:
     """当 Git 不可用或目录非 Git 仓库时，直接从 GitHub 归档包拉取最新源码并解压覆盖。
     严格保留原有的 data/ 目录与用户数据库、配置，防止数据损毁。
     """
@@ -446,16 +446,35 @@ def _download_github_archive(repo_url: str, local_dir: str, timeout: int = 40) -
         return False, f"无法从 {repo_url} 解析 GitHub 仓库信息"
     owner, repo = m.group(1), m.group(2)
 
+    if not branch and os.path.isdir(os.path.join(local_dir, ".git")):
+        try:
+            head_p = os.path.join(local_dir, ".git", "HEAD")
+            if os.path.isfile(head_p):
+                with open(head_p, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content.startswith("ref: refs/heads/"):
+                    branch = content[len("ref: refs/heads/"):].strip()
+        except Exception:
+            pass
+
     import io
     import zipfile
     import urllib.request
 
-    zip_urls = [
-        f"https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
-        f"https://github.com/{owner}/{repo}/archive/refs/heads/master.zip",
-        f"https://ghproxy.net/https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
-        f"https://mirror.ghproxy.com/https://github.com/{owner}/{repo}/archive/refs/heads/main.zip",
-    ]
+    cand_branches = []
+    if branch:
+        cand_branches.append(branch)
+    for b in ("main", "master", "release/v0.7.45-pack-slim"):
+        if b not in cand_branches:
+            cand_branches.append(b)
+
+    zip_urls = []
+    for b in cand_branches:
+        zip_urls.extend([
+            f"https://github.com/{owner}/{repo}/archive/refs/heads/{b}.zip",
+            f"https://ghproxy.net/https://github.com/{owner}/{repo}/archive/refs/heads/{b}.zip",
+            f"https://mirror.ghproxy.com/https://github.com/{owner}/{repo}/archive/refs/heads/{b}.zip",
+        ])
 
     zip_bytes = None
     for u in zip_urls:
@@ -506,9 +525,13 @@ def _download_github_archive(repo_url: str, local_dir: str, timeout: int = 40) -
 class UpdaterService:
     """管理插件检查更新与一键升级逻辑。"""
 
-    def __init__(self, conf: Any = None, context: Any = None):
+    def __init__(self, conf: Any = None, context: Any = None, loop: Any = None):
         self.conf = conf
         self.context = context
+        try:
+            self._loop = loop or asyncio.get_running_loop()
+        except Exception:
+            self._loop = None
 
     @property
     def enabled(self) -> bool:
@@ -611,9 +634,10 @@ class UpdaterService:
     def _auth_headers(self, json_body: bool = True) -> Dict[str, str]:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater",
-            "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if json_body:
             headers["Content-Type"] = "application/json"
         return headers
@@ -985,25 +1009,62 @@ class UpdaterService:
         return await asyncio.to_thread(self.check_updates_sync, selected_names)
 
     def _request_reload(self, target_name: str) -> Tuple[int, Any]:
-        """自适应热重载单个插件，兼容不同 AstrBot 版本的 OpenAPI 规范与回退端点。"""
+        """自适应热重载单个插件，兼容进程内 StarManager 与不同 AstrBot 版本的 OpenAPI 端点规范。"""
         name_clean = str(target_name).strip()
+
+        # 1. 优先尝试进程内 context / star_manager 直接重载（最快且零网络依赖、零 422 风险）
+        if self.context:
+            try:
+                star_mgr = getattr(self.context, "_star_manager", None) or getattr(self.context, "star_manager", None)
+                if star_mgr:
+                    for method_name in ("reload", "reload_star", "reload_plugin"):
+                        fn = getattr(star_mgr, method_name, None)
+                        if callable(fn):
+                            import inspect
+                            sig = inspect.signature(fn)
+                            if len(sig.parameters) >= 1:
+                                res = fn(name_clean)
+                            else:
+                                res = fn()
+                            if inspect.isawaitable(res):
+                                if self._loop and self._loop.is_running():
+                                    fut = asyncio.run_coroutine_threadsafe(res, self._loop)
+                                    try:
+                                        r = fut.result(timeout=25)
+                                        if isinstance(r, tuple) and len(r) >= 2 and not r[0]:
+                                            return 500, {"error": str(r[1])}
+                                    except Exception as exc:
+                                        return 500, {"error": str(exc)}
+                                else:
+                                    try:
+                                        asyncio.run(res)
+                                    except Exception:
+                                        pass
+                            return 200, {"ok": True, "source": "context.star_manager"}
+            except Exception:
+                pass
+
+        # 2. HTTP OpenAPI 多端点自适应重载
+        payload_name = json.dumps({"name": name_clean}).encode("utf-8")
+        payload_both = json.dumps({"name": name_clean, "plugin_name": name_clean}).encode("utf-8")
         attempts = [
-            # 1. 优先调用标准全局重载端点 /api/v1/plugins/reload (无 Body - FastAPI 无参路由规范，规避 422 校验失败)
-            (f"{self.api_url}/api/v1/plugins/reload", None, False),
-            # 2. 专有插件重载端点 /api/v1/plugins/{name}/reload (无 Body)
+            # Dashboard 插件重载核心端点（带 JSON body，最稳合规）
+            (f"{self.api_url}/api/plugin/reload", payload_name, True),
+            (f"{self.api_url}/api/plugin/reload", payload_both, True),
+            # 专有插件重载端点 /api/v1/plugins/{name}/reload
             (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", None, False),
-            # 3. 专有插件重载端点 /api/v1/plugins/{name}/reload (空 JSON: {})
             (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", b"{}", True),
-            # 4. 标准全局重载端点 /api/v1/plugins/reload (空 JSON: {})
+            # 标准全局重载端点 /api/v1/plugins/reload
+            (f"{self.api_url}/api/v1/plugins/reload", payload_name, True),
+            (f"{self.api_url}/api/v1/plugins/reload", payload_both, True),
+            (f"{self.api_url}/api/v1/plugins/reload", None, False),
             (f"{self.api_url}/api/v1/plugins/reload", b"{}", True),
-            # 5. Query 传参 /api/v1/plugins/reload?name={name}
+            # Query 传参 /api/v1/plugins/reload?name={name}
             (f"{self.api_url}/api/v1/plugins/reload?name={name_clean}", None, False),
             (f"{self.api_url}/api/v1/plugins/reload?plugin_name={name_clean}", None, False),
-            # 6. JSON 载荷 /api/v1/plugins/reload (带 name 与 plugin_name，旧版兼容)
-            (f"{self.api_url}/api/v1/plugins/reload", json.dumps({"name": name_clean, "plugin_name": name_clean}).encode("utf-8"), True),
-            # 7. Dashboard 根级端点 /api/plugin/reload
+            # Dashboard 根级端点无参兜底
             (f"{self.api_url}/api/plugin/reload", None, False),
-            # 8. 失败插件重载端点 /api/v1/plugins/failed/{name}/reload
+            # 失败插件重载端点
             (f"{self.api_url}/api/v1/plugins/failed/{name_clean}/reload", None, False),
         ]
         last_status = 0
@@ -1020,27 +1081,6 @@ class UpdaterService:
                 return status, resp
             last_status = status
             last_resp = resp
-
-        # 9. 若 HTTP 接口均受限，且当前运行在 AstrBot runtime 进程内，尝试通过 context / star_manager 内部重载
-        if self.context:
-            try:
-                star_mgr = getattr(self.context, "_star_manager", None) or getattr(self.context, "star_manager", None)
-                if star_mgr:
-                    for method_name in ("reload", "reload_star", "reload_plugin"):
-                        fn = getattr(star_mgr, method_name, None)
-                        if callable(fn):
-                            import inspect
-                            sig = inspect.signature(fn)
-                            if len(sig.parameters) >= 1:
-                                res = fn(name_clean)
-                            else:
-                                res = fn()
-                            if inspect.isawaitable(res):
-                                import asyncio
-                                asyncio.create_task(res)
-                            return 200, {"ok": True, "source": "context.star_manager"}
-            except Exception:
-                pass
 
         return last_status, last_resp
 
@@ -1204,4 +1244,8 @@ class UpdaterService:
         return {"ok": True, "results": results}
 
     async def apply_updates(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
+        try:
+            self._loop = asyncio.get_running_loop()
+        except Exception:
+            pass
         return await asyncio.to_thread(self.apply_updates_sync, selected_names, force)
