@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.37" />
+  <link rel="stylesheet" href="./style.css?v=0.2.38" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.37">0.2.37</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.38">0.2.38</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -476,13 +476,28 @@
           </div>
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
+              <label class="form-label" style="margin-bottom: 2px;">拦截斜杠/指令符号 (防大模型胡乱接话)</label>
+              <span class="field-hint">开启后，当群聊收到以 <code>/</code>、<code>／</code>、<code>!</code>、<code>#</code> 开头的指令但未被任何指令插件处理时，自动掐断并阻止大模型接话与回复，防止机器人对未知指令或其他机器人的指令胡乱应答。默认开启。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_bot_guard_block_slash_commands" data-key="bot_guard_block_slash_commands" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
               <label class="form-label" style="margin-bottom: 2px;">群聊全部指令需 @ 触发 (防多Bot冲突)</label>
-              <span class="field-hint">开启后，群聊中除 <code>/xbnext</code> 系列管理指令外，所有指令（以 <code>/</code>、<code>!</code>、<code>#</code> 开头）必须 @ 机器人才生效，避免多个机器人同时清空或触发。默认关闭。</span>
+              <span class="field-hint">开启后，群聊中除 <code>/xbnext</code> 系列管理指令外，所有指令（以 <code>/</code>、<code>!</code>、<code>#</code> 开头或系统/插件指令）必须 @ 机器人才生效，避免多个机器人同时清空或触发。默认关闭。</span>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_bot_guard_require_at_for_commands" data-key="bot_guard_require_at_for_commands" />
               <span class="switch-slider"></span>
             </label>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="inp_bot_guard_extra_command_words">额外需 @ 触发的自定义指令词</label>
+            <input type="text" class="m3-input" id="inp_bot_guard_extra_command_words" data-key="bot_guard_extra_command_words" placeholder="点歌,偷表情,戳一戳,自定义词" />
+            <span class="field-hint">选填。多个关键词以逗号或空格分隔。配置后这些指令在群聊中未 @ 机器人时也会被拦截。</span>
           </div>
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
@@ -790,7 +805,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.37"></script>
-  <script src="./app.js?v=0.2.37"></script>
+  <script src="./api.js?v=0.2.38"></script>
+  <script src="./app.js?v=0.2.38"></script>
 </body>
 </html>

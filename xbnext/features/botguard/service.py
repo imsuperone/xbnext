@@ -122,9 +122,10 @@ def extract_sender_id(event: Any) -> str:
 
 
 def extract_self_id(event: Any) -> str:
-    """从事件对象中提取机器人自身的 ID。"""
+    """从事件对象中全面提取机器人自身的 ID。"""
     if event is None:
         return ""
+    # 1. 尝试 get_self_id()
     getter = getattr(event, "get_self_id", None)
     if callable(getter):
         try:
@@ -134,17 +135,34 @@ def extract_self_id(event: Any) -> str:
         except Exception:  # noqa: BLE001
             pass
 
+    # 2. 从 event 顶层属性
     for attr in ("self_id", "bot_id"):
         val = getattr(event, attr, None)
         if val not in (None, ""):
             return str(val).strip()
 
+    # 3. 从 event.bot (OneBot/aiocqhttp 适配器实例)
+    bot = getattr(event, "bot", None)
+    if bot is not None:
+        for attr in ("self_id", "uin", "bot_uin", "user_id"):
+            val = getattr(bot, attr, None)
+            if val not in (None, ""):
+                return str(val).strip()
+
+    # 4. 从 message_obj
     msg_obj = getattr(event, "message_obj", None)
     if msg_obj is not None:
         for attr in ("self_id", "bot_id"):
             val = getattr(msg_obj, attr, None)
             if val not in (None, ""):
                 return str(val).strip()
+
+    # 5. 从 unified_msg_origin 提取 (如 bot_id:group:gid)
+    umo = getattr(event, "unified_msg_origin", None)
+    if umo:
+        parts = str(umo).split(":")
+        if parts and parts[0].isdigit():
+            return parts[0].strip()
 
     return ""
 
@@ -210,13 +228,23 @@ def is_group_event(event: Any) -> bool:
     return False
 
 
-def is_at_self(event: Any, self_id: str) -> bool:
-    """判定事件中是否包含明确艾特自身（self_id）的段落。"""
-    if not event or not self_id:
+def is_at_self(event: Any, self_id: str = "") -> bool:
+    """判定事件中是否明确艾特自身（self_id），或已由框架判定为 to_me。"""
+    if event is None:
         return False
-    self_clean = str(self_id).strip()
 
-    # 1. 检查 event.get_messages() 或 message_obj.message 组件
+    # 1. 优先使用 AstrBot 核心自带的 to_me / 唤醒标记
+    for attr in ("to_me", "is_at_or_wake_command"):
+        if getattr(event, attr, False):
+            return True
+    msg_obj = getattr(event, "message_obj", None)
+    if msg_obj is not None:
+        if getattr(msg_obj, "to_me", False):
+            return True
+
+    self_clean = str(self_id or "").strip()
+
+    # 2. 检查消息链组件
     messages = []
     getter = getattr(event, "get_messages", None)
     if callable(getter):
@@ -224,49 +252,85 @@ def is_at_self(event: Any, self_id: str) -> bool:
             messages = getter() or []
         except Exception:  # noqa: BLE001
             pass
-    if not messages:
-        msg_obj = getattr(event, "message_obj", None)
-        if msg_obj is not None:
-            messages = getattr(msg_obj, "message", []) or []
+    if not messages and msg_obj is not None:
+        messages = getattr(msg_obj, "message", []) or []
 
     for comp in messages:
         c_type = type(comp).__name__
-        if c_type == "At" or hasattr(comp, "qq") or hasattr(comp, "target"):
-            target_qq = str(getattr(comp, "qq", getattr(comp, "target", "")) or "").strip()
-            if target_qq == self_clean:
+        if c_type == "At" or hasattr(comp, "qq") or hasattr(comp, "target") or hasattr(comp, "data"):
+            target_qq = str(
+                getattr(comp, "qq", None)
+                or getattr(comp, "target", None)
+                or (getattr(comp, "data", {}) or {}).get("qq", "")
+                or ""
+            ).strip()
+            if self_clean and target_qq == self_clean:
                 return True
 
-    # 2. 从 message_str / raw_message 中检查
+    # 3. 从 message_str / raw_message 文本中检查
     for attr in ("message_str", "raw_message"):
         val = getattr(event, attr, None)
-        if not val and getattr(event, "message_obj", None) is not None:
-            val = getattr(event.message_obj, attr, None)
+        if not val and msg_obj is not None:
+            val = getattr(msg_obj, attr, None)
         if isinstance(val, str) and val:
-            if f"qq={self_clean}" in val or f"[At:{self_clean}]" in val or f"[At: {self_clean}]" in val:
-                return True
+            if self_clean:
+                if (
+                    f"qq={self_clean}" in val
+                    or f"[At:{self_clean}]" in val
+                    or f"[At: {self_clean}]" in val
+                    or f"@{self_clean}" in val
+                    or f'user="{self_clean}"' in val
+                ):
+                    return True
 
     return False
 
 
 def is_whitelisted_command(msg_str: str) -> bool:
-    """判定消息是否属于白名单指令（如 /xbnext 系列及其管理/更新指令），无需强制 @。"""
+    """判定消息是否属于白名单指令（仅限 /xbnext 系列与 updater 升级指令，无需强制 @）。"""
     if not msg_str:
         return False
     stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
-    return bool(re.match(r"^[!/#/]?\s*(?:xbnext|update)(?:\s|$)", stripped, re.I))
+    return bool(re.match(r"^[!/#/／]?\s*(?:xbnext|update)(?:\s|$)", stripped, re.I))
 
 
-def is_command_message(msg_str: str) -> bool:
-    """判定消息是否为机器人指令（以常见前缀 /、!、# 开头或为重置指令）。"""
+KNOWN_PLUGIN_COMMAND_PREFIXES = (
+    "xbimg", "xb2img", "xbdoc", "xbbot", "xbtest", "测试xbtest", "测试testxb",
+    "超管列表", "签到", "打卡", "打劫", "银行", "存款", "取款", "奴隶",
+    "打工", "搬砖", "收工", "进监狱", "探监", "精灵", "抓精灵", "冒险",
+    "钓鱼", "帮派", "坐骑", "回收欢迎坐骑", "设置欢迎坐骑", "pokepro",
+    "戳一戳", "stealer", "偷表情", "表情包小偷", "meting", "点歌",
+    "b站", "biliread", "大肥鱼", "说说", "空间"
+)
+
+
+def is_command_message(msg_str: str, extra_keywords: Any = None) -> bool:
+    """判定消息是否为机器人指令（以 /、!、# 开头，或匹配系统/插件指令词）。"""
     if not msg_str:
         return False
     stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
     if not stripped:
         return False
-    if re.match(r"^[!/#/！#]\s*\S+", stripped):
+    # 1. 任意以常见指令符号开头（支持全角半角斜杠、叹号、井号）
+    if re.match(r"^[!/#/！#／＃]\s*\S+", stripped):
         return True
     if is_destructive_reset_command(msg_str):
         return True
+    # 2. 匹配内置已知插件/系统指令词
+    first_token = stripped.split()[0].lower()
+    for cmd in KNOWN_PLUGIN_COMMAND_PREFIXES:
+        if first_token == cmd or stripped.startswith(cmd):
+            return True
+    # 3. 匹配额外自定义指令词
+    if extra_keywords:
+        words = []
+        if isinstance(extra_keywords, (list, tuple, set)):
+            words = [str(x).strip().lower() for x in extra_keywords if str(x).strip()]
+        elif isinstance(extra_keywords, str):
+            words = [x.strip().lower() for x in re.split(r"[,，;\s\n]+", extra_keywords) if x.strip()]
+        for w in words:
+            if first_token == w or stripped.startswith(w):
+                return True
     return False
 
 

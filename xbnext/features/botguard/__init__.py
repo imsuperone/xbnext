@@ -11,6 +11,7 @@ order = 5（最前执行优先级），在 core 判定空消息与大模型管�
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any, List, Optional, Set
 
 from ... import log, switches
@@ -86,6 +87,8 @@ class BotGuardFeature(Feature):
     order = 5
     #: 需要在消息进入核心管线前掐断
     uses_adapter_hook = True
+    #: 需要在进入大模型前拦截未处理指令
+    uses_llm_request_hook = True
     #: /xbnext botguard 指令
     command = "botguard"
 
@@ -122,22 +125,24 @@ class BotGuardFeature(Feature):
                         if msg_obj is not None:
                             msg_text = getattr(msg_obj, "raw_message", "") or ""
 
-                    # 白名单指令（如 /xbnext 系列）无需 @，直接放行
+                    # 白名单指令（仅限 /xbnext 系列及其管理/更新指令）无需 @，直接放行
                     if not service.is_whitelisted_command(msg_text):
                         is_target_cmd = False
-                        if req_all_cmds and service.is_command_message(msg_text):
+                        extra_words = ctx.conf.text("bot_guard_extra_command_words", "")
+                        if req_all_cmds and service.is_command_message(msg_text, extra_keywords=extra_words):
                             is_target_cmd = True
                         elif req_reset_cmds and service.is_destructive_reset_command(msg_text):
                             is_target_cmd = True
 
                         if is_target_cmd:
                             self_id = service.extract_self_id(event)
-                            if self_id and not service.is_at_self(event, self_id):
+                            at_self = service.is_at_self(event, self_id)
+                            if not at_self:
                                 self._stop_event_safely(event)
                                 log.emit(
                                     self._log,
                                     "info",
-                                    f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id})，已安全忽略防止多Bot冲突",
+                                    f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id or '未知'})，已安全拦截防止多Bot冲突",
                                 )
                                 if ctx.conf.bool("debug_log"):
                                     ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
@@ -219,11 +224,43 @@ class BotGuardFeature(Feature):
                 ctx.note(f"BotGuard 拦截判定异常：{exc!r}")
 
     async def on_llm_request(self, ctx: Any) -> None:
-        """LLM 请求阶段防御性兜底：若早期钩子未能拦截，此处阻止 LLM 调用。"""
+        """LLM 请求阶段防御性兜底：拦截黑名单账号与未处理斜杠指令符号，阻止大模型接话与回复。"""
         event = getattr(ctx, "event", None)
         if event is None:
             return
 
+        # 1. 拦截未被任何插件处理的斜杠/指令符号，防止大模型胡乱接话或回答其他机器人的指令
+        if ctx.conf.bool("bot_guard_block_slash_commands", True):
+            try:
+                msg_str = (
+                    ctx.prompt().strip()
+                    or str(getattr(event, "message_str", "") or "").strip()
+                )
+                if not msg_str:
+                    msg_obj = getattr(event, "message_obj", None)
+                    if msg_obj is not None:
+                        msg_str = str(getattr(msg_obj, "raw_message", "") or "").strip()
+                if msg_str:
+                    stripped_msg = re.sub(
+                        r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", msg_str, flags=re.I
+                    ).strip()
+                    if re.match(r"^[!/#/！#／＃]\s*\S+", stripped_msg):
+                        self._stop_event_safely(event)
+                        req = getattr(ctx, "req", None)
+                        if req is not None and hasattr(req, "prompt"):
+                            req.prompt = ""
+                        log.emit(
+                            self._log,
+                            "info",
+                            f"指令防接话拦截：检测到未被插件消费的指令符号消息 '{stripped_msg[:30]}'，已阻止大模型接话与回复",
+                        )
+                        if ctx.conf.bool("debug_log"):
+                            ctx.note(f"BotGuard 拦截斜杠指令防大模型回复：{stripped_msg[:30]}")
+                        return
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 2. 黑名单账号防御性兜底
         try:
             blacklist_raw = ctx.conf.text("bot_guard_blacklist", "")
             blacklist = service.parse_blacklist(blacklist_raw)
