@@ -128,6 +128,10 @@ class XbnextPlugin(Star):
     # 指令
     # ------------------------------------------------------------------
     @filter.command("xbnext")
+    @filter.command("xbnext强制更新")
+    @filter.command("xbnext一键更新")
+    @filter.command("xbnext更新")
+    @filter.command("xbnext检查更新")
     async def xbnext(self, event: AstrMessageEvent):
         """XBNEXT 统一指令入口：``/xbnext [status|profile ...]``。
 

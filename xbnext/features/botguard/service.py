@@ -291,7 +291,7 @@ def is_whitelisted_command(msg_str: str) -> bool:
     if not msg_str:
         return False
     stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
-    return bool(re.match(r"^[!/#/／]?\s*(?:xbnext|update)(?:\s|$)", stripped, re.I))
+    return bool(re.match(r"^[!/#/／]?\s*(?:xbnext|update)", stripped, re.I))
 
 
 KNOWN_PLUGIN_COMMAND_PREFIXES = (
