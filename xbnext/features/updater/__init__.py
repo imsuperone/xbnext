@@ -286,7 +286,7 @@ class UpdaterFeature(Feature):
 
         # 检查更新分支
         if sub_arg in ("check", "检查", "检查更新", "查更新", ""):
-            res = await updater.check_updates()
+            res = await updater.check_updates(include_market_plugins=True)
             if not res.get("ok"):
                 return f"❌ 检查更新失败：{res.get('error')}"
 
@@ -314,7 +314,7 @@ class UpdaterFeature(Feature):
 
         # 一键更新分支
         if sub_arg in ("update", "更新", "一键更新", "升级", "do_update"):
-            res = await updater.apply_updates(force=False)
+            res = await updater.apply_updates(force=False, include_market_plugins=True)
             if not res.get("ok"):
                 return f"❌ 执行更新失败：{res.get('error')}"
 

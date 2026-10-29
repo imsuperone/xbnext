@@ -300,20 +300,40 @@ def format_result_line(result: Dict[str, Any]) -> str:
     return f"• {nick}：{result_icon(result)} {message}".rstrip()
 
 
+def _name_list(names: List[str], limit: int = 6) -> str:
+    """把插件名压成一行，过长时省略，避免聊天里刷屏。"""
+    clean = [str(n).replace("astrbot_plugin_", "") or str(n) for n in names if n]
+    if len(clean) > limit:
+        return "、".join(clean[:limit]) + f" 等 {len(clean)} 个"
+    return "、".join(clean)
+
+
 def no_update_message(check_res: Dict[str, Any]) -> str:
-    """没有可更新插件时的结论：区分「确实最新」与「远端版本不可知」。"""
-    unverified = check_res.get("unverified") or []
-    if not unverified:
-        return "✨ 全部选定插件均已是最新版本，无需更新。"
-    if not check_res.get("market_available", True):
+    """没有可更新插件时的结论：区分「确实最新」与「无法确认」。"""
+    unverified = list(check_res.get("unverified") or [])
+    unknown_local = list(check_res.get("unknown_local") or [])
+    if not unverified and not unknown_local:
+        return "✨ 已检查的插件均已是最新版本，无需更新。"
+
+    if unverified and not check_res.get("market_available", True):
         return (
-            f"⚠️ 插件市场数据获取失败，{len(unverified)} 个插件无法确认是否有新版本。\n"
-            "💡 请检查网络后重试，或发送【/xbnext 强制更新】重拉本插件。"
+            f"⚠️ 插件市场数据获取失败，{len(unverified)} 个插件无法确认是否有新版本："
+            f"{_name_list(unverified)}\n"
+            "💡 请检查网络后重试；插件加载后市场索引会自动在后台重下，稍等再试即可。"
         )
-    return (
-        f"✨ 其余插件均已是最新；{len(unverified)} 个插件无远端来源"
-        "（未收录市场且未配置 repo），需手动更新。"
-    )
+
+    lines = ["✨ 其余插件均为最新版本。"]
+    if unverified:
+        lines.append(
+            f"⚠️ {len(unverified)} 个插件无远端来源（未收录市场且未配置 repo），"
+            f"需手动更新：{_name_list(unverified)}"
+        )
+    if unknown_local:
+        lines.append(
+            f"⚠️ {len(unknown_local)} 个插件本地版本未知，无法判断是否需要更新："
+            f"{_name_list(unknown_local)}"
+        )
+    return "\n".join(lines)
 
 
 def format_update_report(
@@ -1078,8 +1098,17 @@ class UpdaterService:
     async def fetch_installed_plugins(self) -> Tuple[bool, List[Dict[str, Any]], str]:
         return await asyncio.to_thread(self.fetch_installed_plugins_sync)
 
-    def check_updates_sync(self, selected_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        """检查目标插件的更新状态。支持 AstrBot 市场插件与内置插件多维度检测。"""
+    def check_updates_sync(
+        self,
+        selected_names: Optional[List[str]] = None,
+        include_market_plugins: bool = False,
+    ) -> Dict[str, Any]:
+        """检查目标插件的更新状态。支持 AstrBot 市场插件与内置插件多维度检测。
+
+        ``include_market_plugins``：手动「一键更新 / 检查更新」时为 True，
+        会把市场里收录的其他插件也纳入检查（只比市场版本，不额外请求 GitHub），
+        这样用户不必先把插件名填进配置列表。
+        """
         if not self.enabled:
             return {
                 "ok": False,
@@ -1103,18 +1132,17 @@ class UpdaterService:
             norm_name = normalize_plugin_name(name)
             is_target = (name in targets or norm_name in targets or name in raw_targets_set)
             if not is_target:
-                if not (self.notify_third_party and selected_names is None):
-                    continue
-                install_src = p.get("install_source") or {}
-                repo_check = p.get("repo") or install_src.get("repo") or ""
-                is_in_market = bool(
-                    market_index and (
-                        name in market_index
-                        or norm_name in market_index
-                        or name.replace("astrbot_plugin_", "") in market_index
-                    )
-                )
-                if not repo_check and not is_in_market:
+                in_market = bool(market_entry_for(market_index, name))
+                if include_market_plugins:
+                    # 手动一键更新：市场收录的插件直接纳入，用户不必手工维护列表
+                    if not in_market:
+                        continue
+                elif self.notify_third_party and selected_names is None:
+                    install_src = p.get("install_source") or {}
+                    repo_check = p.get("repo") or install_src.get("repo") or ""
+                    if not repo_check and not in_market:
+                        continue
+                else:
                     continue
 
             install_src = p.get("install_source") or {}
@@ -1153,7 +1181,10 @@ class UpdaterService:
                         f"远端 {format_version(remote_ver)}），已跳过"
                     )
             elif remote_ver:
-                status_text = f"远端 {format_version(remote_ver)}（本地版本未知）"
+                # 本地版本读不到（目录未找到 / metadata 缺失）时不能当作「已是最新」
+                status_text = (
+                    f"无法确认（本地版本未知，远端 {format_version(remote_ver)}）"
+                )
             elif local_ver and local_ver != "未知":
                 if not market_index:
                     status_text = (
@@ -1185,18 +1216,32 @@ class UpdaterService:
             })
 
         unverified = [p.get("name") for p in results if not p.get("remote_version")]
+        unknown_local = [
+            p.get("name")
+            for p in results
+            if p.get("remote_version")
+            and (not p.get("local_version") or p.get("local_version") == "未知")
+        ]
         summary = {
             "ok": True,
             "has_new_version": has_new_version,
             "market_available": bool(market_index),
             "unverified": unverified,
+            "unknown_local": unknown_local,
+            "checked": [p.get("name") for p in results],
             "plugins": results,
         }
         summary["message"] = no_update_message(summary)
         return summary
 
-    async def check_updates(self, selected_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        return await asyncio.to_thread(self.check_updates_sync, selected_names)
+    async def check_updates(
+        self,
+        selected_names: Optional[List[str]] = None,
+        include_market_plugins: bool = False,
+    ) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.check_updates_sync, selected_names, include_market_plugins
+        )
 
     def _request_reload(self, target_name: str) -> Tuple[int, Any]:
         """自适应热重载单个插件，兼容进程内 StarManager 与不同 AstrBot 版本的 OpenAPI 端点规范。"""
@@ -1309,7 +1354,12 @@ class UpdaterService:
                 last_r = resp
         return answered_with_error if answered_with_error[0] else (last_s, last_r)
 
-    def apply_updates_sync(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
+    def apply_updates_sync(
+        self,
+        selected_names: Optional[List[str]] = None,
+        force: bool = False,
+        include_market_plugins: bool = False,
+    ) -> Dict[str, Any]:
         """执行一键更新与热重载。支持 Git 源码拉取、GitHub 归档包与 AstrBot OpenAPI 多阶自适应。"""
         if not self.enabled:
             return {
@@ -1332,7 +1382,9 @@ class UpdaterService:
         # 非强制模式：无论调用方是否显式点名，都先确认确有更新。
         # WebUI 会把勾选的插件全量传进来，盲目拉取可能把插件回退到更旧的版本。
         if not force:
-            chk = self.check_updates_sync(selected_names)
+            chk = self.check_updates_sync(
+                selected_names, include_market_plugins=include_market_plugins
+            )
             if not chk.get("ok"):
                 return {"ok": False, "error": chk.get("error") or "检查更新失败"}
             need_update = {p["name"] for p in chk.get("plugins", []) if p.get("has_update")}
@@ -1376,6 +1428,12 @@ class UpdaterService:
             # 2. 若无 .git 或 Git 失败，尝试直接从 GitHub 归档包 (zip) 下载覆盖
             if not update_ok and local_dir:
                 repo_url = p.get("repo") or KNOWN_REPOS.get(norm_name) or ""
+                if not repo_url:
+                    # 从市场安装的插件本地 metadata 常常没有 repo，
+                    # 用市场索引里的仓库地址兜底，否则只能干等 OpenAPI。
+                    m_entry = market_entry_for(self.fetch_market_registry_sync(), name)
+                    if m_entry:
+                        repo_url = str(m_entry.get("repo") or "").strip()
                 if repo_url and "github.com" in repo_url:
                     zip_ok, zip_msg = _download_github_archive(repo_url, local_dir)
                     if zip_ok:
@@ -1388,8 +1446,10 @@ class UpdaterService:
             #    本地已经更新成功还去调它，AstrBot 会立刻重载一次，随后我们又重载一次，
             #    用户看到的就是「连续两次重启」。市场未收录的本地插件也直接跳过。
             if not update_ok:
-                market_index = self.fetch_market_registry_sync() if self.api_key else {}
-                if market_index and not market_entry_for(market_index, name):
+                market_index = self.fetch_market_registry_sync()
+                if not self.api_key:
+                    update_details.append("未配置 OpenAPI 密钥，市场更新接口不可用")
+                elif market_index and not market_entry_for(market_index, name):
                     update_details.append("该插件未收录于 AstrBot 插件市场，市场更新接口不可用")
                 else:
                     u_status, u_resp = self._request_astrot_update_api(name)
@@ -1549,12 +1609,19 @@ class UpdaterService:
 
         return {"ok": True, "results": results}
 
-    async def apply_updates(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
+    async def apply_updates(
+        self,
+        selected_names: Optional[List[str]] = None,
+        force: bool = False,
+        include_market_plugins: bool = False,
+    ) -> Dict[str, Any]:
         try:
             self._loop = asyncio.get_running_loop()
         except Exception:
             pass
-        res = await asyncio.to_thread(self.apply_updates_sync, selected_names, force)
+        res = await asyncio.to_thread(
+            self.apply_updates_sync, selected_names, force, include_market_plugins
+        )
         # 自身更新是延迟重载的：给回复留出时间，再真正热重载。
         try:
             if any(r.get("deferred_reload") for r in (res.get("results") or [])):
