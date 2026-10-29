@@ -12,6 +12,7 @@ import json
 import os
 import re
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -23,13 +24,20 @@ from ...version import extract_version as extract_version_from_yaml
 _MARKET_INDEX: Dict[str, Dict[str, Any]] = {}
 _MARKET_CACHE_TS: float = 0.0
 _MARKET_CACHE_TTL: float = 900.0  # 15 分钟
+_MARKET_REFRESHING: bool = False
+_MARKET_FAIL_TS: float = 0.0
+_MARKET_DONE = threading.Event()
+_MARKET_DONE.set()
 
 
 def clear_market_cache() -> None:
     """清空市场索引缓存（测试与调试辅助）。"""
-    global _MARKET_INDEX, _MARKET_CACHE_TS
+    global _MARKET_INDEX, _MARKET_CACHE_TS, _MARKET_REFRESHING, _MARKET_FAIL_TS
     _MARKET_INDEX = {}
     _MARKET_CACHE_TS = 0.0
+    _MARKET_REFRESHING = False
+    _MARKET_FAIL_TS = 0.0
+    _MARKET_DONE.set()
 
 DEFAULT_TARGET_PLUGINS = [
     "astrbot_plugin_xbimg",
@@ -140,6 +148,51 @@ def market_entry_for(
     if not entry and name.startswith("astrbot_plugin_"):
         entry = market_index.get(name.replace("astrbot_plugin_", ""))
     return entry if isinstance(entry, dict) else None
+
+
+def _build_market_index(data: Any) -> Dict[str, Dict[str, Any]]:
+    """把市场接口返回的多种结构统一成「全名 / 归一化名 / 短名 → 条目」索引。
+
+    官方 Registry 返回的是 ``{"owner/repo": {...}, "$meta": {...}}``，
+    没有 ``name`` 的条目（如 ``$meta``）直接跳过。
+    """
+    raw_items: List[Any] = []
+    if isinstance(data, dict):
+        if isinstance(data.get("data"), list):
+            raw_items = data["data"]
+        elif isinstance(data.get("data"), dict) and isinstance(data["data"].get("plugins"), list):
+            raw_items = data["data"]["plugins"]
+        elif isinstance(data.get("plugins"), list):
+            raw_items = data["plugins"]
+        else:
+            raw_items = list(data.values())
+    elif isinstance(data, list):
+        raw_items = data
+
+    index: Dict[str, Dict[str, Any]] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        p_name = str(item.get("name") or "").strip()
+        if not p_name:
+            continue
+        norm = normalize_plugin_name(p_name)
+        short = p_name.replace("astrbot_plugin_", "").lower().replace("-", "_")
+        entry = {
+            "name": p_name,
+            "version": str(item.get("version") or "").strip(),
+            "repo": str(item.get("repo") or "").strip(),
+            "display_name": str(item.get("display_name") or "").strip(),
+            "author": str(item.get("author") or "").strip(),
+            "desc": str(item.get("desc") or "").strip(),
+            "raw": item,
+        }
+        index[p_name] = entry
+        if norm and norm not in index:
+            index[norm] = entry
+        if short and short not in index:
+            index[short] = entry
+    return index
 
 
 def _make_ssl_context() -> ssl.SSLContext:
@@ -776,81 +829,70 @@ class UpdaterService:
             headers["Content-Type"] = "application/json"
         return headers
 
-    def fetch_market_registry_sync(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
-        """获取 AstrBot 官方插件市场索引（内存缓存 15 分钟），按多种键名快速命中。"""
-        global _MARKET_INDEX, _MARKET_CACHE_TS
-        now = time.time()
-        if not force_refresh and _MARKET_INDEX and (now - _MARKET_CACHE_TS) < _MARKET_CACHE_TTL:
-            return _MARKET_INDEX
-
-        data = None
-        # 1. 若配置了 OpenAPI，优先从 AstrBot 本地市场端点读取（毫秒级极速）
+    def _load_market_payload(self) -> Any:
+        """拉取市场索引原始 JSON：优先本地 AstrBot 端点，其次官方 Registry。"""
         if self.api_key:
             status, resp_data = _http_request(
                 f"{self.api_url}/api/v1/plugins/market",
                 headers=self._auth_headers(),
-                timeout=8,
+                timeout=5,
             )
             if status == 200:
                 if isinstance(resp_data, dict):
-                    data = resp_data.get("data") or resp_data.get("plugins") or resp_data
-                elif isinstance(resp_data, list):
-                    data = resp_data
+                    return resp_data.get("data") or resp_data.get("plugins") or resp_data
+                if isinstance(resp_data, list):
+                    return resp_data
 
-        # 2. 从官方市场 Registry 接口拉取
-        if not data or not isinstance(data, (dict, list)):
-            status, resp_data = _http_request(
-                "https://api.soulter.top/astrbot/plugins",
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater"},
-                timeout=30,
-            )
-            if status == 200 and isinstance(resp_data, (dict, list)):
-                data = resp_data
+        status, resp_data = _http_request(
+            "https://api.soulter.top/astrbot/plugins",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater"},
+            timeout=60,
+        )
+        if status == 200 and isinstance(resp_data, (dict, list)):
+            return resp_data
+        return None
 
-        if not data:
-            return _MARKET_INDEX or {}
+    def fetch_market_registry_sync(
+        self, force_refresh: bool = False, wait: float = 10.0
+    ) -> Dict[str, Dict[str, Any]]:
+        """获取 AstrBot 官方插件市场索引（内存缓存 15 分钟）。
 
-        raw_items = []
-        if isinstance(data, dict):
-            if isinstance(data.get("data"), list):
-                raw_items = data["data"]
-            elif isinstance(data.get("data"), dict) and isinstance(data["data"].get("plugins"), list):
-                raw_items = data["data"]["plugins"]
-            elif isinstance(data.get("plugins"), list):
-                raw_items = data["plugins"]
-            else:
-                raw_items = list(data.values())
-        elif isinstance(data, list):
-            raw_items = data
+        索引是 2.5MB 的 JSON，网络差时要一分多钟。这里放到后台线程下载，
+        调用方最多等 ``wait`` 秒：超时先用旧索引，下载完成后自动写回缓存。
+        """
+        global _MARKET_REFRESHING
+        now = time.time()
+        if not force_refresh:
+            if _MARKET_INDEX and (now - _MARKET_CACHE_TS) < _MARKET_CACHE_TTL:
+                return _MARKET_INDEX
+            # 刚失败过就别在每次检查时反复重试，给它一分钟冷却
+            if not _MARKET_INDEX and (now - _MARKET_FAIL_TS) < 60:
+                return {}
 
-        index: Dict[str, Dict[str, Any]] = {}
-        for item in raw_items:
-            if not isinstance(item, dict):
-                continue
-            p_name = str(item.get("name") or "").strip()
-            if not p_name:
-                continue
-            norm = normalize_plugin_name(p_name)
-            short = p_name.replace("astrbot_plugin_", "").lower().replace("-", "_")
+        if not _MARKET_REFRESHING:
+            _MARKET_REFRESHING = True
+            _MARKET_DONE.clear()
 
-            entry = {
-                "name": p_name,
-                "version": str(item.get("version") or "").strip(),
-                "repo": str(item.get("repo") or "").strip(),
-                "display_name": str(item.get("display_name") or "").strip(),
-                "author": str(item.get("author") or "").strip(),
-                "desc": str(item.get("desc") or "").strip(),
-                "raw": item,
-            }
-            index[p_name] = entry
-            if norm and norm not in index:
-                index[norm] = entry
-            if short and short not in index:
-                index[short] = entry
+            def worker() -> None:
+                global _MARKET_INDEX, _MARKET_CACHE_TS, _MARKET_REFRESHING, _MARKET_FAIL_TS
+                try:
+                    index = _build_market_index(self._load_market_payload())
+                    if index:
+                        _MARKET_INDEX = index
+                        _MARKET_CACHE_TS = time.time()
+                        _MARKET_FAIL_TS = 0.0
+                    else:
+                        _MARKET_FAIL_TS = time.time()
+                except Exception:
+                    _MARKET_FAIL_TS = time.time()
+                finally:
+                    _MARKET_REFRESHING = False
+                    _MARKET_DONE.set()
 
-        _MARKET_INDEX = index
-        _MARKET_CACHE_TS = now
-        return _MARKET_INDEX
+            threading.Thread(target=worker, name="xbnext-market", daemon=True).start()
+
+        _MARKET_DONE.wait(wait)
+        return _MARKET_INDEX or {}
 
     def scan_local_plugins_sync(self) -> List[Dict[str, Any]]:
         """扫描已安装的插件。优先读取 AstrBot runtime context 实例，备选本地多级目录。"""
@@ -1113,7 +1155,12 @@ class UpdaterService:
             elif remote_ver:
                 status_text = f"远端 {format_version(remote_ver)}（本地版本未知）"
             elif local_ver and local_ver != "未知":
-                if not is_market_plugin and not repo_url:
+                if not market_index:
+                    status_text = (
+                        f"本地 {format_version(local_ver)}"
+                        "（市场数据不可用，无法确认是否有新版本）"
+                    )
+                elif not is_market_plugin and not repo_url:
                     # 纯本地插件：市场没收录、metadata.yaml 也没写 repo，
                     # 没有远端可比，只能如实告诉用户需要手动更新。
                     status_text = (

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -131,6 +132,23 @@ class UpdaterFeature(Feature):
             self._task = asyncio.create_task(self._schedule_loop())
         except Exception:
             self._task = None
+        self._warm_market_cache(runtime)
+
+    def _warm_market_cache(self, runtime: Any) -> None:
+        """后台预热市场索引：2.5MB 的 JSON 冷启动可能下载一分多钟，
+        放到线程里，避免用户第一次「检查更新」时干等。"""
+        try:
+            warm = UpdaterService(getattr(runtime, "conf", None))
+            if not warm.enabled:
+                return
+            threading.Thread(
+                target=warm.fetch_market_registry_sync,
+                kwargs={"wait": 120.0},
+                name="xbnext-market-warm",
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
 
     def on_unload(self) -> None:
         """卸载时安全取消定时任务。"""
