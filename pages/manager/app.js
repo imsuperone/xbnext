@@ -2015,8 +2015,10 @@
             lines.push("💡 发现可用新版本，点击上方【🚀 一键更新】即可升级并重载。");
             toast("发现可用新版本，可点击一键更新", "ok");
           } else {
-            lines.push("✨ 全部选定插件均已是最新版本。");
-            toast("所有选定插件均是最新版本", "ok");
+            var summary = data.message || "✨ 全部选定插件均已是最新版本，无需更新。";
+            summary.split("\n").forEach(function (l) { if (l) lines.push(l); });
+            toast(data.message && data.message.indexOf("⚠️") === 0 ? "部分插件无法确认版本" : "所有选定插件均是最新版本",
+                  data.message && data.message.indexOf("⚠️") === 0 ? "info" : "ok");
           }
           if (box) box.textContent = lines.join("\n");
         }).catch(function (e) {

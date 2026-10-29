@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import os
 import re
@@ -153,11 +154,18 @@ def _http_request(
     data: Optional[bytes] = None,
     timeout: int = 15,
 ) -> Tuple[int, Any]:
-    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    hdrs = dict(headers or {})
+    # 市场索引是 2.5MB 的 JSON：不声明 gzip 时下载要 90s+，gzip 后约 4s。
+    # 只声明 gzip，服务端就不会回 brotli 等我们解不了的编码。
+    hdrs.setdefault("Accept-Encoding", "gzip")
+    req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
     ctx = _make_ssl_context()
     try:
         with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")
+            raw = resp.read()
+            if "gzip" in (resp.headers.get("Content-Encoding") or "").lower():
+                raw = gzip.decompress(raw)
+            body = raw.decode("utf-8", errors="ignore")
             try:
                 parsed = json.loads(body)
             except Exception:
@@ -237,6 +245,22 @@ def format_result_line(result: Dict[str, Any]) -> str:
     nick = str(result.get("nickname") or result.get("name") or "未知插件").strip()
     message = str(result.get("message") or "").strip()
     return f"• {nick}：{result_icon(result)} {message}".rstrip()
+
+
+def no_update_message(check_res: Dict[str, Any]) -> str:
+    """没有可更新插件时的结论：区分「确实最新」与「远端版本不可知」。"""
+    unverified = check_res.get("unverified") or []
+    if not unverified:
+        return "✨ 全部选定插件均已是最新版本，无需更新。"
+    if not check_res.get("market_available", True):
+        return (
+            f"⚠️ 插件市场数据获取失败，{len(unverified)} 个插件无法确认是否有新版本。\n"
+            "💡 请检查网络后重试，或发送【/xbnext 强制更新】重拉本插件。"
+        )
+    return (
+        f"✨ 其余插件均已是最新；{len(unverified)} 个插件无远端来源"
+        "（未收录市场且未配置 repo），需手动更新。"
+    )
 
 
 def format_update_report(
@@ -765,7 +789,7 @@ class UpdaterService:
             status, resp_data = _http_request(
                 f"{self.api_url}/api/v1/plugins/market",
                 headers=self._auth_headers(),
-                timeout=5,
+                timeout=8,
             )
             if status == 200:
                 if isinstance(resp_data, dict):
@@ -778,7 +802,7 @@ class UpdaterService:
             status, resp_data = _http_request(
                 "https://api.soulter.top/astrbot/plugins",
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AstrBot-Updater"},
-                timeout=6,
+                timeout=30,
             )
             if status == 200 and isinstance(resp_data, (dict, list)):
                 data = resp_data
@@ -1113,11 +1137,16 @@ class UpdaterService:
                 "status_text": status_text,
             })
 
-        return {
+        unverified = [p.get("name") for p in results if not p.get("remote_version")]
+        summary = {
             "ok": True,
             "has_new_version": has_new_version,
+            "market_available": bool(market_index),
+            "unverified": unverified,
             "plugins": results,
         }
+        summary["message"] = no_update_message(summary)
+        return summary
 
     async def check_updates(self, selected_names: Optional[List[str]] = None) -> Dict[str, Any]:
         return await asyncio.to_thread(self.check_updates_sync, selected_names)
@@ -1265,7 +1294,9 @@ class UpdaterService:
                     "ok": True,
                     "no_updates": True,
                     "results": [],
-                    "message": "所有选定插件均已是最新版本，无需更新。\n💡 若需重新强制拉取最新代码，请发送【/xbnext 强制更新】。",
+                    "message": no_update_message(chk)
+                    + "\n💡 若需重新强制拉取最新代码，请发送【/xbnext 强制更新】。",
+                    "unverified": chk.get("unverified") or [],
                 }
             targets = need_update
 
@@ -1377,6 +1408,12 @@ class UpdaterService:
                     msg = (
                         f"版本回退：{format_version(before_ver)} → "
                         f"{format_version(after_ver)}（远端版本更旧，请检查远端 metadata.yaml）"
+                    )
+                elif force:
+                    msg = (
+                        f"已重新拉取 {format_version(after_ver)}，回复后自动重载"
+                        if after_ver and after_ver != "未知"
+                        else "已重新拉取，回复后自动重载"
                     )
                 elif after_ver and after_ver != "未知":
                     msg = f"已更新至 {format_version(after_ver)}，回复后自动重载"

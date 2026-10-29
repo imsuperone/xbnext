@@ -16,6 +16,7 @@ from .service import (
     UpdaterService,
     format_update_report,
     format_version,
+    no_update_message,
 )
 
 
@@ -279,7 +280,7 @@ class UpdaterFeature(Feature):
             # 全部最新时只回一行结论，避免刷屏。
             updatable = [p for p in plugins if p.get("has_update")]
             if not updatable:
-                return "✨ 全部选定插件均已是最新版本，无需更新。"
+                return no_update_message(res)
 
             lines = [
                 "🔍【插件更新检查】",
@@ -300,7 +301,7 @@ class UpdaterFeature(Feature):
                 return f"❌ 执行更新失败：{res.get('error')}"
 
             if res.get("no_updates"):
-                return f"✨ {res.get('message')}"
+                return str(res.get("message") or "")
 
             results = res.get("results") or []
             if not results:
