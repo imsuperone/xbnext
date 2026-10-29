@@ -416,6 +416,26 @@ def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> 
         return False, str(ex)
 
 
+def _git_head_sha(local_dir: str) -> str:
+    """读取仓库当前 HEAD 提交 SHA；非 Git 仓库或失败时返回空串。"""
+    if not local_dir or not os.path.isdir(os.path.join(local_dir, ".git")):
+        return ""
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["git", "-c", f"safe.directory={local_dir}", "rev-parse", "HEAD"],
+            cwd=local_dir,
+            timeout=8,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            return (res.stdout or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
 def _download_github_archive(repo_url: str, local_dir: str, branch: str = "", timeout: int = 40) -> Tuple[bool, str]:
     """当 Git 不可用或目录非 Git 仓库时，直接从 GitHub 归档包拉取最新源码并解压覆盖。
     严格保留原有的 data/ 目录与用户数据库、配置，防止数据损毁。
@@ -1168,6 +1188,7 @@ class UpdaterService:
             nick = get_plugin_display_name(p)
             local_dir = self.find_plugin_local_dir(p)
             before_ver = _get_local_version(p, local_dir)
+            head_before = _git_head_sha(local_dir)
 
             update_ok = False
             update_details = []
@@ -1215,11 +1236,34 @@ class UpdaterService:
                 })
                 continue
 
-            # 5. 执行热重载：自适应适配不同 AstrBot 版本的重载接口。
+            # 5. 判定是否真的产生了变更：Git HEAD 未动且版本未变 -> 已是最新。
+            #    典型场景：多 Bot 同时收到同一条更新指令，另一个实例已先拉完，
+            #    这里 pull 返回 "Already up to date"，不应再谎报「更新成功」。
+            head_after = _git_head_sha(local_dir)
+            after_ver = _get_local_version(p, local_dir)
+            version_changed = bool(
+                before_ver and before_ver != "未知"
+                and after_ver and after_ver != "未知"
+                and before_ver != after_ver
+            )
+            git_changed = bool(head_before and head_after and head_before != head_after)
+            if not force and not (version_changed or git_changed):
+                results.append({
+                    "name": name,
+                    "nickname": nick,
+                    "ok": True,
+                    "stage": "no_change",
+                    "no_change": True,
+                    "message": "已是最新版本，无需更新",
+                    "before_version": before_ver,
+                    "after_version": after_ver,
+                })
+                continue
+
+            # 6. 执行热重载：自适应适配不同 AstrBot 版本的重载接口。
             #    更新自身时先不重载：等指令回复发出去后，由 apply_updates 延迟重载，
             #    否则命令执行到一半模块被换掉，回复可能丢失。
             if name == "astrbot_plugin_xbnext" and self._loop is not None:
-                after_ver = _get_local_version(p, local_dir)
                 msg = "文件已更新，将在回复后自动重载"
                 if after_ver and after_ver != "未知":
                     msg = f"文件已更新至 {format_version(after_ver)}，将在回复后自动重载"
@@ -1248,8 +1292,7 @@ class UpdaterService:
                 })
                 continue
 
-            # 6. 版本真实比对与状态汇报（杜绝假更新假汇报）
-            after_ver = _get_local_version(p, local_dir)
+            # 7. 版本真实比对与状态汇报（杜绝假更新假汇报）
             if before_ver and after_ver and before_ver != "未知" and after_ver != "未知" and before_ver != after_ver:
                 msg = f"更新并重载成功 ({format_version(before_ver)} → {format_version(after_ver)})"
             elif after_ver and after_ver != "未知":
@@ -1266,6 +1309,18 @@ class UpdaterService:
                 "before_version": before_ver,
                 "after_version": after_ver,
             })
+
+        # 非强制模式：把「没有任何变更」的插件从结果里剔除，聊天端/WebUI
+        # 只展示真正更新的与失败的；全部没变则收敛成一条结论。
+        if not force:
+            results = [r for r in results if not r.get("no_change")]
+            if not results:
+                return {
+                    "ok": True,
+                    "no_updates": True,
+                    "results": [],
+                    "message": "所有选定插件均已是最新版本，无需更新。\n💡 若需重新强制拉取最新代码，请发送【/xbnext 强制更新】。",
+                }
 
         return {"ok": True, "results": results}
 
