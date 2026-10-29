@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.41" />
+  <link rel="stylesheet" href="./style.css?v=0.2.42" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.41">0.2.41</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.42">0.2.42</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -494,6 +494,16 @@
               <span class="switch-slider"></span>
             </label>
           </div>
+          <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
+            <div>
+              <label class="form-label" style="margin-bottom: 2px;">破坏性重置指令需 @ 触发 (防多Bot同时清空)</label>
+              <span class="field-hint">开启后，群聊中 <code>/new</code>、<code>/reset</code>、<code>/clear</code>、<code>/清空</code> 等重置/清空指令必须 @ 本机器人才生效，避免同群多个机器人同时清空会话；唤醒前缀 <code>/</code> 不算 @。默认关闭。</span>
+            </div>
+            <label class="m3-switch">
+              <input type="checkbox" id="sw_bot_guard_require_at_for_reset" data-key="bot_guard_require_at_for_reset" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
           <div class="form-group" style="margin-top: 10px;">
             <label class="form-label" for="inp_bot_guard_extra_command_words">额外需 @ 触发的自定义指令词</label>
             <input type="text" class="m3-input" id="inp_bot_guard_extra_command_words" data-key="bot_guard_extra_command_words" placeholder="点歌,偷表情,戳一戳,自定义词" />
@@ -805,7 +815,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.41"></script>
-  <script src="./app.js?v=0.2.41"></script>
+  <script src="./api.js?v=0.2.42"></script>
+  <script src="./app.js?v=0.2.42"></script>
 </body>
 </html>
