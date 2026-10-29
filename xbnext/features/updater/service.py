@@ -128,6 +128,19 @@ def normalize_plugin_name(name: str) -> str:
     return alias_map.get(short, f"astrbot_plugin_{short}")
 
 
+def market_entry_for(
+    market_index: Optional[Dict[str, Any]], name: str
+) -> Optional[Dict[str, Any]]:
+    """在市场索引里按全名 / 归一化名 / 短名依次命中同一个插件条目。"""
+    if not market_index or not name:
+        return None
+    norm = normalize_plugin_name(name)
+    entry = market_index.get(name) or market_index.get(norm)
+    if not entry and name.startswith("astrbot_plugin_"):
+        entry = market_index.get(name.replace("astrbot_plugin_", ""))
+    return entry if isinstance(entry, dict) else None
+
+
 def _make_ssl_context() -> ssl.SSLContext:
     """默认启用证书校验；更新包与 API Key 都走这条链路，不能降级。"""
     return ssl.create_default_context()
@@ -351,14 +364,11 @@ def _query_remote_version(
         return online_ver, repo_url
 
     name = str(p.get("name") or "").strip()
-    norm_name = normalize_plugin_name(name)
 
     # 1. 优先从 AstrBot 官方市场 Registry 索引获取（零网络等待，规避 GitHub 阻断）
     if market_index:
-        m_item = market_index.get(name) or market_index.get(norm_name)
-        if not m_item and name.startswith("astrbot_plugin_"):
-            m_item = market_index.get(name.replace("astrbot_plugin_", ""))
-        if m_item and isinstance(m_item, dict):
+        m_item = market_entry_for(market_index, name)
+        if m_item:
             m_ver = str(m_item.get("version") or "").strip()
             m_repo = str(m_item.get("repo") or "").strip()
             if m_ver:
@@ -1050,11 +1060,7 @@ class UpdaterService:
             local_ver = _get_local_version(p, local_dir)
             remote_ver, repo_url = _query_remote_version(repo_url, p, market_index=market_index)
 
-            m_item = None
-            if market_index:
-                m_item = market_index.get(name) or market_index.get(norm_name)
-                if not m_item and name.startswith("astrbot_plugin_"):
-                    m_item = market_index.get(name.replace("astrbot_plugin_", ""))
+            m_item = market_entry_for(market_index, name)
             is_market_plugin = bool(m_item)
             if m_item and not p.get("display_name"):
                 p["display_name"] = m_item.get("display_name")
@@ -1083,7 +1089,15 @@ class UpdaterService:
             elif remote_ver:
                 status_text = f"远端 {format_version(remote_ver)}（本地版本未知）"
             elif local_ver and local_ver != "未知":
-                status_text = f"本地 {format_version(local_ver)}（未检出远端版本）"
+                if not is_market_plugin and not repo_url:
+                    # 纯本地插件：市场没收录、metadata.yaml 也没写 repo，
+                    # 没有远端可比，只能如实告诉用户需要手动更新。
+                    status_text = (
+                        f"本地插件（{format_version(local_ver)}，"
+                        "未收录市场且未配置 repo，需手动更新）"
+                    )
+                else:
+                    status_text = f"本地 {format_version(local_ver)}（未检出远端版本）"
             else:
                 status_text = "版本未知"
 
@@ -1185,35 +1199,39 @@ class UpdaterService:
         return last_status, last_resp
 
     def _request_astrot_update_api(self, name: str, timeout: int = 40) -> Tuple[int, Any]:
-        """请求 AstrBot OpenAPI / Dashboard 插件更新接口。"""
+        """请求 AstrBot OpenAPI / Dashboard 插件更新接口。
+
+        每个候选端点都必须带 JSON body：不带 body 的兜底请求只会让 FastAPI 抛
+        ``422 body: Field required``，把真正的失败原因（例如市场未收录）盖掉。
+        200 但 payload 报错说明接口确实回应了，优先返回它而不是后面的 404/422。
+        """
         if not self.api_key:
             return 0, None
         update_payload = json.dumps({"name": name, "plugin_name": name}).encode("utf-8")
         attempts = [
-            (f"{self.api_url}/api/v1/plugins/update", update_payload, True),
-            (f"{self.api_url}/api/plugin/update", json.dumps({"plugin_name": name, "name": name, "proxy": ""}).encode("utf-8"), True),
-            (f"{self.api_url}/api/v1/plugins/{name}/update", update_payload, True),
-            (f"{self.api_url}/api/plugin/update", json.dumps({"plugin_name": name}).encode("utf-8"), True),
-            (f"{self.api_url}/api/v1/plugins/update?name={name}", None, False),
+            (f"{self.api_url}/api/v1/plugins/update", update_payload),
+            (f"{self.api_url}/api/plugin/update", json.dumps({"plugin_name": name, "name": name, "proxy": ""}).encode("utf-8")),
+            (f"{self.api_url}/api/v1/plugins/{name}/update", update_payload),
         ]
+        answered_with_error: Tuple[int, Any] = (0, None)
         last_s = 0
         last_r = None
-        for url, data, is_json in attempts:
+        for url, data in attempts:
             status, resp = _http_request(
                 url, method="POST",
-                headers=self._auth_headers(json_body=is_json),
+                headers=self._auth_headers(json_body=True),
                 data=data, timeout=timeout
             )
             if status == 200:
                 if isinstance(resp, dict) and (resp.get("status") == "error" or resp.get("ok") is False):
-                    last_s = 200
-                    last_r = resp
+                    if not answered_with_error[0]:
+                        answered_with_error = (status, resp)
                     continue
                 return status, resp
             if status != 0:
                 last_s = status
                 last_r = resp
-        return last_s, last_r
+        return answered_with_error if answered_with_error[0] else (last_s, last_r)
 
     def apply_updates_sync(self, selected_names: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
         """执行一键更新与热重载。支持 Git 源码拉取、GitHub 归档包与 AstrBot OpenAPI 多阶自适应。"""
@@ -1265,6 +1283,7 @@ class UpdaterService:
             head_before = _git_head_sha(local_dir)
 
             update_ok = False
+            api_handled = False
             update_details = []
 
             # 1. 优先尝试本地 Git 真实拉取 (直接在 .git 目录执行，最精准从 GitHub 仓库拉取最新 commit)
@@ -1287,16 +1306,24 @@ class UpdaterService:
                     else:
                         update_details.append(f"GitHub 归档失败（{zip_msg}）")
 
-            # 3. 联动 AstrBot OpenAPI / Dashboard 核心更新接口
-            u_status, u_resp = self._request_astrot_update_api(name)
-            if u_status == 200:
-                if isinstance(u_resp, dict) and (u_resp.get("status") == "error" or u_resp.get("ok") is False):
-                    update_details.append(f"OpenAPI 更新失败（{_extract_err_msg(u_resp)}）")
+            # 3. 本地 Git / 归档都失败时，才联动 AstrBot 市场更新接口。
+            #    本地已经更新成功还去调它，AstrBot 会立刻重载一次，随后我们又重载一次，
+            #    用户看到的就是「连续两次重启」。市场未收录的本地插件也直接跳过。
+            if not update_ok:
+                market_index = self.fetch_market_registry_sync() if self.api_key else {}
+                if market_index and not market_entry_for(market_index, name):
+                    update_details.append("该插件未收录于 AstrBot 插件市场，市场更新接口不可用")
                 else:
-                    update_ok = True
-                    update_details.append("OpenAPI：已触发更新")
-            elif u_status != 0:
-                update_details.append(f"OpenAPI {_friendly_http_error(u_status, u_resp)}")
+                    u_status, u_resp = self._request_astrot_update_api(name)
+                    if u_status == 200:
+                        if isinstance(u_resp, dict) and (u_resp.get("status") == "error" or u_resp.get("ok") is False):
+                            update_details.append(f"OpenAPI 更新失败（{_extract_err_msg(u_resp)}）")
+                        else:
+                            update_ok = True
+                            api_handled = True
+                            update_details.append("OpenAPI：已触发更新")
+                    elif u_status != 0:
+                        update_details.append(f"OpenAPI {_friendly_http_error(u_status, u_resp)}")
 
             # 4. 若上述更新方式均未成功且无本地目录可操作
             if not update_ok:
@@ -1344,7 +1371,8 @@ class UpdaterService:
             # 6. 执行热重载：自适应适配不同 AstrBot 版本的重载接口。
             #    更新自身时先不重载：等指令回复发出去后，由 apply_updates 延迟重载，
             #    否则命令执行到一半模块被换掉，回复可能丢失。
-            if name == "astrbot_plugin_xbnext" and self._loop is not None:
+            #    若更新是走 AstrBot 市场接口完成的，那边已经重载过，这里不再重载第二次。
+            if name == "astrbot_plugin_xbnext" and self._loop is not None and not api_handled:
                 if version_regressed:
                     msg = (
                         f"版本回退：{format_version(before_ver)} → "
@@ -1367,7 +1395,12 @@ class UpdaterService:
                 })
                 continue
 
-            r_status, r_resp = self._request_reload(name)
+            if api_handled:
+                # AstrBot 的市场更新接口在更新完成后会自己重载插件，
+                # 这里再调一次就是用户看到的「刚更新完又重启一次」。
+                r_status, r_resp = 200, {"ok": True}
+            else:
+                r_status, r_resp = self._request_reload(name)
 
             if r_status != 200:
                 results.append({
@@ -1400,6 +1433,9 @@ class UpdaterService:
             else:
                 msg = "已重新拉取并重载" if force else "已更新并重载"
                 icon, ok, stage = "✅", True, "done"
+
+            if api_handled and not version_regressed:
+                msg += "（AstrBot 已自动重载）"
 
             results.append({
                 "name": name,
