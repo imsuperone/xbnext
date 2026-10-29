@@ -284,9 +284,28 @@ class UpdaterFeature(Feature):
         # WebUI 更新入口另行要求填写 OpenAPI Key（见 web/updater_web_key_error）。
         # Key 本身只用于可选 OpenAPI 路径，Git / GitHub ZIP 更新不需要它。
 
+        # 诊断分支：把每个插件的「磁盘版本 / AstrBot 加载版本 / 市场版本」全打出来，
+        # 用于排查「市场有更新但提示已是最新」这类问题。
+        if sub_arg in ("详情", "诊断", "detail", "debug"):
+            res = await updater.check_updates()
+            if not res.get("ok"):
+                return f"❌ 检查失败：{res.get('error')}"
+            lines = ["🔎【更新诊断】", "━━━━━━━━━━━━━━"]
+            for p in res.get("plugins") or []:
+                lines.append(
+                    f"• {p.get('name')}"
+                    f"：磁盘 {format_version(p.get('local_version'))}"
+                    f" / 加载 {format_version(p.get('loaded_version'))}"
+                    f" / 市场 {format_version(p.get('remote_version'))}"
+                )
+            lines.append("━━━━━━━━━━━━━━")
+            lines.append(f"市场索引：{res.get('market_count', 0)} 条")
+            lines.append(f"OpenAPI：{'已配置' if updater.api_key else '未配置'}")
+            return "\n".join(lines)
+
         # 检查更新分支
         if sub_arg in ("check", "检查", "检查更新", "查更新", ""):
-            res = await updater.check_updates(include_market_plugins=True)
+            res = await updater.check_updates()
             if not res.get("ok"):
                 return f"❌ 检查更新失败：{res.get('error')}"
 
@@ -314,7 +333,7 @@ class UpdaterFeature(Feature):
 
         # 一键更新分支
         if sub_arg in ("update", "更新", "一键更新", "升级", "do_update"):
-            res = await updater.apply_updates(force=False, include_market_plugins=True)
+            res = await updater.apply_updates(force=False)
             if not res.get("ok"):
                 return f"❌ 执行更新失败：{res.get('error')}"
 
@@ -346,7 +365,8 @@ class UpdaterFeature(Feature):
             "❓ 未知操作，可用指令：\n"
             "• /xbnext 检查更新 — 检查插件是否有新版本\n"
             "• /xbnext 一键更新 — 一键更新有新版本的插件\n"
-            "• /xbnext 强制更新 — 强制从 GitHub 重新拉取并热重载"
+            "• /xbnext 强制更新 — 强制从 GitHub 重新拉取并热重载\n"
+            "• /xbnext 诊断 — 查看每个插件的磁盘/加载/市场版本"
         )
 
 
