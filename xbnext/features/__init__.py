@@ -66,14 +66,15 @@ def get_feature(key: str) -> Optional[Feature]:
 
 
 def get_feature_by_command(name: str) -> Optional[Feature]:
-    """按子指令名取功能实例（``/xbnext <name>``）；找不到返回 ``None``。"""
+    """按子指令名取功能实例（``/xbnext <name>``）；找不到返回 ``None``。
+
+    插件升级类的别名（检查更新 / 一键更新 / 强制更新 / 诊断 …）**不在这里**：
+    ``runtime.dispatch`` 已按 ``commands.UPDATER_ACTIONS`` 统一路由到 updater，
+    别名表只留一份，避免两处词表漂移。
+    """
     if not name:
         return None
     name_lower = name.lower()
-    if name_lower in ("updater", "检查更新", "查更新", "check_update", "check", "一键更新", "更新", "update", "升级"):
-        for feat in FEATURES:
-            if getattr(feat, "command", "") == "updater":
-                return feat
     if name_lower in ("botguard", "防互怼", "防大乱斗", "机器人拦截", "bot_guard"):
         for feat in FEATURES:
             if getattr(feat, "command", "") == "botguard":

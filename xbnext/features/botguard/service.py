@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, List, Set
 
+from ...config import split_tokens
 from ...permissions import extract_sender_id
 
 __all__ = [
@@ -351,6 +352,8 @@ def parse_command_prefixes(raw: Any = None) -> List[str]:
     if isinstance(raw, (list, tuple, set)):
         parts = [str(x) for x in raw]
     else:
+        # 这里的「分隔符」比通用配置列表窄 —— ``;`` / ``；`` 是合法前缀，
+        # 不能当分隔符，否则用户配 ``.,。;`` 会丢掉分号（有单测约束）。
         parts = re.split(r"[,，、\s]+", str(raw))
     out: List[str] = []
     for part in parts:
@@ -400,7 +403,7 @@ def is_command_message(msg_str: str, extra_keywords: Any = None, prefixes: Any =
         if isinstance(extra_keywords, (list, tuple, set)):
             words = [str(x).strip().lower() for x in extra_keywords if str(x).strip()]
         elif isinstance(extra_keywords, str):
-            words = [x.strip().lower() for x in re.split(r"[,，;\s\n]+", extra_keywords) if x.strip()]
+            words = [x.lower() for x in split_tokens(extra_keywords)]
         first_token = stripped.split()[0].lower()
         for w in words:
             if first_token == w or stripped.startswith(w):
@@ -425,8 +428,7 @@ def is_game_or_noise_command(msg_str: str, keywords_raw: Any = None) -> bool:
         if isinstance(keywords_raw, (list, tuple, set)):
             words.update(str(x).strip() for x in keywords_raw if str(x).strip())
         elif isinstance(keywords_raw, str):
-            tokens = re.split(r"[,，;\s\n]+", keywords_raw)
-            words.update(t.strip() for t in tokens if t.strip())
+            words.update(split_tokens(keywords_raw))
 
     for w in words:
         if stripped == w or stripped.startswith(w):

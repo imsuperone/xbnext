@@ -19,6 +19,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...config import split_tokens
 from ...version import extract_version as extract_version_from_yaml
 
 _MARKET_INDEX: Dict[str, Dict[str, Any]] = {}
@@ -809,7 +810,7 @@ class UpdaterService:
         if isinstance(val, list):
             items = [str(x).strip() for x in val if str(x).strip()]
         elif isinstance(val, str):
-            items = [x.strip() for x in re.split(r"[,，\s\n]+", val.strip()) if x.strip()]
+            items = split_tokens(val)
         if not items:
             return list(DEFAULT_TARGET_PLUGINS)
         return [normalize_plugin_name(x) for x in items]
@@ -836,7 +837,7 @@ class UpdaterService:
         raw = self.notify_qq
         if not raw:
             return []
-        items = [x.strip() for x in re.split(r"[,，;；\s\n\r]+", str(raw)) if x.strip()]
+        items = split_tokens(raw)
         valid: List[str] = []
         for x in items:
             if x.isdigit() and x not in valid:
@@ -930,14 +931,6 @@ class UpdaterService:
 
     def scan_local_plugins_sync(self) -> List[Dict[str, Any]]:
         """扫描已安装的插件。优先读取 AstrBot runtime context 实例，备选本地多级目录。"""
-        KNOWN_REPOS = {
-            "astrbot_plugin_xbnext": "https://github.com/imsuperone/xbnext",
-            "astrbot_plugin_xbbot_beta": "https://github.com/imsuperone/xbtest",
-            "astrbot_plugin_xbbot": "https://github.com/imsuperone/xb",
-            "astrbot_plugin_xbimg": "https://github.com/imsuperone/xbimg",
-            "astrbot_plugin_xb2img": "https://github.com/imsuperone/xb2img",
-            "astrbot_plugin_xbdoc": "https://github.com/imsuperone/xbdoc",
-        }
         found: List[Dict[str, Any]] = []
         seen = set()
 
@@ -965,7 +958,6 @@ class UpdaterService:
                             "repo": repo,
                             "display_name": get_plugin_display_name({"name": name, "display_name": disp}),
                             "root_dir_name": root_dir,
-                            "source": "runtime_star",
                         })
             except Exception:
                 pass
@@ -1010,7 +1002,6 @@ class UpdaterService:
                                 "repo": repo,
                                 "display_name": disp,
                                 "root_dir_name": item,
-                                "source": "filesystem",
                             })
                         except Exception:
                             pass
@@ -1096,7 +1087,6 @@ class UpdaterService:
                 "repo": repo,
                 "display_name": disp or get_plugin_display_name({"name": name, "display_name": disp}),
                 "root_dir_name": root_dir,
-                "source": "openapi",
             })
 
         for lp in local_plugins:
@@ -1216,6 +1206,9 @@ class UpdaterService:
                 and compare_versions(local_ver, loaded_ver) > 0
             ):
                 is_update_available = True
+                # WebUI / 聊天端都看 has_new_version 决定「有没有新版本」；
+                # 「需重载」也必须算有更新，否则界面又会说「已是最新」。
+                has_new_version = True
                 status_text = (
                     f"需重载（磁盘已是 {format_version(local_ver)}，"
                     f"AstrBot 仍加载 {format_version(loaded_ver)}）"
@@ -1381,8 +1374,12 @@ class UpdaterService:
             }
 
         ok, installed, err = self.fetch_installed_plugins_sync()
-        if not ok:
-            return {"ok": False, "error": err}
+        # 与 check_updates_sync 保持一致：OpenAPI 列举失败时退回本地扫描，
+        # 否则会出现「检查更新能列出插件、一键更新却直接报错」的割裂。
+        if not ok or not installed:
+            installed = self.scan_local_plugins_sync()
+        if not installed:
+            return {"ok": False, "error": err or "未找到任何已安装插件"}
 
         raw_targets = selected_names if selected_names is not None else self.target_plugins
         # 强制更新且未显式指定目标时，只重拉本插件：避免把同群其他插件一起

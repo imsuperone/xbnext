@@ -494,12 +494,12 @@ class XbnextRuntime:
             return commands.MENU
         if sub in commands.STATUS_WORDS:
             return "\n".join(self.status_lines())
-        if sub in ("检查更新", "查更新", "check_update", "check"):
-            return await self.handle_command("updater", event, ["check"])
-        if sub in ("一键更新", "更新", "update", "升级"):
-            return await self.handle_command("updater", event, ["update"])
-        if sub in ("强制更新", "强制升级", "force_update", "force"):
-            return await self.handle_command("updater", event, ["force"])
+        # 插件升级类子指令统一交给 updater；**原样把子指令传下去**，
+        # 由 ``UpdaterFeature.handle_command`` 按 ``commands.UPDATER_ACTIONS`` 认别名。
+        # 这里别再按 check/update/force 逐个映射 —— 之前漏了「诊断」，
+        # 结果被当成未知子指令，正是「菜单里有、发出去却不认」的根因。
+        if sub in commands.UPDATER_WORDS:
+            return await self.handle_command("updater", event, [sub])
         return await self.handle_command(sub, event, args)
 
     # ==================================================================

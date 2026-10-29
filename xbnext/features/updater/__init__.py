@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from ... import PLUGIN_NAME
+from ...commands import UPDATER_ACTIONS
 from ...permissions import is_admin_event
 from ..base import Feature
 from .service import (
@@ -271,6 +272,8 @@ class UpdaterFeature(Feature):
             return "⚠️ 权限不足：插件检查与更新指令仅限 AstrBot 管理员使用。"
 
         sub_arg = (args[0] if args else "").strip().lower()
+        # 子指令别名表只有一份（commands.UPDATER_ACTIONS）；裸指令等同于「检查更新」。
+        action = UPDATER_ACTIONS.get(sub_arg, "check" if not sub_arg else "")
         ctx = getattr(self._runtime, "context", None)
         updater = UpdaterService(conf, context=ctx)
 
@@ -286,7 +289,7 @@ class UpdaterFeature(Feature):
 
         # 诊断分支：把每个插件的「磁盘版本 / AstrBot 加载版本 / 市场版本」全打出来，
         # 用于排查「市场有更新但提示已是最新」这类问题。
-        if sub_arg in ("详情", "诊断", "detail", "debug"):
+        if action == "detail":
             res = await updater.check_updates()
             if not res.get("ok"):
                 return f"❌ 检查失败：{res.get('error')}"
@@ -304,7 +307,7 @@ class UpdaterFeature(Feature):
             return "\n".join(lines)
 
         # 检查更新分支
-        if sub_arg in ("check", "检查", "检查更新", "查更新", ""):
+        if action == "check":
             res = await updater.check_updates()
             if not res.get("ok"):
                 return f"❌ 检查更新失败：{res.get('error')}"
@@ -332,7 +335,7 @@ class UpdaterFeature(Feature):
             return "\n".join(lines)
 
         # 一键更新分支
-        if sub_arg in ("update", "更新", "一键更新", "升级", "do_update"):
+        if action == "update":
             res = await updater.apply_updates(force=False)
             if not res.get("ok"):
                 return f"❌ 执行更新失败：{res.get('error')}"
@@ -348,7 +351,7 @@ class UpdaterFeature(Feature):
 
         # 强制更新分支：默认只重拉本插件，避免把同群其他插件一起 reset/重载，
         # 更避免命令执行中把当前插件自己热重载掉导致回复丢失。
-        if sub_arg in ("force", "force_update", "强制更新", "强制升级"):
+        if action == "force":
             res = await updater.apply_updates(
                 force=True, selected_names=[PLUGIN_NAME]
             )

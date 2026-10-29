@@ -1,3 +1,10 @@
+## v0.2.53 (2026-10-29)
+- **修复 `/xbnext 诊断` 被当成未知子指令**：`runtime.dispatch` 之前只特判 check / update / force，菜单里写了「诊断」、发出去却回「未知子指令」。现在插件升级类子指令统一按 `commands.UPDATER_WORDS` 路由。
+- **子指令别名表只留一份**：新增 `commands.UPDATER_ACTIONS`（别名 → 规范动作），`runtime.dispatch` 与 `UpdaterFeature.handle_command` 共用；`features.get_feature_by_command` 删掉重复的 updater 别名表，避免两处词表再次漂移。
+- **列表配置解析统一**：新增 `config.split_tokens`，`allowed_platforms` / `group_list` / `updater_plugins` / `update_notify_qq` 与 botguard 关键词共用同一套分隔符；`botguard.parse_command_prefixes` 例外保留窄分隔符（分号是合法指令前缀）。
+- **一键更新不再被 OpenAPI 列举失败卡死**：`apply_updates_sync` 与 WebUI 插件列表在 OpenAPI 失败时退回本地扫描，与「检查更新」行为一致，不再出现「能检查、不能更新」的割裂。
+- **死代码清理**：删除 `Config.list`、`scan_local_plugins_sync` 内重复的 `KNOWN_REPOS`、无人读取的 `source` / `is_market` 字段，以及函数内多余的 `import re`。
+
 ## v0.2.52 (2026-10-29)
 - **撤销 v0.2.51 的「自动纳入市场插件」**：一键更新 / 检查更新恢复为只处理配置里勾选的插件，不再擅自扩大更新范围。
 - **修复「磁盘已更新但没重载，于是永远显示已是最新」**：检查时会同时比对「磁盘 metadata 版本」与「AstrBot 正在加载的版本」。磁盘更新、加载仍旧时显示「需重载（磁盘已是 vX，AstrBot 仍加载 vY）」，一键更新只做重载，不再重复拉取。

@@ -11,10 +11,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.json"
+#: 列表型配置串的分隔符：中英文逗号 / 顿号 / 分号 / 任意空白
+_LIST_SEP_RE = re.compile(r"[,，、;；\s]+")
 
 
 def _load_schema() -> dict:
@@ -38,6 +41,15 @@ def schema_default(key: str) -> Any:
     if isinstance(item, dict):
         return item.get("default")
     return None
+
+
+def split_tokens(text: Any) -> list:
+    """把 ``"a, b、c；d"`` 这类配置串切成去空白的 token 列表。
+
+    列表型配置的解析只留这一处实现，避免各模块各写一套分隔符
+    （曾出现「检查更新认分号、一键更新不认」这类割裂）。
+    """
+    return [t.strip() for t in _LIST_SEP_RE.split(str(text or "")) if t.strip()]
 
 
 class LocalAstrBotConfig:
@@ -178,21 +190,6 @@ class Config:
         except Exception:  # noqa: BLE001
             return str(default)
 
-    def list(self, key: str, default: Any = None) -> list:
-        """读列表项；非列表做类型兼容转换。"""
-        try:
-            val = self.get(key, default)
-            if isinstance(val, (list, tuple)):
-                return list(val)
-            if isinstance(val, str):
-                import re
-                return [x.strip() for x in re.split(r"[,;，；\s]+", val) if x.strip()]
-            if default is not None:
-                return list(default) if isinstance(default, (list, tuple)) else []
-            return []
-        except Exception:  # noqa: BLE001
-            return []
-
     def enabled(self, key: str) -> bool:
         """功能总开关的统一读法（``enable_*`` 都走这里）。"""
         return self.bool(key, bool(schema_default(key)))
@@ -225,8 +222,7 @@ class Config:
         allowed = self.text("allowed_platforms", "onebot, aiocqhttp").strip()
         if not allowed or allowed.lower() in ("all", "*", "any"):
             return True
-        import re as _re
-        tokens = [t.strip().lower() for t in _re.split(r"[,，、;；\s]+", allowed) if t.strip()]
+        tokens = [t.lower() for t in split_tokens(allowed)]
         if not p:
             return True
         if "all" in tokens or "*" in tokens:
@@ -255,8 +251,7 @@ class Config:
         if mode == "all":
             return True
         raw_list = self.text("group_list", "")
-        import re as _re
-        tokens = [t.strip() for t in _re.split(r"[,，、;；\s]+", raw_list) if t.strip()]
+        tokens = split_tokens(raw_list)
         matched = False
         gid_lower = gid.lower()
         for t in tokens:
@@ -268,7 +263,7 @@ class Config:
             if t_clean.endswith(":" + gid) or t_clean.lower().endswith(":" + gid_lower):
                 matched = True
                 break
-            if gid.isdigit() and _re.sub(r"\D+", "", t_clean) == gid:
+            if gid.isdigit() and re.sub(r"\D+", "", t_clean) == gid:
                 matched = True
                 break
         if mode == "whitelist":

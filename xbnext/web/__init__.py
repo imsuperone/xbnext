@@ -31,7 +31,7 @@ from typing import Any, Dict, List
 # ``xbnext.web`` 自己，跨层取常量必须写两个点 ``from .. import``。
 from .. import HOOK_PRIORITY, PLUGIN_NAME, __version__
 from .. import inject_log, switches
-from ..config import SCHEMA
+from ..config import SCHEMA, split_tokens
 from ..features.face import updater as face_updater
 from ..features.tokenline import service as tokenline_service
 
@@ -387,8 +387,12 @@ def register_web_api(context: Any, runtime: Any) -> bool:
             from ..features.updater.service import UpdaterService, get_plugin_display_name, DEFAULT_TARGET_PLUGINS
             updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
             ok, installed, err_msg = await updater.fetch_installed_plugins()
-            if not ok:
-                return _err(err_msg, astrbot_web)
+            if not ok or not installed:
+                # 与检查 / 一键更新保持一致：OpenAPI 列举失败时退回本地扫描，
+                # 不让 WebUI 列表因为一个接口失败就整个空掉。
+                installed = updater.scan_local_plugins_sync()
+            if not installed:
+                return _err(err_msg or "未找到任何已安装插件", astrbot_web)
             targets = set(updater.target_plugins)
             res = []
             for p in installed:
@@ -404,7 +408,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
                     "nickname": nick,
                     "version": str(p.get("version") or ""),
                     "selected": is_selected,
-                    "is_market": bool(p.get("is_market", False)),
                 })
             return _ok(res, astrbot_web)
         except Exception as exc:  # noqa: BLE001
@@ -445,7 +448,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def updater_test_notify_route() -> Any:
         try:
-            import re
             from ..features.updater import send_private_notification
             payload, err = await read_json()
             if err is not None:
@@ -454,7 +456,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
             if not target_qq:
                 target_qq = runtime.conf.get("update_notify_qq", "")
             raw_qq = str(target_qq or "").strip()
-            qq_list = [q for q in re.split(r"[,;，；\s]+", raw_qq) if q.strip().isdigit()]
+            qq_list = [q for q in split_tokens(raw_qq) if q.isdigit()]
             if not qq_list:
                 return _err("请先填写接收通知的有效 QQ 账号（支持多个，逗号隔开）", astrbot_web)
 
