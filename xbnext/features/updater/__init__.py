@@ -14,6 +14,7 @@ from ..base import Feature
 from .service import (
     DEFAULT_TARGET_PLUGINS,
     UpdaterService,
+    format_update_report,
     format_version,
 )
 
@@ -149,36 +150,30 @@ class UpdaterFeature(Feature):
     async def _dispatch_update_success_notification(
         self, updater: UpdaterService, updates: List[Dict[str, Any]], apply_res: Dict[str, Any]
     ) -> None:
-        """定时自动更新成功后，按照「插件名 现在版本 -> 更新版本」格式向设定的 QQ 发送私聊报告。"""
+        """定时自动更新后，向设定的 QQ 发送统一格式的私聊报告。"""
         qq_list = updater.notify_qqs
         if not updates or not qq_list:
             return
 
-        lines = [
-            "🚀【XBNEXT 插件自动更新报告】",
-            f"定时任务已在每日时刻（{updater.schedule_time}）自动完成以下插件的升级：",
-            "━━━━━━━━━━━━━━",
+        results = [
+            r for r in (apply_res.get("results") or []) if not r.get("no_change")
         ]
-        results = {r.get("name"): r for r in (apply_res.get("results") or [])}
-        for p in updates:
-            p_name = p.get("name") or ""
-            cur_v = format_version(p.get("local_version") or p.get("version") or "旧版")
-            new_v = format_version(p.get("remote_version") or "最新")
-            r = results.get(p_name)
-            if r and not r.get("ok"):
-                lines.append(f"• {p_name} {cur_v} -> {new_v} (更新异常: {r.get('message')})")
-            else:
-                lines.append(f"• {p_name} {cur_v} -> {new_v}")
-        lines.append("━━━━━━━━━━━━━━")
-        lines.append("💡 插件已热重载生效。")
-        msg = "\n".join(lines)
+        if not results:
+            return
+
+        msg = format_update_report(
+            "🤖【XBNEXT 自动更新报告】",
+            results,
+            intro=f"定时任务（每日 {updater.schedule_time}）已完成以下更新：",
+            show_hint=False,
+        )
 
         ctx = getattr(self._runtime, "context", None)
         log = getattr(self._runtime, "log", None)
         for q in qq_list:
             ok, err = await send_private_notification(ctx, q, msg)
             if not ok and log and hasattr(log, "warning"):
-                log.warning(f"[插件定时更新] 向 QQ {q} 推送更新成功报告失败: {err}")
+                log.warning(f"[插件定时更新] 向 QQ {q} 推送更新报告失败：{err}")
 
     async def _schedule_loop(self) -> None:
         """后台每日定时更新循环（默认每天 04:30 自动检测并执行更新，无更新时完全静默）。"""
@@ -291,11 +286,11 @@ class UpdaterFeature(Feature):
                 "━━━━━━━━━━━━━━",
             ]
             for p in updatable:
-                nick = p.get("nickname", p.get("name"))
-                lines.append(f"• {nick}: 🚀 {p.get('status_text')}")
+                nick = p.get("nickname") or p.get("name") or "未知插件"
+                lines.append(f"• {nick}：{p.get('status_text') or '可更新'}")
 
             lines.append("━━━━━━━━━━━━━━")
-            lines.append("💡 发送【/xbnext 一键更新】即可升级重载。")
+            lines.append("💡 发送【/xbnext 一键更新】即可升级并重载。")
             return "\n".join(lines)
 
         # 一键更新分支
@@ -309,27 +304,9 @@ class UpdaterFeature(Feature):
 
             results = res.get("results") or []
             if not results:
-                return "ℹ️ 当前未匹配到任何需要更新的插件。"
+                return "ℹ️ 当前没有需要更新的插件。"
 
-            lines = [
-                "🚀【插件一键更新】",
-                "━━━━━━━━━━━━━━",
-            ]
-            all_ok = True
-            for r in results:
-                nick = r.get("nickname", r.get("name"))
-                if r.get("ok"):
-                    lines.append(f"• {nick}: ✅ {r.get('message')}")
-                else:
-                    all_ok = False
-                    lines.append(f"• {nick}: ❌ {r.get('message')}")
-
-            lines.append("━━━━━━━━━━━━━━")
-            if all_ok:
-                lines.append("✨ 选定插件已全部更新并热重载！")
-            else:
-                lines.append("⚠️ 部分插件更新异常，请查看日志。")
-            return "\n".join(lines)
+            return format_update_report("🚀【插件一键更新】", results)
 
         # 强制更新分支：默认只重拉本插件，避免把同群其他插件一起 reset/重载，
         # 更避免命令执行中把当前插件自己热重载掉导致回复丢失。
@@ -342,27 +319,9 @@ class UpdaterFeature(Feature):
 
             results = res.get("results") or []
             if not results:
-                return "ℹ️ 当前未匹配到任何需要更新的插件。"
+                return "ℹ️ 当前没有需要强制更新的插件。"
 
-            lines = [
-                "⚡【插件强制更新与重载】",
-                "━━━━━━━━━━━━━━",
-            ]
-            all_ok = True
-            for r in results:
-                nick = r.get("nickname", r.get("name"))
-                if r.get("ok"):
-                    lines.append(f"• {nick}: ✅ {r.get('message')}")
-                else:
-                    all_ok = False
-                    lines.append(f"• {nick}: ❌ {r.get('message')}")
-
-            lines.append("━━━━━━━━━━━━━━")
-            if all_ok:
-                lines.append("✨ 选定插件已全部强制重载完成！")
-            else:
-                lines.append("⚠️ 部分插件重拉遇到异常。")
-            return "\n".join(lines)
+            return format_update_report("⚡【插件强制更新】", results)
 
         return (
             "❓ 未知操作，可用指令：\n"
@@ -372,4 +331,4 @@ class UpdaterFeature(Feature):
         )
 
 
-__all__ = ["UpdaterFeature", "UpdaterService", "DEFAULT_TARGET_PLUGINS", "send_private_notification"]
+__all__ = ["UpdaterFeature", "UpdaterService", "DEFAULT_TARGET_PLUGINS", "format_version", "send_private_notification"]

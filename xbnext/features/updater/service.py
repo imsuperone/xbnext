@@ -183,6 +183,20 @@ def _extract_err_msg(resp: Any) -> str:
     return str(resp or "")
 
 
+def _friendly_http_error(status: int, resp: Any) -> str:
+    """把 OpenAPI 原始错误压成一句可读中文（避免把 ``body: Field required`` 直接甩给用户）。"""
+    if status in (401, 403):
+        return "OpenAPI 鉴权失败（401/403），请检查 Key"
+    if status == 404:
+        return "更新接口不存在（404）"
+    if status == 422:
+        return "接口参数不匹配（422）"
+    detail = _extract_err_msg(resp).strip()
+    if len(detail) > 80:
+        detail = detail[:77] + "..."
+    return f"接口返回 {status}" + (f"（{detail}）" if detail else "")
+
+
 def format_version(v: str) -> str:
     """统一版本显示格式，如 v1.3.31 或 v26w1014b。"""
     s = str(v or "").strip().strip("'\"")
@@ -191,6 +205,57 @@ def format_version(v: str) -> str:
     if s.lower().startswith("v"):
         return s
     return f"v{s}"
+
+
+def result_icon(result: Dict[str, Any]) -> str:
+    """一条更新结果的状态图标；优先用结果自带的 ``icon``。"""
+    icon = str(result.get("icon") or "").strip()
+    if icon:
+        return icon
+    if result.get("stage") == "no_change":
+        return "ℹ️"
+    if result.get("stage") == "deferred_reload":
+        return "⏳"
+    return "✅" if result.get("ok") else "❌"
+
+
+def format_result_line(result: Dict[str, Any]) -> str:
+    """一条更新结果的统一展示行（聊天端 / 定时通知共用）。"""
+    nick = str(result.get("nickname") or result.get("name") or "未知插件").strip()
+    message = str(result.get("message") or "").strip()
+    return f"• {nick}：{result_icon(result)} {message}".rstrip()
+
+
+def format_update_report(
+    title: str,
+    results: List[Dict[str, Any]],
+    intro: str = "",
+    show_hint: bool = True,
+) -> str:
+    """把更新结果压成统一报告：标题 + 分隔线 + 逐项 + 结论。"""
+    lines = [title]
+    if intro:
+        lines.append(intro)
+    lines.append("━━━━━━━━━━━━━━")
+    for item in results:
+        lines.append(format_result_line(item))
+    lines.append("━━━━━━━━━━━━━━")
+
+    total = len(results)
+    failed = [r for r in results if not r.get("ok")]
+    pending = [r for r in results if r.get("deferred_reload") and r.get("ok")]
+    if failed:
+        parts = [f"成功 {total - len(failed) - len(pending)} 个"]
+        if pending:
+            parts.append(f"待重载 {len(pending)} 个")
+        parts.append(f"失败 {len(failed)} 个")
+        lines.append(f"⚠️ 共 {total} 个插件：" + "，".join(parts) + "。")
+        if show_hint:
+            lines.append("💡 失败项可稍后重试；本插件需要强制重拉请发送【/xbnext 强制更新】。")
+    else:
+        suffix = f"，其中 {len(pending)} 个将在回复后自动重载" if pending else ""
+        lines.append(f"✨ 共 {total} 个插件全部处理完成{suffix}。")
+    return "\n".join(lines)
 
 
 def parse_version_key(v: str) -> List[Any]:
@@ -1004,18 +1069,23 @@ class UpdaterService:
                 if cmp_res < 0:
                     is_update_available = True
                     has_new_version = True
-                    market_tag = " [市场]" if is_market_plugin else ""
-                    status_text = f"可更新{market_tag} (本地: {format_version(local_ver)} → 远端: {format_version(remote_ver)})"
+                    status_text = (
+                        f"可更新（本地 {format_version(local_ver)} → "
+                        f"远端 {format_version(remote_ver)}）"
+                    )
                 elif cmp_res == 0:
-                    status_text = f"最新 (本地: {format_version(local_ver)} | 远端: {format_version(remote_ver)})"
+                    status_text = f"已是最新（{format_version(local_ver)}）"
                 else:
-                    status_text = f"最新 (本地: {format_version(local_ver)} | 远端: {format_version(remote_ver)})"
+                    status_text = (
+                        f"本地版本更高（{format_version(local_ver)} > "
+                        f"远端 {format_version(remote_ver)}），已跳过"
+                    )
             elif remote_ver:
-                status_text = f"远端: {format_version(remote_ver)} (本地未知)"
+                status_text = f"远端 {format_version(remote_ver)}（本地版本未知）"
             elif local_ver and local_ver != "未知":
-                status_text = f"本地: {format_version(local_ver)} (远端版本未检出)"
+                status_text = f"本地 {format_version(local_ver)}（未检出远端版本）"
             else:
-                status_text = "未知版本"
+                status_text = "版本未知"
 
             results.append({
                 "name": name,
@@ -1165,19 +1235,21 @@ class UpdaterService:
         targets = {normalize_plugin_name(x) for x in raw_targets if x}
         raw_targets_set = {str(x).strip() for x in raw_targets if str(x).strip()}
 
-        # 非强制模式且未指定具体插件时，先检查是否有新版本
-        if not force and not selected_names:
-            chk = self.check_updates_sync()
-            if chk.get("ok"):
-                need_update = {p["name"] for p in chk.get("plugins", []) if p.get("has_update")}
-                if not need_update:
-                    return {
-                        "ok": True,
-                        "no_updates": True,
-                        "results": [],
-                        "message": "所有选定插件均已是最新版本，无需更新。\n💡 若需重新强制拉取最新代码，请发送【/xbnext 强制更新】。",
-                    }
-                targets = need_update
+        # 非强制模式：无论调用方是否显式点名，都先确认确有更新。
+        # WebUI 会把勾选的插件全量传进来，盲目拉取可能把插件回退到更旧的版本。
+        if not force:
+            chk = self.check_updates_sync(selected_names)
+            if not chk.get("ok"):
+                return {"ok": False, "error": chk.get("error") or "检查更新失败"}
+            need_update = {p["name"] for p in chk.get("plugins", []) if p.get("has_update")}
+            if not need_update:
+                return {
+                    "ok": True,
+                    "no_updates": True,
+                    "results": [],
+                    "message": "所有选定插件均已是最新版本，无需更新。\n💡 若需重新强制拉取最新代码，请发送【/xbnext 强制更新】。",
+                }
+            targets = need_update
 
         results = []
 
@@ -1200,9 +1272,9 @@ class UpdaterService:
                 git_ok, git_msg = _git_pull_plugin(local_dir, force=force)
                 if git_ok:
                     update_ok = True
-                    update_details.append(f"Git: {git_msg}")
+                    update_details.append(f"Git：{git_msg}")
                 else:
-                    update_details.append(f"Git失败: {git_msg}")
+                    update_details.append(f"Git 拉取失败（{git_msg}）")
 
             # 2. 若无 .git 或 Git 失败，尝试直接从 GitHub 归档包 (zip) 下载覆盖
             if not update_ok and local_dir:
@@ -1211,30 +1283,30 @@ class UpdaterService:
                     zip_ok, zip_msg = _download_github_archive(repo_url, local_dir)
                     if zip_ok:
                         update_ok = True
-                        update_details.append(f"GitHub归档: {zip_msg}")
+                        update_details.append(f"GitHub 归档：{zip_msg}")
                     else:
-                        update_details.append(f"GitHub归档失败: {zip_msg}")
+                        update_details.append(f"GitHub 归档失败（{zip_msg}）")
 
             # 3. 联动 AstrBot OpenAPI / Dashboard 核心更新接口
             u_status, u_resp = self._request_astrot_update_api(name)
             if u_status == 200:
                 if isinstance(u_resp, dict) and (u_resp.get("status") == "error" or u_resp.get("ok") is False):
-                    update_details.append(f"API: {_extract_err_msg(u_resp)}")
+                    update_details.append(f"OpenAPI 更新失败（{_extract_err_msg(u_resp)}）")
                 else:
                     update_ok = True
-                    update_details.append("OpenAPI更新已触发")
+                    update_details.append("OpenAPI：已触发更新")
             elif u_status != 0:
-                update_details.append(f"API失败({u_status}): {_extract_err_msg(u_resp)}")
+                update_details.append(f"OpenAPI {_friendly_http_error(u_status, u_resp)}")
 
             # 4. 若上述更新方式均未成功且无本地目录可操作
             if not update_ok:
-                err_summary = "; ".join(update_details) or "未找到可用更新源或本地目录"
+                err_summary = "；".join(update_details) or "未找到可用的更新源或本地目录"
                 results.append({
                     "name": name,
                     "nickname": nick,
                     "ok": False,
                     "stage": "update",
-                    "message": f"更新失败: {err_summary}",
+                    "message": f"更新失败：{err_summary}",
                 })
                 continue
 
@@ -1248,6 +1320,9 @@ class UpdaterService:
                 and after_ver and after_ver != "未知"
                 and before_ver != after_ver
             )
+            version_regressed = bool(
+                version_changed and compare_versions(after_ver, before_ver) < 0
+            )
             git_changed = bool(head_before and head_after and head_before != head_after)
             if not force and not (version_changed or git_changed):
                 results.append({
@@ -1256,7 +1331,11 @@ class UpdaterService:
                     "ok": True,
                     "stage": "no_change",
                     "no_change": True,
-                    "message": "已是最新版本，无需更新",
+                    "message": (
+                        f"已是最新（{format_version(after_ver)}）"
+                        if after_ver and after_ver != "未知"
+                        else "已是最新"
+                    ),
                     "before_version": before_ver,
                     "after_version": after_ver,
                 })
@@ -1266,14 +1345,21 @@ class UpdaterService:
             #    更新自身时先不重载：等指令回复发出去后，由 apply_updates 延迟重载，
             #    否则命令执行到一半模块被换掉，回复可能丢失。
             if name == "astrbot_plugin_xbnext" and self._loop is not None:
-                msg = "文件已更新，将在回复后自动重载"
-                if after_ver and after_ver != "未知":
-                    msg = f"文件已更新至 {format_version(after_ver)}，将在回复后自动重载"
+                if version_regressed:
+                    msg = (
+                        f"版本回退：{format_version(before_ver)} → "
+                        f"{format_version(after_ver)}（远端版本更旧，请检查远端 metadata.yaml）"
+                    )
+                elif after_ver and after_ver != "未知":
+                    msg = f"已更新至 {format_version(after_ver)}，回复后自动重载"
+                else:
+                    msg = "已更新，回复后自动重载"
                 results.append({
                     "name": name,
                     "nickname": nick,
-                    "ok": True,
-                    "stage": "deferred_reload",
+                    "ok": not version_regressed,
+                    "stage": "downgrade" if version_regressed else "deferred_reload",
+                    "icon": "⚠️" if version_regressed else "⏳",
                     "deferred_reload": True,
                     "message": msg,
                     "before_version": before_ver,
@@ -1284,33 +1370,50 @@ class UpdaterService:
             r_status, r_resp = self._request_reload(name)
 
             if r_status != 200:
-                err_msg = _extract_err_msg(r_resp)
                 results.append({
                     "name": name,
                     "nickname": nick,
                     "ok": False,
                     "stage": "reload",
-                    "message": f"重载失败 ({r_status}): {err_msg}",
+                    "message": f"重载失败：{_friendly_http_error(r_status, r_resp)}",
                 })
                 continue
 
             # 7. 版本真实比对与状态汇报（杜绝假更新假汇报）
-            if before_ver and after_ver and before_ver != "未知" and after_ver != "未知" and before_ver != after_ver:
-                msg = f"更新并重载成功 ({format_version(before_ver)} → {format_version(after_ver)})"
+            if version_regressed:
+                msg = (
+                    f"版本回退：{format_version(before_ver)} → "
+                    f"{format_version(after_ver)}（远端版本更旧，请检查远端 metadata.yaml）"
+                )
+                icon, ok = "⚠️", False
+                stage = "downgrade"
+            elif version_changed:
+                msg = f"已更新 {format_version(before_ver)} → {format_version(after_ver)}"
+                icon, ok, stage = "✅", True, "done"
             elif after_ver and after_ver != "未知":
-                msg = f"更新并重载成功 ({format_version(after_ver)})"
+                msg = (
+                    f"已重新拉取并重载（{format_version(after_ver)}）"
+                    if force
+                    else f"已更新并重载（{format_version(after_ver)}）"
+                )
+                icon, ok, stage = "✅", True, "done"
             else:
-                msg = "更新并重载成功"
+                msg = "已重新拉取并重载" if force else "已更新并重载"
+                icon, ok, stage = "✅", True, "done"
 
             results.append({
                 "name": name,
                 "nickname": nick,
-                "ok": True,
-                "stage": "done",
+                "ok": ok,
+                "stage": stage,
+                "icon": icon,
                 "message": msg,
                 "before_version": before_ver,
                 "after_version": after_ver,
             })
+
+        for item in results:
+            item.setdefault("icon", result_icon(item))
 
         # 非强制模式：把「没有任何变更」的插件从结果里剔除，聊天端/WebUI
         # 只展示真正更新的与失败的；全部没变则收敛成一条结论。

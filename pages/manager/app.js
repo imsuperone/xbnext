@@ -2004,18 +2004,18 @@
             toast("未检测到匹配的已安装插件", "info");
             return;
           }
-          var lines = ["🔍【插件更新检查结果】", "━━━━━━━━━━━━━━━━━━━━"];
+          var lines = ["🔍【插件更新检查】", "━━━━━━━━━━━━━━"];
           plugins.forEach(function (p) {
-            var nick = p.nickname || p.name;
+            var nick = p.nickname || p.name || "未知插件";
             var mark = p.has_update ? "🚀" : "🟢";
-            lines.push("• " + nick + ": " + mark + " " + p.status_text);
+            lines.push("• " + nick + "：" + mark + " " + (p.status_text || ""));
           });
-          lines.push("━━━━━━━━━━━━━━━━━━━━");
+          lines.push("━━━━━━━━━━━━━━");
           if (data.has_new_version) {
-            lines.push("💡 发现可用新版本！点击上方【🚀 一键更新】即可完成升级与重载。");
+            lines.push("💡 发现可用新版本，点击上方【🚀 一键更新】即可升级并重载。");
             toast("发现可用新版本，可点击一键更新", "ok");
           } else {
-            lines.push("✨ 所有选定插件均已处于最新状态！");
+            lines.push("✨ 全部选定插件均已是最新版本。");
             toast("所有选定插件均是最新版本", "ok");
           }
           if (box) box.textContent = lines.join("\n");
@@ -2052,24 +2052,28 @@
             return;
           }
           var results = (data && data.results) ? data.results : [];
-          var lines = ["🚀【一键更新执行结果】", "━━━━━━━━━━━━━━━━━━━━"];
-          var allOk = true;
+          var lines = ["🚀【插件一键更新】", "━━━━━━━━━━━━━━"];
+          var failed = 0;
+          var pending = 0;
           results.forEach(function (r) {
-            var nick = r.nickname || r.name;
-            if (r.ok) {
-              lines.push("• " + nick + ": ✅ " + r.message);
-            } else {
-              allOk = false;
-              lines.push("• " + nick + ": ❌ " + r.message);
-            }
+            var nick = r.nickname || r.name || "未知插件";
+            var icon = r.icon || (r.ok ? "✅" : "❌");
+            if (!r.ok) failed += 1;
+            if (r.deferred_reload && r.ok) pending += 1;
+            lines.push("• " + nick + "：" + icon + " " + (r.message || ""));
           });
-          lines.push("━━━━━━━━━━━━━━━━━━━━");
-          if (allOk) {
-            lines.push("✨ 所选插件已全部更新并热重载生效！");
-            toast("插件已全部更新并重载生效", "ok");
+          lines.push("━━━━━━━━━━━━━━");
+          if (!failed) {
+            var suffix = pending ? "，其中 " + pending + " 个将在回复后自动重载" : "";
+            lines.push("✨ 共 " + results.length + " 个插件全部处理完成" + suffix + "。");
+            toast("插件更新完成", "ok");
           } else {
-            lines.push("⚠️ 部分插件更新遇到异常，详情请查看上方日志。");
-            toast("部分插件更新遇到异常", "bad");
+            var parts = ["成功 " + (results.length - failed - pending) + " 个"];
+            if (pending) parts.push("待重载 " + pending + " 个");
+            parts.push("失败 " + failed + " 个");
+            lines.push("⚠️ 共 " + results.length + " 个插件：" + parts.join("，") + "。");
+            lines.push("💡 失败项可稍后重试，详情请查看上方日志。");
+            toast("部分插件更新失败", "bad");
           }
           if (box) box.textContent = lines.join("\n");
         }).catch(function (e) {
@@ -2100,24 +2104,28 @@
           setUpdaterBusy(false);
           var data = (res && res.data) ? res.data : res;
           var results = (data && data.results) ? data.results : [];
-          var lines = ["⚡【强制更新执行结果】", "━━━━━━━━━━━━━━━━━━━━"];
-          var allOk = true;
+          var lines = ["⚡【插件强制更新】", "━━━━━━━━━━━━━━"];
+          var failed = 0;
+          var pending = 0;
           results.forEach(function (r) {
-            var nick = r.nickname || r.name;
-            if (r.ok) {
-              lines.push("• " + nick + ": ✅ " + r.message);
-            } else {
-              allOk = false;
-              lines.push("• " + nick + ": ❌ " + r.message);
-            }
+            var nick = r.nickname || r.name || "未知插件";
+            var icon = r.icon || (r.ok ? "✅" : "❌");
+            if (!r.ok) failed += 1;
+            if (r.deferred_reload && r.ok) pending += 1;
+            lines.push("• " + nick + "：" + icon + " " + (r.message || ""));
           });
-          lines.push("━━━━━━━━━━━━━━━━━━━━");
-          if (allOk) {
-            lines.push("✨ 选定插件已全部强制重新拉取并重载完成！");
-            toast("插件强制重新拉取并重载完成", "ok");
+          lines.push("━━━━━━━━━━━━━━");
+          if (!failed) {
+            var suffix = pending ? "，其中 " + pending + " 个将在回复后自动重载" : "";
+            lines.push("✨ 共 " + results.length + " 个插件全部重新拉取并重载完成" + suffix + "。");
+            toast("插件强制更新完成", "ok");
           } else {
-            lines.push("⚠️ 部分插件重新拉取遇到异常，详情请查看上方日志。");
-            toast("部分插件重拉遇到异常", "bad");
+            var parts = ["成功 " + (results.length - failed - pending) + " 个"];
+            if (pending) parts.push("待重载 " + pending + " 个");
+            parts.push("失败 " + failed + " 个");
+            lines.push("⚠️ 共 " + results.length + " 个插件：" + parts.join("，") + "。");
+            lines.push("💡 失败项可稍后重试，详情请查看上方日志。");
+            toast("部分插件强制更新失败", "bad");
           }
           if (box) box.textContent = lines.join("\n");
         }).catch(function (e) {
