@@ -1,3 +1,11 @@
+## v0.2.46 (2026-10-29)
+- **移除「全语言谐音梗与跨语种双关」功能**：删除 `WordplayFeature`、`enable_wordplay` 配置项、WebUI 卡片与相关测试，不保留兼容开关。
+- **统一版本号解析**：新增 `xbnext/version.py`，插件自身 `__version__` 与更新器读取其它插件版本共用同一实现；`metadata.yaml` 仍是唯一版本来源。
+- **修复版本比较**：支持多位数段（`1.2.9 < 1.2.10`）、`v` 前缀、`+build` 元数据、尾部零（`1.0 == 1.0.0`）与预发布版（`1.2.3-beta < 1.2.3`），避免误报或漏报更新。
+- **去重管理员判定**：`botguard` 与 `updater` 共用 `xbnext/permissions.py` 的 `is_admin_event` / `extract_sender_id`，删除两份重复实现。
+- **死代码清理**：删除 `save_config_async`、`fetch_market_registry`（async 包装）、`_dispatch_update_notification`、`_DynamicNicknames`、`PLUGIN_NICKNAMES`、`_schedule_loop` 内重复的延迟计算与多处未使用导入。
+- 定时任务统一走 `next_schedule_delay`，热改 `schedule_time` 后按新时间重新计时。
+
 ## v0.2.45 (2026-10-29)
 - **修复一键更新「谎报成功」**：非强制更新时，若 Git HEAD 与插件版本都没有变化（典型场景：多个 Bot 同时收到同一条更新指令，另一个实例已先拉完，本实例 `pull` 返回 `Already up to date`），不再显示为「更新并重载成功」，而是归入「已是最新」。
 - 聊天端与 WebUI 的「一键更新」只展示**真正发生变更**的插件和失败项；全部无变更时只回一行「所有选定插件均已是最新版本，无需更新。」。

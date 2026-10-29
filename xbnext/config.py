@@ -83,11 +83,6 @@ class LocalAstrBotConfig:
             except Exception:
                 return False
 
-    async def save_config_async(self) -> bool:
-        """异步落盘配置。"""
-        import asyncio
-        return await asyncio.to_thread(self.save_config)
-
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 

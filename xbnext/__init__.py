@@ -20,8 +20,9 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+
+from .version import read_version
 
 PLUGIN_NAME = "astrbot_plugin_xbnext"
 KV_PREFIX = "xbnext"
@@ -29,25 +30,9 @@ KV_PREFIX = "xbnext"
 _METADATA_PATH = Path(__file__).resolve().parent.parent / "metadata.yaml"
 
 
-def _read_version() -> str:
-    """从 ``metadata.yaml`` 读版本号 —— **唯一版本来源**。
-
-    代码里不许出现版本字面量（aidoc/03 红线 §2）；照 AstrNa
-    ``main.py::_read_plugin_version()`` 的做法，任何失败回退成占位值。
-    """
-    try:
-        text = _METADATA_PATH.read_text(encoding="utf-8")
-        match = re.search(r'^version:\s*["\']?([^"\'\n]+)["\']?\s*$', text, re.M)
-        if match and match.group(1).strip():
-            return match.group(1).strip()
-    except Exception:  # noqa: BLE001  读不到不能让插件起不来
-        pass
-    return "0.0.0"
-
-
 #: 插件版本号（读自 metadata.yaml）。三处必须同步：metadata.yaml /
 #: CHANGELOG.md 首条 / README.md 版本行，``tests/test_structure.py`` 机械校验。
-__version__ = _read_version()
+__version__ = read_version(_METADATA_PATH)
 
 #: 所有钩子统一使用的 priority。
 #:

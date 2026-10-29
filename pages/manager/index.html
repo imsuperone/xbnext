@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.45" />
+  <link rel="stylesheet" href="./style.css?v=0.2.46" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.45">0.2.45</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.46">0.2.46</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -130,19 +130,6 @@
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_face_translate" data-key="enable_face_translate" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-        </div>
-
-        <div class="m3-card">
-          <div class="card-row-split">
-            <div>
-              <h2 class="card-title">全语言谐音梗与跨语种双关</h2>
-              <p class="card-desc">激活多语言声学发音与双轨谐音认知，秒懂中文、中英混合（duck不必/深藏blue/more名其妙）、日语空耳（ダジャレ）及欧美多语言双关，并以机智傲娇人设自然吐槽接梗。默认开启。</p>
-            </div>
-            <label class="m3-switch">
-              <input type="checkbox" id="sw_enable_wordplay" data-key="enable_wordplay" />
               <span class="switch-slider"></span>
             </label>
           </div>
@@ -791,8 +778,6 @@
           <span class="field-hint">第 ③④ 步有机械校验兜底（test_structure.py），漏做直接红。要暴露子指令（像 <code>/xbnext profile</code>）就再填 <code>command</code> 并在 <code>main.py</code> 加一行静态转发。</span>
         </div>
 
-
-
         <div class="m3-card">
           <h2 class="card-title">致谢与借鉴</h2>
           <p class="card-desc">本插件的设计与实现借鉴了以下项目：</p>
@@ -810,7 +795,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.45"></script>
-  <script src="./app.js?v=0.2.45"></script>
+  <script src="./api.js?v=0.2.46"></script>
+  <script src="./app.js?v=0.2.46"></script>
 </body>
 </html>

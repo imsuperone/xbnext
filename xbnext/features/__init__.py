@@ -23,7 +23,7 @@ R9     tokenline             95    看不见本轮 token 成本
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .base import Feature
 from .attribution import AttributionFeature
@@ -36,7 +36,6 @@ from .recall import RecallFeature
 from .tokenline import TokenLineFeature
 from .ttslimit import TtsLimitFeature
 from .updater import UpdaterFeature
-from .wordplay import WordplayFeature
 
 #: 功能注册表 —— 加功能就在这里加一行。
 FEATURES: Tuple[Feature, ...] = (
@@ -46,7 +45,6 @@ FEATURES: Tuple[Feature, ...] = (
     FaceFeature(),
     AttributionFeature(),
     ProfileFeature(),
-    WordplayFeature(),
     RecallFeature(),
     TokenLineFeature(),
     TtsLimitFeature(),

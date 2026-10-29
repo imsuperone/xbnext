@@ -24,7 +24,7 @@ import time
 from typing import Any, List, Optional, Tuple
 
 from ...eventids import umo_of
-from ...seg import field as _field, seg_data as _seg_data, seg_type as _seg_type
+from ...seg import field as _field, seg_type as _seg_type
 from ..base import Feature
 from . import service
 from .store import DEFAULT_LIMIT, ReplyTargetStore

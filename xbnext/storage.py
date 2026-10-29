@@ -17,7 +17,7 @@ AstrBot 的插件 KV 是**插件维度独立空间**（>= 4.9.2），由 Star �
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Set
 
 from . import KV_PREFIX, log
 

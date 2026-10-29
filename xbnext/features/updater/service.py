@@ -17,6 +17,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...version import extract_version as extract_version_from_yaml
+
 _MARKET_INDEX: Dict[str, Dict[str, Any]] = {}
 _MARKET_CACHE_TS: float = 0.0
 _MARKET_CACHE_TTL: float = 900.0  # 15 分钟
@@ -106,27 +108,6 @@ def get_plugin_display_name(p: Dict[str, Any], local_dir: str = "") -> str:
     return disp or name
 
 
-class _DynamicNicknames(dict):
-    """动态插件名称字典代理：优先从 metadata.yaml 读取 display_name。"""
-    def get(self, key, default=None):
-        name = str(key or "").strip()
-        if not name:
-            return default if default is not None else ""
-        disp = get_plugin_display_name({"name": name})
-        if disp:
-            return disp
-        return super().get(key, default if default is not None else name)
-
-    def __getitem__(self, key):
-        v = self.get(key)
-        if v:
-            return v
-        raise KeyError(key)
-
-
-PLUGIN_NICKNAMES = _DynamicNicknames()
-
-
 def normalize_plugin_name(name: str) -> str:
     """归一化插件名称（支持短名与全名互转）。"""
     s = str(name or "").strip()
@@ -202,14 +183,6 @@ def _extract_err_msg(resp: Any) -> str:
     return str(resp or "")
 
 
-def extract_version_from_yaml(text: str) -> str:
-    """从 metadata.yaml 文本中提取 version 字段。"""
-    if not text:
-        return ""
-    m = re.search(r'(?:^|\n)\s*version:\s*["\']?([^"\'\s\n]+)', text)
-    return m.group(1).strip() if m else ""
-
-
 def format_version(v: str) -> str:
     """统一版本显示格式，如 v1.3.31 或 v26w1014b。"""
     s = str(v or "").strip().strip("'\"")
@@ -221,31 +194,67 @@ def format_version(v: str) -> str:
 
 
 def parse_version_key(v: str) -> List[Any]:
-    """解析版本号为分段权重列表，支持数字 semver 与快照字母版本。"""
-    s = str(v or "").strip().lstrip("vV").strip("'\"")
-    parts = re.findall(r"\d+|\D+", s)
-    res = []
-    for p in parts:
-        if p.isdigit():
-            res.append((0, int(p)))
-        else:
-            res.append((1, p.lower()))
+    """把版本串拆成可比权重序列（数字段 ``(0, int)`` / 文本段 ``(1, str)``）。
+
+    忽略 ``v`` 前缀与 ``+build`` 元数据；``.`` / ``_`` / 空白只用于切段，
+    不参与比较 —— 因此 ``1.0`` 与 ``1.0.0`` 等价，而 ``26w1014b`` 这类
+    日期式版本仍按 ``26 < w < 1014 < b`` 的原始顺序比较。
+    """
+    s = str(v or "").strip().strip("'\"")
+    if s[:1] in ("v", "V"):
+        s = s[1:]
+    s = s.split("+", 1)[0]
+    res: List[Any] = []
+    for chunk in re.split(r"[._\s]+", s.strip()):
+        if not chunk:
+            continue
+        for token in re.findall(r"\d+|\D+", chunk):
+            res.append((0, int(token)) if token.isdigit() else (1, token.lower()))
     return res
 
 
-def compare_versions(v1: str, v2: str) -> int:
-    """比较两个版本号。v1 < v2 返回 -1；v1 == v2 返回 0；v1 > v2 返回 1。"""
-    s1 = str(v1 or "").strip().lstrip("vV").strip("'\"")
-    s2 = str(v2 or "").strip().lstrip("vV").strip("'\"")
-    if s1 == s2:
-        return 0
-    k1 = parse_version_key(s1)
-    k2 = parse_version_key(s2)
-    if k1 < k2:
-        return -1
-    elif k1 > k2:
-        return 1
+def _compare_keys(k1: List[Any], k2: List[Any]) -> int:
+    """按权重序列比较；较短一方用 ``(0, 0)`` 补齐（尾部 0 不构成差异）。"""
+    zero = (0, 0)
+    for i in range(max(len(k1), len(k2))):
+        a = k1[i] if i < len(k1) else zero
+        b = k2[i] if i < len(k2) else zero
+        if a < b:
+            return -1
+        if a > b:
+            return 1
     return 0
+
+
+def _split_prerelease(v: str) -> Tuple[str, str]:
+    """拆出主版本与预发布段（``1.2.3-beta.1`` → ``("1.2.3", "beta.1")``）。"""
+    s = str(v or "").strip().strip("'\"")
+    if s[:1] in ("v", "V"):
+        s = s[1:]
+    s = s.split("+", 1)[0]
+    main, sep, pre = s.partition("-")
+    return main, (pre if sep else "")
+
+
+def compare_versions(v1: str, v2: str) -> int:
+    """比较两个版本号：v1 < v2 返回 -1；相等返回 0；v1 > v2 返回 1。
+
+    规则：忽略 ``v`` 前缀与 ``+build`` 元数据；``1.0`` 与 ``1.0.0`` 等价；
+    同一主版本下预发布版低于正式版（``1.2.3-beta < 1.2.3``）；数字段按
+    数值比较，文本段按字典序比较（兼容 ``26w1014b`` 日期式版本）。
+    """
+    m1, p1 = _split_prerelease(v1)
+    m2, p2 = _split_prerelease(v2)
+    result = _compare_keys(parse_version_key(m1), parse_version_key(m2))
+    if result:
+        return result
+    if p1 == p2:
+        return 0
+    if not p1:
+        return 1  # 正式版高于同主版本的预发布版
+    if not p2:
+        return -1
+    return _compare_keys(parse_version_key(p1), parse_version_key(p2))
 
 
 def _get_local_version(p: Dict[str, Any], local_dir: str) -> str:
@@ -459,8 +468,6 @@ def _download_github_archive(repo_url: str, local_dir: str, branch: str = "", ti
         except Exception:
             pass
 
-    import io
-    import zipfile
     import urllib.request
 
     cand_branches = []
@@ -746,9 +753,6 @@ class UpdaterService:
         _MARKET_CACHE_TS = now
         return _MARKET_INDEX
 
-    async def fetch_market_registry(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
-        return await asyncio.to_thread(self.fetch_market_registry_sync, force_refresh)
-
     def scan_local_plugins_sync(self) -> List[Dict[str, Any]]:
         """扫描已安装的插件。优先读取 AstrBot runtime context 实例，备选本地多级目录。"""
         KNOWN_REPOS = {
@@ -972,10 +976,8 @@ class UpdaterService:
                 if not repo_check and not is_in_market:
                     continue
 
-            ver = str(p.get("version") or "未知")
             install_src = p.get("install_source") or {}
             repo_url = p.get("repo") or install_src.get("repo") or ""
-            root_dir = install_src.get("root_dir_name") or name
 
             # 探测本地目录（包含同级目录、插件根目录等）
             local_dir = self.find_plugin_local_dir(p)

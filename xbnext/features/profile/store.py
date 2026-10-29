@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import time
 import weakref
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ... import log
 from ...injector import sanitize, strip_xbnext

@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, List, Optional, Set
+from typing import Any, Iterable, List, Set
+
+from ...permissions import extract_sender_id
 
 __all__ = [
     "parse_blacklist",
@@ -77,50 +79,6 @@ def format_blacklist(ids: Iterable[str]) -> str:
     """格式化黑名单集合为以逗号分隔的标准字符串。"""
     cleaned = sorted({str(x).strip() for x in ids if str(x).strip()})
     return ", ".join(cleaned)
-
-
-def extract_sender_id(event: Any) -> str:
-    """从事件对象中安全提取发送者 ID（数字 QQ 或平台唯一标识）。"""
-    if event is None:
-        return ""
-    # 1. 优先调用 get_sender_id()
-    getter = getattr(event, "get_sender_id", None)
-    if callable(getter):
-        try:
-            res = getter()
-            if res not in (None, ""):
-                return str(res).strip()
-        except Exception:  # noqa: BLE001
-            pass
-
-    # 2. 从属性取
-    for attr in ("sender_id", "user_id", "author_id"):
-        val = getattr(event, attr, None)
-        if val not in (None, ""):
-            return str(val).strip()
-
-    # 3. 从 message_obj.sender / message_obj 取
-    msg_obj = getattr(event, "message_obj", None)
-    if msg_obj is not None:
-        sender = getattr(msg_obj, "sender", None)
-        if sender is not None:
-            for attr in ("user_id", "id", "sender_id"):
-                val = getattr(sender, attr, None)
-                if val not in (None, ""):
-                    return str(val).strip()
-        for attr in ("user_id", "sender_id"):
-            val = getattr(msg_obj, attr, None)
-            if val not in (None, ""):
-                return str(val).strip()
-
-    # 4. 从 raw_message / dict payload 兜底
-    raw = getattr(event, "raw_message", None)
-    if isinstance(raw, dict):
-        user_id = raw.get("user_id") or raw.get("sender", {}).get("user_id")
-        if user_id not in (None, ""):
-            return str(user_id).strip()
-
-    return ""
 
 
 def extract_self_id(event: Any) -> str:

@@ -10,71 +10,15 @@ order = 5（最前执行优先级），在 core 判定空消息与大模型管�
 
 from __future__ import annotations
 
-import asyncio
 import re
-from typing import Any, List, Optional, Set
+from typing import Any, List, Optional
 
 from ... import log, switches
+from ...permissions import is_admin_event
 from ..base import Feature
 from . import service
 
-__all__ = ["BotGuardFeature"]
-
-
-async def is_admin_event(event: Any) -> bool:
-    """判定当前事件发送者是否具备管理员权限（超管/群主/管理员）。"""
-    if event is None:
-        return False
-
-    # 1. 尝试 event.is_admin() (AstrBot 官方接口，支持 sync / async)
-    try:
-        fn = getattr(event, "is_admin", None)
-        if callable(fn):
-            res = fn()
-            if asyncio.iscoroutine(res):
-                res = await res
-            if isinstance(res, bool):
-                return res
-    except Exception:  # noqa: BLE001
-        pass
-
-    # 2. 检查 event.role (group admin / owner / master)
-    try:
-        role = str(getattr(event, "role", "") or "").lower()
-        if role in ("admin", "owner", "master"):
-            return True
-        if role in ("member", "user"):
-            return False
-    except Exception:  # noqa: BLE001
-        pass
-
-    # 3. 检查 event.sender.role
-    try:
-        sender = getattr(event, "sender", None)
-        if sender:
-            s_role = str(getattr(sender, "role", "") or "").lower()
-            if s_role in ("admin", "owner", "master"):
-                return True
-            if s_role in ("member", "user"):
-                return False
-    except Exception:  # noqa: BLE001
-        pass
-
-    # 4. 检查 sender ID 是否在 AstrBot 全局 admins_id 白名单中
-    try:
-        user_id = service.extract_sender_id(event)
-        if user_id:
-            ctx = getattr(event, "context", None)
-            if ctx and hasattr(ctx, "get_config"):
-                g_cfg = ctx.get_config()
-                if isinstance(g_cfg, dict):
-                    admins = g_cfg.get("admins_id") or []
-                    if isinstance(admins, list) and user_id in [str(x).strip() for x in admins]:
-                        return True
-    except Exception:  # noqa: BLE001
-        pass
-
-    return False
+__all__ = ["BotGuardFeature", "is_admin_event"]
 
 
 class BotGuardFeature(Feature):

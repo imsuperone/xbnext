@@ -4,93 +4,18 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List
+import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 from ... import PLUGIN_NAME
+from ...permissions import is_admin_event
 from ..base import Feature
 from .service import (
     DEFAULT_TARGET_PLUGINS,
     UpdaterService,
     format_version,
 )
-
-
-async def is_admin_event(event: Any) -> bool:
-    """判定当前事件的发送者是否为 AstrBot 管理员/主号。
-
-    层级判定机制：
-    1. 优先调用 event.is_admin()（兼容同步与协程）
-    2. 检查 event.role 或 event.sender.role 是否为 'admin', 'owner', 'master'
-    3. 检查 AstrBot 内核的管理员/主号 ID 列表
-    4. 平台不支持或判定异常时拒绝（fail-closed，严格阻止普通用户刷屏/操作更新）
-    """
-    if event is None:
-        return False
-
-    # 1. 尝试 event.is_admin() (AstrBot 官方事件权限接口，支持 sync / async)
-    try:
-        fn = getattr(event, "is_admin", None)
-        if callable(fn):
-            res = fn()
-            if asyncio.iscoroutine(res):
-                res = await res
-            if isinstance(res, bool):
-                return res
-    except Exception:
-        pass
-
-    # 2. 尝试 event.role 判定 (group admin / owner / master)
-    try:
-        role = str(getattr(event, "role", "") or "").lower()
-        if role in ("admin", "owner", "master"):
-            return True
-        if role in ("member", "user"):
-            return False
-    except Exception:
-        pass
-
-    # 3. 尝试 event.sender.role
-    try:
-        sender = getattr(event, "sender", None)
-        if sender:
-            s_role = str(getattr(sender, "role", "") or "").lower()
-            if s_role in ("admin", "owner", "master"):
-                return True
-            if s_role in ("member", "user"):
-                return False
-    except Exception:
-        pass
-
-    # 4. 检查 sender ID 是否在 AstrBot 全局 admins_id 白名单中
-    try:
-        user_id = ""
-        for attr in ("user_id", "sender_id", "author_id"):
-            val = getattr(event, attr, None)
-            if val:
-                user_id = str(val).strip()
-                break
-        if not user_id:
-            sender = getattr(event, "sender", None)
-            if sender:
-                user_id = str(getattr(sender, "user_id", "") or getattr(sender, "id", "") or "").strip()
-
-        if user_id:
-            ctx = getattr(event, "context", None)
-            if ctx and hasattr(ctx, "get_config"):
-                g_cfg = ctx.get_config()
-                if isinstance(g_cfg, dict):
-                    admins = g_cfg.get("admins_id") or []
-                    if isinstance(admins, list) and user_id in [str(x).strip() for x in admins]:
-                        return True
-    except Exception:
-        pass
-
-    return False
-
-
-import re
-from datetime import datetime, timedelta
-from typing import Any, List, Optional
 
 
 def next_schedule_delay(now_or_hhmm: Any = None, hhmm: Optional[str] = None) -> float:
@@ -220,73 +145,6 @@ class UpdaterFeature(Feature):
         except Exception:
             pass
 
-    async def _dispatch_update_notification(self, updater: UpdaterService, updates: List[Dict[str, Any]]) -> None:
-        """格式化并在有新版本未通知时发送私聊通知。"""
-        qq_list = updater.notify_qqs
-        if not updates or not qq_list:
-            return
-
-        notified_path = getattr(self._runtime, "data_dir", None)
-        notified_file = None
-        notified_map = {}
-        if notified_path:
-            notified_file = notified_path / "notified_versions.json"
-            if notified_file.is_file():
-                try:
-                    import json
-                    notified_map = json.loads(notified_file.read_text(encoding="utf-8"))
-                except Exception:
-                    notified_map = {}
-
-        new_updates = []
-        for p in updates:
-            p_name = p.get("name") or ""
-            r_ver = str(p.get("remote_version") or "")
-            if notified_map.get(p_name) == r_ver:
-                continue
-            new_updates.append(p)
-
-        if not new_updates:
-            return
-
-        lines = [
-            "🔔【XBNEXT 插件更新提醒】",
-            "检测到以下插件发布了新版本：",
-            "━━━━━━━━━━━━━━",
-        ]
-        for p in new_updates:
-            p_name = p.get("name") or p.get("nickname") or ""
-            cur_v = format_version(p.get("local_version") or p.get("version") or "未知")
-            new_v = format_version(p.get("remote_version") or "最新")
-            lines.append(f"• {p_name} {cur_v} -> {new_v}")
-        lines.append("━━━━━━━━━━━━━━")
-        lines.append("💡 发送【/xbnext 一键更新】即可完成升级重载。")
-        msg = "\n".join(lines)
-
-        ctx = getattr(self._runtime, "context", None)
-        log = getattr(self._runtime, "log", None)
-        any_ok = False
-        for q in qq_list:
-            ok, err = await send_private_notification(ctx, q, msg)
-            if ok:
-                any_ok = True
-            elif log and hasattr(log, "warning"):
-                log.warning(f"[定时更新通知] 发送给 QQ {q} 失败: {err}")
-
-        if any_ok:
-            for p in new_updates:
-                notified_map[p.get("name")] = str(p.get("remote_version") or "")
-            if notified_file:
-                try:
-                    import json
-                    notified_file.write_text(json.dumps(notified_map, ensure_ascii=False, indent=2), encoding="utf-8")
-                except Exception:
-                    pass
-            if log and hasattr(log, "info"):
-                log.info(f"[插件更新推送] 已成功向设定通道 {', '.join(qq_list)} 发送新版本提醒")
-        else:
-            if log and hasattr(log, "warning"):
-                log.warning(f"[插件更新推送] 向设定通道 {', '.join(qq_list)} 推送失败: {err}")
 
     async def _dispatch_update_success_notification(
         self, updater: UpdaterService, updates: List[Dict[str, Any]], apply_res: Dict[str, Any]
@@ -324,18 +182,6 @@ class UpdaterFeature(Feature):
 
     async def _schedule_loop(self) -> None:
         """后台每日定时更新循环（默认每天 04:30 自动检测并执行更新，无更新时完全静默）。"""
-        import re
-        from datetime import datetime, timedelta
-
-        def _calc_delay(sched_time: str) -> float:
-            now = datetime.now()
-            m = re.match(r"^(\d{1,2}):(\d{2})$", (sched_time or "").strip())
-            h, minute = (int(m.group(1)), int(m.group(2))) if m else (4, 30)
-            target = now.replace(hour=h, minute=minute, second=0, microsecond=0)
-            if target <= now:
-                target += timedelta(days=1)
-            return max(1.0, (target - now).total_seconds())
-
         try:
             # 启动 30 秒后开始进入定时循环
             await asyncio.sleep(30)
@@ -346,7 +192,7 @@ class UpdaterFeature(Feature):
                 sched_time = updater.schedule_time
 
                 # 计算到下一次 schedule_time（默认 04:30）的剩余秒数
-                total_delay = _calc_delay(sched_time)
+                total_delay = next_schedule_delay(sched_time)
 
                 # 分段休眠，以支持热改配置即时生效
                 while total_delay > 0:
@@ -357,7 +203,7 @@ class UpdaterFeature(Feature):
                     cur_updater = UpdaterService(cur_conf, context=ctx)
                     if cur_updater.schedule_time != sched_time:
                         sched_time = cur_updater.schedule_time
-                        total_delay = _calc_delay(sched_time)
+                        total_delay = next_schedule_delay(sched_time)
 
                 conf = getattr(self._runtime, "conf", None)
                 updater = UpdaterService(conf, context=ctx)
