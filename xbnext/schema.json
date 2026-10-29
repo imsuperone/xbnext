@@ -278,8 +278,8 @@
   },
   "updater_api_key": {
     "type": "string",
-    "description": "AstrBot OpenAPI 密钥",
-    "hint": "AstrBot Web 控制台「开放接口」生成的 API Key（格式如 abk_...，需具备插件管理权限）。默认留空。",
+    "description": "AstrBot OpenAPI 密钥（WebUI 更新必填）",
+    "hint": "WebUI 的检查/一键更新/强制更新必须填写此 Key；AstrBot Web 控制台「开放接口」生成（格式如 abk_...）。聊天指令 /xbnext 更新仅校验管理员身份，不需要 Key。默认留空。",
     "default": "",
     "collapsed": true,
     "condition": {
@@ -362,7 +362,7 @@
   "bot_guard_require_at_for_commands": {
     "type": "bool",
     "description": "群聊全部指令需@触发",
-    "hint": "开启后，群聊中除 /xbnext 等管理指令外，所有指令（以 /、!、# 开头）必须 @ 机器人才生效，避免多个机器人同时触发。默认关闭。",
+    "hint": "开启后，群聊中所有指令（包括 /xbnext 系列，以 /、!、# 开头或系统/插件指令）必须 @ 机器人才生效；唤醒前缀 / 不算 @。避免多个机器人同时触发。默认关闭。",
     "default": false,
     "collapsed": true,
     "condition": {

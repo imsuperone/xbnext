@@ -18,21 +18,6 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star
 
-import importlib
-import sys as _sys_reload
-
-for _mod_name in list(_sys_reload.modules.keys()):
-    if (
-        _mod_name == "xbnext"
-        or _mod_name.startswith("xbnext.")
-        or _mod_name.endswith(".xbnext")
-        or ".xbnext." in _mod_name
-    ):
-        try:
-            importlib.reload(_sys_reload.modules[_mod_name])
-        except Exception:
-            pass
-
 from .xbnext import HOOK_PRIORITY, PLUGIN_NAME, __version__
 from .xbnext.runtime import XbnextRuntime
 from .xbnext.web import register_web_api
@@ -45,7 +30,10 @@ class XbnextPlugin(Star):
         super().__init__(context)
         # Star 自身就是插件维度 KV 代理（put_kv_data / get_kv_data）
         self.runtime = XbnextRuntime(config=config, kv_store=self, logger=logger, context=context)
-        register_web_api(context, self.runtime)
+        if not register_web_api(context, self.runtime):
+            logger.warning(
+                "[XBNEXT] Web API 注册失败（AstrBot 版本过低或路由冲突），控制台不可用"
+            )
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -64,30 +52,16 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     @filter.event_message_type(filter.EventMessageType.ALL, priority=HOOK_PRIORITY)
     async def on_adapter_message(self, event: AstrMessageEvent) -> None:
-        """早期钩子：标准化无空格指令并在 core 判定「空消息」之前补写 ``event.message_str``。
+        """早期钩子：在 core 判定「空消息」之前补写纯表情消息的 ``message_str``。
 
         纯表情（``@bot + 一个 QQ 表情`` / mface）的 ``message_str`` 是空的，
         core 会 ``skip llm request: empty message`` —— LLM 压根不被调用。
-        此外自动兼容如 ``/xbnext强制更新`` 等无空格触发词，格式化为带空格指令。
-        这里只做转发与预处理，业务在 ``runtime.handle_adapter_message``。
+        这里只做转发，业务在 ``runtime.handle_adapter_message``。
+
+        注意：本钩子属于 ``ProcessStage``，晚于 ``WakingCheckStage`` 的指令
+        匹配，因此**不能**用来修正指令文本；``/xbnext`` 只接受带空格的
+        标准写法（``/xbnext 强制更新``）。
         """
-        try:
-            m_str = getattr(event, "message_str", None)
-            if isinstance(m_str, str):
-                import re as _re
-                m = _re.match(r"^([/／]?xbnext)(\S.*)$", m_str.strip(), _re.I)
-                if m:
-                    norm = f"{m.group(1)} {m.group(2)}"
-                    event.message_str = norm
-                    msg_obj = getattr(event, "message_obj", None)
-                    if msg_obj and hasattr(msg_obj, "message") and isinstance(msg_obj.message, list):
-                        for seg in msg_obj.message:
-                            txt = getattr(seg, "text", None)
-                            if isinstance(txt, str) and _re.match(r"^[/／]?xbnext\S+", txt, _re.I):
-                                seg.text = _re.sub(r"^([/／]?xbnext)(\S+)", r"\1 \2", txt, flags=_re.I)
-                                break
-        except Exception:
-            pass
         await self.runtime.handle_adapter_message(event)
 
     @filter.on_llm_request(priority=HOOK_PRIORITY)
@@ -127,19 +101,12 @@ class XbnextPlugin(Star):
     # ------------------------------------------------------------------
     # 指令
     # ------------------------------------------------------------------
+    #: 唯一指令入口。AstrBot 对同一 handler 的多个 ``@filter.command`` 做 AND，
+    #: 叠加多个装饰器会导致 handler 永远无法唤醒；这里只注册一个 filter。
+    #: 子指令统一由 ``runtime.dispatch`` 解析（只接受带空格的标准写法）。
     @filter.command("xbnext")
-    @filter.command("xbnext强制更新")
-    @filter.command("xbnext一键更新")
-    @filter.command("xbnext更新")
-    @filter.command("xbnext检查更新")
     async def xbnext(self, event: AstrMessageEvent):
-        """XBNEXT 统一指令入口：``/xbnext [status|profile ...]``。
-
-        **单指令分发**（xbdoc / xbimg 同款）：菜单、状态、档案、未知提示
-        全部由 ``runtime.dispatch`` 自己回 —— 不走 AstrBot 指令组，
-        裸 ``/xbnext`` 不会落到 core 的「参数不足」指令树，打错的子指令
-        也不会漏给 LLM 乱答。词表与菜单文案在 ``xbnext/commands.py``。
-        """
+        """XBNEXT 统一指令入口：``/xbnext [status|profile ...]``。"""
         reply = await self.runtime.dispatch(event)
         if reply:
             try:

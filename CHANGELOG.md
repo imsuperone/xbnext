@@ -1,3 +1,28 @@
+## v0.2.41 (2026-10-28)
+- **修正「群聊全部指令需 @ 触发」的裸 `/` 绕过**：BotGuard 改为读取 `message_obj.message_str` 的**唤醒前缀剥离前原文**，默认 `wake_prefix=/` 下 `/help`、`/xbnext` 不再因被剥成 `help`、`xbnext` 而漏判。
+- **严格 @ 判定**：唤醒前缀 `/` 不再被当成 @；只有 At/Reply 本机器人才放行。开启「群聊全部指令需 @ 触发」后，裸 `/xbnext 强制更新` 会被静默拦截，`@机器人 /xbnext 强制更新` 才执行，避免同群多 Bot 同时响应。
+- **取消 `/xbnext` 无条件白名单**：该白名单只适用于「需 @」开关关闭时；开关开启后 `/xbnext` 系列也必须 @ 本机器人，防止多 Bot 串台。
+- **斜杠防接话同样改用原文**：`bot_guard_block_slash_commands` 现在能拦住被剥前缀的裸 `/help` 等未知指令，不再让大模型接话；本插件 `/xbnext` 入口仍保留放行，确保未知子指令有明确提示。
+- **WebUI 更新恢复 Key 门槛**：WebUI 的检查/一键更新/强制更新必须填写 AstrBot OpenAPI Key；聊天指令 `/xbnext 检查更新`、`/xbnext 一键更新`、`/xbnext 强制更新` 仅校验管理员身份，不需要 Key。前端与后端双重校验。
+- **修正文档**：v0.2.30 写的「破坏性指令需 @ 默认开启」与 `schema.json` 不符，实际默认关闭（`bot_guard_require_at_for_reset: false`）。
+- **代码清理**：移除撤销白名单后遗留的死函数 `is_whitelisted_command` 与无调用方的 `eventids.is_bot_mentioned`（功能已被 BotGuard 的 `is_at_self` / `is_at_self_strict` 覆盖）；`name_of` 补入 `eventids.__all__`。
+- 文档/版本对齐：README、CHANGELOG、metadata、WebUI 版本戳统一到 `0.2.41`。
+
+## v0.2.40 (2026-10-28)
+- **修复所有 `/xbnext` 指令完全失效（P0）**：移除叠加在同一函数上的 5 个 `@filter.command`。AstrBot 对同一 handler 的所有 filter 做 AND，叠加后 handler 永远无法唤醒；现只注册单个 `xbnext` 指令，子指令统一由 `runtime.dispatch` 解析。
+- **指令统一为带空格写法**：只支持 `/xbnext 强制更新`、`/xbnext 一键更新`、`/xbnext 检查更新`；不再兼容 `/xbnext强制更新` 等无空格形式。
+- **修复「发指令完全没回复」的静默链**：`botguard` 斜杠拦截豁免本插件根命令，未知 `/xbnext` 子指令也会得到明确提示，不再被静默吞掉。
+- **更新器恢复可用**：删除 OpenAPI Key 硬性门槛（Git / GitHub 归档更新本就不需要 Key），无 Key 时自动走本地扫描；WebUI 的 Key 门槛在 v0.2.41 恢复。
+- **强制更新默认只更新本插件**，不再批量处理 6 个插件；自身更新改为「先回复、后延迟热重载」，避免命令执行中自热重载导致回复丢失。
+- **修复定时更新通知崩溃**：补齐 `updater/__init__.py` 缺失的 `format_version` 导入。
+- **Git 更新安全化**：不再写入全局 `safe.directory "*"`，不再 `git reset --hard`；脏工作区拒绝 Git 快进，改走 GitHub 归档覆盖（保留 `data/` 与未跟踪文件）。
+- **ZIP 更新安全化**：校验解压路径不逃逸插件目录，跳过 `.git` / `data` / `__pycache__`，更新后清理旧字节码。
+- **恢复 TLS 证书校验**，更新包与 API Key 不再暴露于中间人攻击。
+- **数据目录与持久化修复**：数据目录不再回退到插件目录或裸 cwd；`seen_groups.json` 改为线程池异步落盘，并同时持久化最近发言人（旧格式自动兼容）。
+- **注入红线修复**：不再把历史 `system` 消息提升为 `req.system_prompt`，只做清理。
+- **档案索引加锁**，避免并发保存丢索引条目；Web 注册失败现在会打 warning。
+- 文档/版本对齐：README、CHANGELOG、metadata、WebUI 版本戳统一到 `0.2.40`。
+
 ## v0.2.39 (2026-10-28)
 - 增强无空格指令触发：原生注册 /xbnext强制更新、/xbnext一键更新、/xbnext检查更新 等命令树别名。
 - 修复无空格指令在群聊未@白名单判定中的正则匹配，确保无空格更新指令无需@也能100%直接执行。

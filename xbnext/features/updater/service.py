@@ -148,10 +148,8 @@ def normalize_plugin_name(name: str) -> str:
 
 
 def _make_ssl_context() -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    """默认启用证书校验；更新包与 API Key 都走这条链路，不能降级。"""
+    return ssl.create_default_context()
 
 
 def _http_request(
@@ -331,37 +329,43 @@ def _query_remote_version(
 
 
 def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> Tuple[bool, str]:
-    """通过系统 Git 真实拉取远端仓库代码。
-    
-    层级拉取机制：
-    1. safe.directory 自动修复，防止容器/Linux 属主误判拦截
-    2. 自动检测上游追踪分支与远端（优先当前 remote 或 origin）
-    3. 强制模式下自动重置工作区（git reset --hard），彻底解决本地冲突与脏文件阻塞
-    4. 捕获真实 Git 输出，精准返回拉取状态或失败根因
+    """通过系统 Git 真实拉取远端仓库代码（只读 + 快进，不破坏本地修改）。
+
+    安全约束：
+    1. 使用单次命令 ``-c safe.directory=<dir>``，**不写全局 Git 配置**；
+    2. 拉取前检查已跟踪文件是否有未提交修改，有则拒绝（force 也一样）；
+    3. 只做 ``fetch`` + ``merge --ff-only`` / ``pull --ff-only``，**绝不 reset --hard**；
+    4. 捕获真实 Git 输出，精准返回拉取状态或失败根因。
     """
     if not local_dir or not os.path.isdir(os.path.join(local_dir, ".git")):
         return False, "非 Git 仓库"
 
     import subprocess
+
+    def _git(*args: str, tmo: int = 10) -> Any:
+        return subprocess.run(
+            ["git", "-c", f"safe.directory={local_dir}", *args],
+            cwd=local_dir,
+            timeout=tmo,
+            capture_output=True,
+            text=True,
+        )
+
     try:
-        # 1. 修复安全目录配置
+        # 1. 脏工作区保护：已跟踪文件有修改就拒绝，避免用户本地改动被覆盖
         try:
-            subprocess.run(
-                ["git", "config", "--global", "--add", "safe.directory", "*"],
-                cwd=local_dir, timeout=5, capture_output=True
-            )
+            st = _git("status", "--porcelain", "--untracked-files=no")
+            if (st.stdout or "").strip():
+                return False, "本地有未提交修改，已拒绝更新（请先提交或暂存，避免丢失）"
         except Exception:
             pass
 
         # 2. 探测当前分支
         branch = ""
         try:
-            res_b = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=local_dir, timeout=8, capture_output=True, text=True
-            )
+            res_b = _git("rev-parse", "--abbrev-ref", "HEAD", tmo=8)
             if res_b.returncode == 0:
-                branch = res_b.stdout.strip()
+                branch = (res_b.stdout or "").strip()
         except Exception:
             pass
         if not branch or branch == "HEAD":
@@ -370,22 +374,16 @@ def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> 
         # 3. 探测追踪 remote
         remote = ""
         try:
-            res_r = subprocess.run(
-                ["git", "config", "--get", f"branch.{branch}.remote"],
-                cwd=local_dir, timeout=8, capture_output=True, text=True
-            )
+            res_r = _git("config", "--get", f"branch.{branch}.remote", tmo=8)
             if res_r.returncode == 0:
-                remote = res_r.stdout.strip()
+                remote = (res_r.stdout or "").strip()
         except Exception:
             pass
         if not remote:
             try:
-                res_all_r = subprocess.run(
-                    ["git", "remote"],
-                    cwd=local_dir, timeout=8, capture_output=True, text=True
-                )
+                res_all_r = _git("remote", tmo=8)
                 if res_all_r.returncode == 0:
-                    remotes = res_all_r.stdout.split()
+                    remotes = (res_all_r.stdout or "").split()
                     if "origin" in remotes:
                         remote = "origin"
                     elif remotes:
@@ -395,34 +393,18 @@ def _git_pull_plugin(local_dir: str, force: bool = False, timeout: int = 40) -> 
         if not remote:
             remote = "origin"
 
-        # 4. 执行拉取：强制更新时先行清理工作区脏文件以避免拒绝合入
+        # 4. 强制模式：fetch 后只允许快进合并，不允许丢弃本地提交
         if force:
-            try:
-                subprocess.run(
-                    ["git", "reset", "--hard"],
-                    cwd=local_dir, timeout=10, capture_output=True
-                )
-            except Exception:
-                pass
-
-            res_fetch = subprocess.run(
-                ["git", "fetch", remote, branch, "--prune"],
-                cwd=local_dir, timeout=timeout, capture_output=True, text=True
-            )
+            res_fetch = _git("fetch", remote, branch, "--prune", tmo=timeout)
             if res_fetch.returncode == 0:
-                res_reset = subprocess.run(
-                    ["git", "reset", "--hard", f"{remote}/{branch}"],
-                    cwd=local_dir, timeout=10, capture_output=True, text=True
-                )
-                if res_reset.returncode == 0:
-                    out = (res_reset.stdout or res_fetch.stdout or "强制重置至最新提交").strip()
+                res_merge = _git("merge", "--ff-only", f"{remote}/{branch}", tmo=10)
+                if res_merge.returncode == 0:
+                    out = (res_merge.stdout or res_fetch.stdout or "已快进至最新提交").strip()
                     return True, out
+                return False, (res_merge.stderr or res_merge.stdout or "无法快进合并").strip()
 
-        # 常规 pull 模式（或 force reset 回退）
-        res_pull = subprocess.run(
-            ["git", "pull", remote, branch],
-            cwd=local_dir, timeout=timeout, capture_output=True, text=True
-        )
+        # 5. 常规 pull 模式（只快进）
+        res_pull = _git("pull", "--ff-only", remote, branch, tmo=timeout)
         if res_pull.returncode == 0:
             out = (res_pull.stdout or "拉取成功").strip()
             return True, out
@@ -491,33 +473,59 @@ def _download_github_archive(repo_url: str, local_dir: str, branch: str = "", ti
     if not zip_bytes:
         return False, "下载 GitHub 源码归档包失败（网络连接受限）"
 
+    return _extract_zip_safely(zip_bytes, local_dir)
+
+
+def _extract_zip_safely(zip_bytes: bytes, local_dir: str) -> Tuple[bool, str]:
+    """把 GitHub 归档包安全解压到 ``local_dir``。
+
+    - 拒绝任何逃逸 ``local_dir`` 的路径（``../`` / 绝对路径）；
+    - 跳过 ``.git`` / ``data`` / ``__pycache__`` 与运行时数据库；
+    - 更新后清理旧 ``__pycache__``，避免加载已删除模块的 ``.pyc``。
+    """
+    import io
+    import shutil
+    import zipfile
+
     try:
         zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
-        # GitHub zip 顶层目录如 repo-main/
         namelist = zf.namelist()
         if not namelist:
             return False, "下载的归档包为空"
         prefix = namelist[0].split("/")[0] + "/"
 
+        root = os.path.realpath(local_dir)
+        written = 0
         for member in zf.infolist():
-            rel_name = member.filename
+            rel_name = member.filename.replace("\\", "/")
             if rel_name.startswith(prefix):
                 rel_name = rel_name[len(prefix):]
             if not rel_name or rel_name.endswith("/"):
                 continue
-            # 严格保护 data 目录与运行时数据库、本地缓存
-            parts = rel_name.replace("\\", "/").split("/")
-            if parts and parts[0] == "data":
+            parts = [p for p in rel_name.split("/") if p not in ("", ".")]
+            if not parts or parts[0] in (".git", "data", "__pycache__"):
                 continue
             if rel_name in ("config.json", "data.db", "storage.db", "xb.db"):
                 continue
 
-            target_path = os.path.join(local_dir, rel_name)
+            target_path = os.path.realpath(os.path.join(root, *parts))
+            if target_path != root and not target_path.startswith(root + os.sep):
+                return False, f"归档包包含非法路径，已拒绝更新: {member.filename}"
+            if os.path.isdir(target_path):
+                continue
+
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             with zf.open(member) as src_f, open(target_path, "wb") as dst_f:
                 dst_f.write(src_f.read())
+            written += 1
 
-        return True, "已直接从 GitHub 归档包拉取并覆盖最新源码"
+        for cache_dir in Path(root).rglob("__pycache__"):
+            try:
+                shutil.rmtree(cache_dir)
+            except Exception:
+                pass
+
+        return True, f"已从 GitHub 归档包覆盖 {written} 个文件并清理旧缓存"
     except Exception as ex:
         return False, f"解压更新失败: {ex}"
 
@@ -1120,12 +1128,7 @@ class UpdaterService:
         if not self.enabled:
             return {
                 "ok": False,
-                "error": "插件一键更新功能未开启。请在 XBNEXT WebUI「功能开关」中启用并配置 OpenAPI 密钥。",
-            }
-        if not self.api_key:
-            return {
-                "ok": False,
-                "error": "未配置 OpenAPI 密钥。请在 XBNEXT WebUI「功能开关」中填入 API Key。",
+                "error": "插件一键更新功能未开启。请在 XBNEXT WebUI「功能开关」中启用。",
             }
 
         ok, installed, err = self.fetch_installed_plugins_sync()
@@ -1133,6 +1136,10 @@ class UpdaterService:
             return {"ok": False, "error": err}
 
         raw_targets = selected_names if selected_names is not None else self.target_plugins
+        # 强制更新且未显式指定目标时，只重拉本插件：避免把同群其他插件一起
+        # reset/重载，也避免命令执行中把当前插件自己热重载掉。
+        if force and selected_names is None:
+            raw_targets = ["astrbot_plugin_xbnext"]
         targets = {normalize_plugin_name(x) for x in raw_targets if x}
         raw_targets_set = {str(x).strip() for x in raw_targets if str(x).strip()}
 
@@ -1208,7 +1215,26 @@ class UpdaterService:
                 })
                 continue
 
-            # 5. 执行热重载：自适应适配不同 AstrBot 版本的重载接口
+            # 5. 执行热重载：自适应适配不同 AstrBot 版本的重载接口。
+            #    更新自身时先不重载：等指令回复发出去后，由 apply_updates 延迟重载，
+            #    否则命令执行到一半模块被换掉，回复可能丢失。
+            if name == "astrbot_plugin_xbnext" and self._loop is not None:
+                after_ver = _get_local_version(p, local_dir)
+                msg = "文件已更新，将在回复后自动重载"
+                if after_ver and after_ver != "未知":
+                    msg = f"文件已更新至 {format_version(after_ver)}，将在回复后自动重载"
+                results.append({
+                    "name": name,
+                    "nickname": nick,
+                    "ok": True,
+                    "stage": "deferred_reload",
+                    "deferred_reload": True,
+                    "message": msg,
+                    "before_version": before_ver,
+                    "after_version": after_ver,
+                })
+                continue
+
             r_status, r_resp = self._request_reload(name)
 
             if r_status != 200:
@@ -1248,4 +1274,16 @@ class UpdaterService:
             self._loop = asyncio.get_running_loop()
         except Exception:
             pass
-        return await asyncio.to_thread(self.apply_updates_sync, selected_names, force)
+        res = await asyncio.to_thread(self.apply_updates_sync, selected_names, force)
+        # 自身更新是延迟重载的：给回复留出时间，再真正热重载。
+        try:
+            if any(r.get("deferred_reload") for r in (res.get("results") or [])):
+                asyncio.create_task(self._delayed_self_reload())
+        except Exception:
+            pass
+        return res
+
+    async def _delayed_self_reload(self, delay: float = 2.0) -> None:
+        """延迟重载本插件，确保指令回复已经发出。"""
+        await asyncio.sleep(delay)
+        await asyncio.to_thread(self._request_reload, "astrbot_plugin_xbnext")

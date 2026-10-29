@@ -6,8 +6,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any, List
 
+from ... import PLUGIN_NAME
 from ..base import Feature
-from .service import UpdaterService, DEFAULT_TARGET_PLUGINS
+from .service import (
+    DEFAULT_TARGET_PLUGINS,
+    UpdaterService,
+    format_version,
+)
 
 
 async def is_admin_event(event: Any) -> bool:
@@ -412,14 +417,12 @@ class UpdaterFeature(Feature):
         if not updater.enabled:
             return (
                 "⚠️ 插件一键更新功能未开启。\n"
-                "请前往 XBNEXT WebUI 控制台「功能开关」中启用【插件一键更新】，并填入 AstrBot OpenAPI 密钥。"
+                "请前往 XBNEXT WebUI 控制台「功能开关」中启用【插件一键更新】。"
             )
 
-        if not updater.api_key:
-            return (
-                "⚠️ 未检测到有效的 OpenAPI 密钥。\n"
-                "请在 XBNEXT WebUI 控制台「功能开关」中填入 OpenAPI 密钥（需包含 plugin 权限）。"
-            )
+        # 权限边界：聊天指令只认管理员身份（is_admin_event）；
+        # WebUI 更新入口另行要求填写 OpenAPI Key（见 web/updater_web_key_error）。
+        # Key 本身只用于可选 OpenAPI 路径，Git / GitHub ZIP 更新不需要它。
 
         # 检查更新分支
         if sub_arg in ("check", "检查", "检查更新", "查更新", ""):
@@ -482,9 +485,12 @@ class UpdaterFeature(Feature):
                 lines.append("⚠️ 部分插件更新异常，请查看日志。")
             return "\n".join(lines)
 
-        # 强制更新分支
+        # 强制更新分支：默认只重拉本插件，避免把同群其他插件一起 reset/重载，
+        # 更避免命令执行中把当前插件自己热重载掉导致回复丢失。
         if sub_arg in ("force", "force_update", "强制更新", "强制升级"):
-            res = await updater.apply_updates(force=True)
+            res = await updater.apply_updates(
+                force=True, selected_names=[PLUGIN_NAME]
+            )
             if not res.get("ok"):
                 return f"❌ 执行强制更新失败：{res.get('error')}"
 

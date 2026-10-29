@@ -1904,7 +1904,7 @@
       if (btn) btn.disabled = false;
       var plugins = (res && Array.isArray(res)) ? res : ((res && res.data && Array.isArray(res.data)) ? res.data : []);
       if (!plugins.length) {
-        if (!quiet) toast("未获取到插件列表（请先检查是否填写有效的 API Key 与服务地址）", "bad");
+        if (!quiet) toast("未获取到插件列表（请检查插件目录与更新器配置）", "bad");
         return;
       }
       _updaterInstalledPlugins = plugins;
@@ -1921,6 +1921,12 @@
       var b = $(id);
       if (b) b.disabled = !!busy;
     });
+  }
+
+  function updaterKeyMissing() {
+    if (String(CONFIG.updater_api_key || "").trim()) return false;
+    toast("WebUI 更新需要先在配置中填写 AstrBot OpenAPI 密钥；聊天指令 /xbnext 更新不需要 Key", "info");
+    return true;
   }
 
   function initUpdater() {
@@ -1980,10 +1986,7 @@
           toast("请先开启上方的「插件一键更新与检查」开关", "info");
           return;
         }
-        if (!CONFIG.updater_api_key) {
-          toast("请先填写 AstrBot OpenAPI 密钥", "info");
-          return;
-        }
+        if (updaterKeyMissing()) return;
         var targets = getSelectedUpdaterPlugins();
         var box = $("updaterResultBox");
         if (box) {
@@ -2031,10 +2034,7 @@
           toast("请先开启上方的「插件一键更新与检查」开关", "info");
           return;
         }
-        if (!CONFIG.updater_api_key) {
-          toast("请先填写 AstrBot OpenAPI 密钥", "info");
-          return;
-        }
+        if (updaterKeyMissing()) return;
         var targets = getSelectedUpdaterPlugins();
         var box = $("updaterResultBox");
         if (box) {
@@ -2087,10 +2087,7 @@
           toast("请先开启上方的「插件一键更新与检查」开关", "info");
           return;
         }
-        if (!CONFIG.updater_api_key) {
-          toast("请先填写 AstrBot OpenAPI 密钥", "info");
-          return;
-        }
+        if (updaterKeyMissing()) return;
         var targets = getSelectedUpdaterPlugins();
         var box = $("updaterResultBox");
         if (box) {

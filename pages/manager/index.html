@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.39" />
+  <link rel="stylesheet" href="./style.css?v=0.2.41" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.39">0.2.39</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.41">0.2.41</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -360,7 +360,7 @@
           <div class="card-row-split">
             <div>
               <h2 class="card-title">插件一键更新与检查</h2>
-              <p class="card-desc">通过 AstrBot OpenAPI 接口一键检查并更新选定的插件。支持检测 GitHub 远程最新提交对比本地版本，一键自动拉取并热重载。此功能默认关闭。</p>
+              <p class="card-desc">一键检查并更新选定的插件：优先使用本地 Git 快进拉取，失败时回退 GitHub 归档包覆盖，完成后自动热重载。WebUI 更新必须填写 AstrBot OpenAPI 密钥；聊天指令 <code>/xbnext 检查更新</code> / <code>/xbnext 一键更新</code> 仅限管理员，不需要 Key。此功能默认关闭。</p>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_enable_updater" data-key="enable_updater" />
@@ -369,9 +369,9 @@
           </div>
 
           <div class="form-group" style="margin-top: 14px;">
-            <label class="form-label" for="inp_updater_api_key">AstrBot OpenAPI 密钥 (API Key)</label>
-            <input type="password" class="m3-input" id="inp_updater_api_key" data-key="updater_api_key" placeholder="填入在 AstrBot 控制台生成的 OpenAPI Key (如 abk_...)" />
-            <span class="field-hint">在 AstrBot Web 控制台「开放接口」生成的 API Key，需具备插件管理权限。</span>
+            <label class="form-label" for="inp_updater_api_key">AstrBot OpenAPI 密钥（WebUI 更新必填）</label>
+            <input type="password" class="m3-input" id="inp_updater_api_key" data-key="updater_api_key" placeholder="WebUI 更新必填：AstrBot 控制台生成的 OpenAPI Key (如 abk_...)" />
+            <span class="field-hint">WebUI 的「检查更新 / 一键更新 / 强制更新」必须填写；留空时 WebUI 会拒绝执行。聊天指令 <code>/xbnext 检查更新</code> / <code>/xbnext 一键更新</code> / <code>/xbnext 强制更新</code> 仅校验管理员身份，不需要 Key。</span>
           </div>
 
           <div class="form-group" style="margin-top: 12px;">
@@ -487,7 +487,7 @@
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
               <label class="form-label" style="margin-bottom: 2px;">群聊全部指令需 @ 触发 (防多Bot冲突)</label>
-              <span class="field-hint">开启后，群聊中除 <code>/xbnext</code> 系列管理指令外，所有指令（以 <code>/</code>、<code>!</code>、<code>#</code> 开头或系统/插件指令）必须 @ 机器人才生效，避免多个机器人同时清空或触发。默认关闭。</span>
+              <span class="field-hint">开启后，群聊中所有指令（包括 <code>/xbnext</code> 系列，以 <code>/</code>、<code>!</code>、<code>#</code> 开头或系统/插件指令）必须 @ 机器人才生效；唤醒前缀 <code>/</code> 不算 @。需要更新时请发 <code>@机器人 /xbnext 强制更新</code>。默认关闭。</span>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_bot_guard_require_at_for_commands" data-key="bot_guard_require_at_for_commands" />
@@ -779,7 +779,7 @@
           <div class="kv-list">
             <div class="kv-row"><span class="kv-k">①</span><span class="kv-v">建 <code>features/my_thing/</code>，写 Feature 子类</span></div>
             <div class="kv-row"><span class="kv-k">②</span><span class="kv-v">填 key / name / description / order，实现 on_llm_request</span></div>
-            <div class="kv-row"><span class="kv-k">③</span><span class="kv-v">在 <code>_conf_schema.json</code> 加 <code>enable_my_thing</code></span></div>
+            <div class="kv-row"><span class="kv-k">③</span><span class="kv-v">在 <code>xbnext/schema.json</code> 加 <code>enable_my_thing</code></span></div>
             <div class="kv-row"><span class="kv-k">④</span><span class="kv-v">在 <code>features/__init__.py</code> 的 FEATURES 加一行</span></div>
             <div class="kv-row"><span class="kv-k">⑤</span><span class="kv-v">在 <code>tests/</code> 加测试</span></div>
           </div>
@@ -805,7 +805,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.39"></script>
-  <script src="./app.js?v=0.2.39"></script>
+  <script src="./api.js?v=0.2.41"></script>
+  <script src="./app.js?v=0.2.41"></script>
 </body>
 </html>

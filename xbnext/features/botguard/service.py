@@ -15,14 +15,15 @@ __all__ = [
     "format_blacklist",
     "extract_sender_id",
     "extract_self_id",
+    "original_message_text",
     "is_sender_blacklisted",
     "mask_id",
     "is_destructive_reset_command",
-    "is_whitelisted_command",
     "is_command_message",
     "is_game_or_noise_command",
     "is_group_event",
     "is_at_self",
+    "is_at_self_strict",
 ]
 
 
@@ -167,6 +168,36 @@ def extract_self_id(event: Any) -> str:
     return ""
 
 
+def original_message_text(event: Any) -> str:
+    """取「唤醒前缀剥离前」的用户原文。
+
+    AstrBot 的 ``WakingCheckStage`` 会在插件钩子之前把 ``event.message_str``
+    的唤醒前缀（默认 ``/``）剥掉，``/help`` 会变成 ``help``、``/xbnext``
+    会变成 ``xbnext``。如果只读 ``event.message_str``，BotGuard 的指令识别
+    和斜杠拦截都会漏判。``message_obj.message_str`` 由适配器在剥前缀前写入，
+    因此优先读它；取不到时再退回 ``event.message_str``。
+    """
+    if event is None:
+        return ""
+
+    msg_obj = getattr(event, "message_obj", None)
+    if msg_obj is not None:
+        for attr in ("message_str", "raw_message"):
+            val = getattr(msg_obj, attr, None)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+
+    val = getattr(event, "message_str", None)
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+
+    raw = getattr(event, "raw_message", None)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+
+    return ""
+
+
 def is_sender_blacklisted(sender_id: str, blacklist: Set[str], self_id: str = "") -> bool:
     """判定发送者是否在黑名单中。
 
@@ -286,16 +317,78 @@ def is_at_self(event: Any, self_id: str = "") -> bool:
     return False
 
 
-def is_whitelisted_command(msg_str: str) -> bool:
-    """判定消息是否属于白名单指令（仅限 /xbnext 系列与 updater 升级指令，无需强制 @）。"""
-    if not msg_str:
+def is_at_self_strict(event: Any, self_id: str = "") -> bool:
+    """严格判定是否「明确 @ / 回复」了本机器人。
+
+    与 :func:`is_at_self` 的区别：**不把唤醒前缀当 @**。
+    AstrBot 在收到 ``/指令`` 时会设置 ``is_at_or_wake_command=True``，
+    但那是唤醒词，不是 @；开启「全部指令需 @」后，裸 ``/指令`` 必须被
+    拦下，只有 At/Reply 本机器人才放行。
+    """
+    if event is None:
         return False
-    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
-    return bool(re.match(r"^[!/#/／]?\s*(?:xbnext|update)", stripped, re.I))
+
+    # 平台明确给出的 to_me 标记（不是唤醒词）
+    if getattr(event, "to_me", False):
+        return True
+    msg_obj = getattr(event, "message_obj", None)
+    if msg_obj is not None and getattr(msg_obj, "to_me", False):
+        return True
+
+    self_clean = str(self_id or "").strip()
+    if not self_clean:
+        return False
+
+    # 1. 检查消息链：At 本机器人 / Reply 本机器人
+    messages = []
+    getter = getattr(event, "get_messages", None)
+    if callable(getter):
+        try:
+            messages = getter() or []
+        except Exception:  # noqa: BLE001
+            pass
+    if not messages and msg_obj is not None:
+        messages = getattr(msg_obj, "message", []) or []
+
+    for comp in messages:
+        c_type = type(comp).__name__
+        # At 组件：qq / target / data.qq
+        if c_type == "At" or hasattr(comp, "qq") or hasattr(comp, "target"):
+            target_qq = str(
+                getattr(comp, "qq", None)
+                or getattr(comp, "target", None)
+                or (getattr(comp, "data", {}) or {}).get("qq", "")
+                or ""
+            ).strip()
+            if target_qq == self_clean:
+                return True
+        # Reply 组件：sender_id / qq / id
+        if c_type == "Reply" or hasattr(comp, "sender_id"):
+            reply_sender = str(
+                getattr(comp, "sender_id", None)
+                or getattr(comp, "qq", None)
+                or ""
+            ).strip()
+            if reply_sender == self_clean:
+                return True
+
+    # 2. 文本兜底：CQ 码 / [At:xxx] / @xxx（优先用剥前缀前的原文）
+    val = original_message_text(event)
+    if val:
+        if (
+            f"qq={self_clean}" in val
+            or f"[At:{self_clean}]" in val
+            or f"[At: {self_clean}]" in val
+            or f"@{self_clean}" in val
+            or f'user="{self_clean}"' in val
+        ):
+            return True
+
+    return False
 
 
 KNOWN_PLUGIN_COMMAND_PREFIXES = (
-    "xbimg", "xb2img", "xbdoc", "xbbot", "xbtest", "测试xbtest", "测试testxb",
+    "xbnext", "xbimg", "xb2img", "xbdoc", "xbbot", "xbtest", "测试xbtest", "测试testxb",
     "超管列表", "签到", "打卡", "打劫", "银行", "存款", "取款", "奴隶",
     "打工", "搬砖", "收工", "进监狱", "探监", "精灵", "抓精灵", "冒险",
     "钓鱼", "帮派", "坐骑", "回收欢迎坐骑", "设置欢迎坐骑", "pokepro",

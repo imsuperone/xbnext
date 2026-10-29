@@ -87,8 +87,6 @@ class BotGuardFeature(Feature):
     order = 5
     #: 需要在消息进入核心管线前掐断
     uses_adapter_hook = True
-    #: 需要在进入大模型前拦截未处理指令
-    uses_llm_request_hook = True
     #: /xbnext botguard 指令
     command = "botguard"
 
@@ -114,48 +112,46 @@ class BotGuardFeature(Feature):
             return
 
         try:
-            # 1. 群聊全部指令需 @ 触发保护（防同群多 Bot 冲突串台，默认关闭，除 /xbnext 外）
+            # 1. 群聊全部指令需 @ 触发保护（防同群多 Bot 冲突串台，默认关闭）
             req_all_cmds = ctx.conf.bool("bot_guard_require_at_for_commands", False)
             req_reset_cmds = ctx.conf.bool("bot_guard_require_at_for_reset", False)
             if req_all_cmds or req_reset_cmds:
                 if service.is_group_event(event):
-                    msg_text = getattr(event, "message_str", "") or ""
-                    if not msg_text:
-                        msg_obj = getattr(event, "message_obj", None)
-                        if msg_obj is not None:
-                            msg_text = getattr(msg_obj, "raw_message", "") or ""
+                    # 必须读「唤醒前缀剥离前」的原文：默认 wake_prefix 是 /，
+                    # WakingCheckStage 会把 /xbnext 剥成 xbnext；只看
+                    # event.message_str 会漏判，导致裸 / 指令照样触发。
+                    msg_text = service.original_message_text(event)
+                    is_target_cmd = False
+                    extra_words = ctx.conf.text("bot_guard_extra_command_words", "")
+                    if req_all_cmds and service.is_command_message(msg_text, extra_keywords=extra_words):
+                        is_target_cmd = True
+                    elif req_reset_cmds and service.is_destructive_reset_command(msg_text):
+                        is_target_cmd = True
 
-                    # 白名单指令（仅限 /xbnext 系列及其管理/更新指令）无需 @，直接放行
-                    if not service.is_whitelisted_command(msg_text):
-                        is_target_cmd = False
-                        extra_words = ctx.conf.text("bot_guard_extra_command_words", "")
-                        if req_all_cmds and service.is_command_message(msg_text, extra_keywords=extra_words):
-                            is_target_cmd = True
-                        elif req_reset_cmds and service.is_destructive_reset_command(msg_text):
-                            is_target_cmd = True
-
-                        if is_target_cmd:
-                            self_id = service.extract_self_id(event)
-                            at_self = service.is_at_self(event, self_id)
-                            if not at_self:
-                                self._stop_event_safely(event)
-                                log.emit(
-                                    self._log,
-                                    "info",
-                                    f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id or '未知'})，已安全拦截防止多Bot冲突",
-                                )
-                                if ctx.conf.bool("debug_log"):
-                                    ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
-                                return
+                    if is_target_cmd:
+                        self_id = service.extract_self_id(event)
+                        # 严格 @ 判定：唤醒前缀 / 不算 @，只认 At/Reply 组件。
+                        # self_id 取不到时放行，避免把整群指令全误杀。
+                        at_self = (
+                            service.is_at_self_strict(event, self_id)
+                            if self_id
+                            else True
+                        )
+                        if not at_self:
+                            self._stop_event_safely(event)
+                            log.emit(
+                                self._log,
+                                "info",
+                                f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id or '未知'})，已安全拦截防止多Bot冲突",
+                            )
+                            if ctx.conf.bool("debug_log"):
+                                ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
+                            return
 
             # 2. 群文字游戏与杂音指令拦截（防大模型接话与长期记忆被群游记录污染，默认关闭）
             if ctx.conf.bool("bot_guard_filter_game_commands", False):
                 if service.is_group_event(event):
-                    msg_text = getattr(event, "message_str", "") or ""
-                    if not msg_text:
-                        msg_obj = getattr(event, "message_obj", None)
-                        if msg_obj is not None:
-                            msg_text = getattr(msg_obj, "raw_message", "") or ""
+                    msg_text = service.original_message_text(event)
                     game_words = ctx.conf.text("bot_guard_game_words", "")
                     if service.is_game_or_noise_command(msg_text, game_words):
                         self_id = service.extract_self_id(event)
@@ -232,19 +228,19 @@ class BotGuardFeature(Feature):
         # 1. 拦截未被任何插件处理的斜杠/指令符号，防止大模型胡乱接话或回答其他机器人的指令
         if ctx.conf.bool("bot_guard_block_slash_commands", True):
             try:
-                msg_str = (
-                    ctx.prompt().strip()
-                    or str(getattr(event, "message_str", "") or "").strip()
-                )
-                if not msg_str:
-                    msg_obj = getattr(event, "message_obj", None)
-                    if msg_obj is not None:
-                        msg_str = str(getattr(msg_obj, "raw_message", "") or "").strip()
+                # 优先用唤醒前缀剥离前的原文：默认 wake_prefix 是 /，
+                # 若只看 event.message_str，/help 会变成 help 而漏拦。
+                msg_str = service.original_message_text(event) or ctx.prompt().strip()
                 if msg_str:
                     stripped_msg = re.sub(
                         r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", msg_str, flags=re.I
                     ).strip()
-                    if re.match(r"^[!/#/！#／＃]\s*\S+", stripped_msg):
+                    # 本插件自己的指令入口永远放行：即使指令注册退化/用户拼错，
+                    # 也交给 /xbnext 的「未知子指令」提示，绝不静默吞掉。
+                    is_own_command = bool(
+                        re.match(r"^[/／]?xbnext(?:\s|$)", stripped_msg, re.I)
+                    )
+                    if not is_own_command and re.match(r"^[!/#/！#／＃]\s*\S+", stripped_msg):
                         self._stop_event_safely(event)
                         req = getattr(ctx, "req", None)
                         if req is not None and hasattr(req, "prompt"):

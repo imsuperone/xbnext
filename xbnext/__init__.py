@@ -11,7 +11,7 @@
          ├─ injector.py   唯一注入出口（temp part + sanitize）
          ├─ switches.py   开关对账 + WebUI 配置写入
          ├─ storage.py    插件 KV 封装（懒加载 / 写穿 / 降级）
-         ├─ config.py     配置读取（含 _conf_schema.json 默认值回退）
+         ├─ config.py     配置读取（含 xbnext/schema.json 默认值回退）
          └─ web/          WebUI 后端 API
 
 本模块**不 import 任何 astrbot 符号**，保证 ``import xbnext`` 在裸 Python

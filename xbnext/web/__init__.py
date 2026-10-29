@@ -53,6 +53,29 @@ def _err(message: Any, astrbot_web: Any, extra: Any = None) -> Any:
     return astrbot_web.json_response(body)
 
 
+def updater_web_key_error(conf: Any) -> str:
+    """WebUI 更新必须填写 OpenAPI Key；返回错误文案，空字符串表示通过。
+
+    聊天指令走管理员判定，不需要 Key；这里只约束 WebUI 的检查/更新入口，
+    避免「无 Key 也能从浏览器触发更新」的误解。
+    """
+    key = ""
+    if conf is not None:
+        getter = getattr(conf, "get", None)
+        if callable(getter):
+            try:
+                key = str(getter("updater_api_key", "") or "").strip()
+            except Exception:  # noqa: BLE001
+                key = ""
+    if key:
+        return ""
+    return (
+        "WebUI 更新需要先填写 AstrBot OpenAPI 密钥"
+        "（配置 → 插件更新 → AstrBot OpenAPI 密钥）。"
+        "聊天指令 /xbnext 更新仅限管理员，不需要 Key。"
+    )
+
+
 def build_state(runtime: Any) -> Dict[str, Any]:
     """组装 ``GET state`` 的载荷。
 
@@ -391,9 +414,12 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         try:
             from ..features.updater.service import UpdaterService
             updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
+            key_err = updater_web_key_error(runtime.conf)
+            if key_err:
+                return _err(key_err, astrbot_web)
             payload, _ = await read_json()
             names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
-            res = await updater.check_updates(names)
+            res = await updater.check_updates(names or None)
             if not res.get("ok"):
                 return _err(res.get("error") or "检查更新失败", astrbot_web)
             return _ok(res, astrbot_web)
@@ -404,10 +430,13 @@ def register_web_api(context: Any, runtime: Any) -> bool:
         try:
             from ..features.updater.service import UpdaterService
             updater = UpdaterService(runtime.conf, context=getattr(runtime, "context", None))
+            key_err = updater_web_key_error(runtime.conf)
+            if key_err:
+                return _err(key_err, astrbot_web)
             payload, _ = await read_json()
             names = (payload or {}).get("plugins") if isinstance(payload, dict) else None
             force = bool((payload or {}).get("force", False)) if isinstance(payload, dict) else False
-            res = await updater.apply_updates(names, force=force)
+            res = await updater.apply_updates(names or None, force=force)
             if not res.get("ok"):
                 return _err(res.get("error") or "执行更新失败", astrbot_web)
             return _ok(res, astrbot_web)
@@ -456,7 +485,6 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 
     async def version_route() -> Any:
         return _ok({
-            "ok": True,
             "status": "ok",
             "version": __version__,
             "plugin": PLUGIN_NAME,
@@ -484,6 +512,7 @@ def register_web_api(context: Any, runtime: Any) -> bool:
 __all__ = [
     "register_web_api",
     "build_state",
+    "updater_web_key_error",
     "handle_setting",
     "handle_profiles",
     "handle_profile_save",

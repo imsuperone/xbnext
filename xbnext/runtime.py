@@ -32,8 +32,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -45,6 +47,12 @@ from .storage import KV
 
 
 def resolve_data_dir() -> Path:
+    """解析插件数据目录。
+
+    只允许落在 AstrBot 数据目录（或其等价位置）下；**绝不写进插件安装目录**，
+    也绝不把 ``Path.cwd()`` 本身当数据目录。全部失败时退到系统临时目录，
+    至少保证不污染代码仓库。
+    """
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_data_path
         p = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_xbnext"
@@ -52,16 +60,27 @@ def resolve_data_dir() -> Path:
         return p
     except Exception:
         pass
-    for cand in [
-        Path.cwd() / "data" / "plugin_data" / "astrbot_plugin_xbnext",
-        Path(__file__).resolve().parent.parent / "data" / "plugin_data" / "astrbot_plugin_xbnext",
-    ]:
+    candidates = []
+    cwd = Path.cwd()
+    # 仅当当前目录确实像一个 AstrBot 根目录时才使用
+    if (cwd / "data").is_dir():
+        candidates.append(cwd / "data" / "plugin_data" / "astrbot_plugin_xbnext")
+    try:
+        candidates.append(
+            Path.home() / ".astrbot" / "data" / "plugin_data" / "astrbot_plugin_xbnext"
+        )
+    except Exception:
+        pass
+    candidates.append(
+        Path(tempfile.gettempdir()) / "astrbot_plugin_xbnext" / "plugin_data"
+    )
+    for cand in candidates:
         try:
             cand.mkdir(parents=True, exist_ok=True)
             return cand.resolve()
         except Exception:
             continue
-    return Path.cwd()
+    return Path(tempfile.gettempdir())
 
 
 class XbnextRuntime:
@@ -96,6 +115,7 @@ class XbnextRuntime:
         self._seen_groups: Dict[str, Dict[str, Any]] = {}
         self._seen_users: Dict[str, Dict[str, str]] = {}
         self._seen_last_save_ts = 0.0
+        self._seen_save_task: Any = None
         self._load_seen_groups()
 
     # ==================================================================
@@ -137,9 +157,10 @@ class XbnextRuntime:
         return features.get_feature(key)
 
     async def terminate(self) -> None:
-        """插件卸载：逆序释放各功能。"""
+        """插件卸载：逆序释放各功能，并等待最后一次落盘。"""
         for feat in reversed(self.features):
             await self._call(feat, "on_unload")
+        await self.flush_seen()
         self.kv.invalidate()
         self._loaded = False
         self._info("已卸载")
@@ -192,6 +213,9 @@ class XbnextRuntime:
         """清理 req.contexts 中可能导致 Google Gemini 400/499 上下文错误的异常消息项：
         1. 移除混入 contexts 的 role=="system" 项（AstrBot v4 系统提示词走 req.system_prompt）；
         2. 移除因上轮中途取消/报错残留的空内容且无 tool_calls 的死消息。
+
+        **不把历史里的 system 内容提升为 ``req.system_prompt``**：那会改变
+        provider 缓存键，并让历史消息获得最高优先级（违反项目注入红线）。
         """
         if req is None:
             return
@@ -204,12 +228,7 @@ class XbnextRuntime:
                 if isinstance(m, dict):
                     role = str(m.get("role") or "")
                     if role == "system":
-                        sys_txt = str(m.get("content") or "").strip()
-                        if sys_txt and not str(getattr(req, "system_prompt", "") or "").strip():
-                            try:
-                                req.system_prompt = sys_txt
-                            except Exception:  # noqa: BLE001
-                                pass
+                        # 直接丢弃，不写回 req.system_prompt
                         continue
                     content = m.get("content")
                     has_tools = bool(m.get("tool_calls") or m.get("function_call") or role == "tool")
@@ -427,7 +446,7 @@ class XbnextRuntime:
         重拆（aidoc/02 §10.2-4）。
 
         **不经过 ``ctx.enabled``** —— 子指令是维护入口，不能因为功能开关
-        关着就用不了（见 ``_conf_schema.json`` 里 ``enable_user_profile`` 的 hint）。
+        关着就用不了（见 ``xbnext/schema.json`` 里 ``enable_user_profile`` 的 hint）。
 
         返回要发给用户的文本；异常返回带原因的兜底文案，**不裸抛**。
         """
@@ -519,23 +538,65 @@ class XbnextRuntime:
         return lines
 
     def _load_seen_groups(self) -> None:
+        """读取 ``seen_groups.json``。
+
+        兼容两种格式：
+
+        - 旧版：``{"<gid>": {...}}``（只有群列表）
+        - 新版：``{"groups": {...}, "users": {...}}``（群列表 + 发言人）
+        """
         try:
-            if self.seen_path.is_file():
-                with open(self.seen_path, "r", encoding="utf-8") as fp:
-                    data = json.load(fp)
-                if isinstance(data, dict):
-                    self._seen_groups.update(data)
+            if not self.seen_path.is_file():
+                return
+            with open(self.seen_path, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            if not isinstance(data, dict):
+                return
+            if isinstance(data.get("groups"), dict) or isinstance(data.get("users"), dict):
+                groups = data.get("groups")
+                users = data.get("users")
+                if isinstance(groups, dict):
+                    self._seen_groups.update(groups)
+                if isinstance(users, dict):
+                    self._seen_users.update(users)
+            else:
+                # 旧格式：整个 dict 就是群列表
+                self._seen_groups.update(data)
         except Exception as exc:  # noqa: BLE001
             self._warn(f"读取 seen_groups.json 异常：{exc!r}")
 
     def _save_seen_groups(self) -> None:
+        """同步落盘（只在线程池里调用，绝不直接在事件循环里跑）。"""
         try:
             temp = self.seen_path.with_suffix(".tmp")
+            payload = {"groups": self._seen_groups, "users": self._seen_users}
             with open(temp, "w", encoding="utf-8") as fp:
-                json.dump(self._seen_groups, fp, ensure_ascii=False, indent=2)
+                json.dump(payload, fp, ensure_ascii=False, indent=2)
             temp.replace(self.seen_path)
         except Exception as exc:  # noqa: BLE001
             self._warn(f"写入 seen_groups.json 异常：{exc!r}")
+
+    def _schedule_seen_save(self) -> None:
+        """把落盘丢到线程池，避免阻塞当前请求（合并未完成的写任务）。"""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # 没有事件循环（单测/同步调用）时退回同步写
+            self._save_seen_groups()
+            return
+        task = self._seen_save_task
+        if task is not None and not task.done():
+            return
+        self._seen_save_task = loop.create_task(asyncio.to_thread(self._save_seen_groups))
+
+    async def flush_seen(self) -> None:
+        """等待未完成的落盘任务（卸载/测试用）。"""
+        task = self._seen_save_task
+        if task is not None and not task.done():
+            try:
+                await task
+            except Exception:  # noqa: BLE001
+                pass
 
     def _remember_group(self, event: Any) -> None:
         """从消息事件被动记录群号、群名称、UMO 及最近发言人，自动落盘 seen_groups.json。"""
@@ -599,20 +660,25 @@ class XbnextRuntime:
 
                 if updated or (now - self._seen_last_save_ts > 30.0):
                     self._seen_last_save_ts = now
-                    self._save_seen_groups()
+                    self._schedule_seen_save()
 
             if uid:
                 ukey = f"{platform}|{gid}|{uid}"
                 prev_u = self._seen_users.get(ukey, {})
-                self._seen_users[ukey] = {
+                new_u = {
                     "platform": platform,
                     "group": gid,
                     "group_name": gname or prev_u.get("group_name") or gid,
                     "uid": uid,
                     "name": uname or prev_u.get("name") or uid,
                 }
+                self._seen_users[ukey] = new_u
                 while len(self._seen_users) > 500:
                     self._seen_users.pop(next(iter(self._seen_users)), None)
+                # 私聊没有群分支，也必须把发言人落盘
+                if new_u != prev_u:
+                    self._seen_last_save_ts = time.time()
+                    self._schedule_seen_save()
         except Exception:  # noqa: BLE001
             pass
 

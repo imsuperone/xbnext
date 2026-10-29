@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["umo_of", "uid_of", "gid_of", "platform_of", "is_bot_mentioned"]
+__all__ = ["umo_of", "uid_of", "name_of", "gid_of", "platform_of"]
 
 
 def umo_of(event: Any) -> str:
@@ -135,35 +135,3 @@ def platform_of(event: Any) -> str:
         return raw_p
     except Exception:  # noqa: BLE001
         return ""
-
-
-def is_bot_mentioned(event: Any) -> bool:
-    """检测消息是否显式 @ 了机器人。"""
-    if event is None:
-        return False
-    # 1. 检查组件链中的 At / Mention
-    try:
-        mo = getattr(event, "message_obj", None)
-        comps = getattr(mo, "message", None) or []
-        self_id = str(getattr(event, "get_self_id", lambda: "")() or "").strip()
-        for c in comps:
-            cname = c.__class__.__name__
-            if cname in ("At", "Mention"):
-                target = str(getattr(c, "qq", "") or getattr(c, "user_id", "") or getattr(c, "id", "") or "").strip()
-                if not self_id or target == self_id or self_id in target or target in self_id:
-                    return True
-            elif cname == "AtAll":
-                return True
-    except Exception:
-        pass
-    # 2. 检查文本形式的 At 标记
-    try:
-        raw = str(getattr(event, "message_str", "") or "")
-        self_id = str(getattr(event, "get_self_id", lambda: "")() or "").strip()
-        if "[At:" in raw or "[CQ:at" in raw:
-            return True
-        if self_id and ("@" + self_id) in raw:
-            return True
-    except Exception:
-        pass
-    return False

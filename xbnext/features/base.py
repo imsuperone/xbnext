@@ -7,7 +7,7 @@
 2. 里头写 ``class MyThingFeature(Feature)``，填好 ``key`` / ``name`` /
    ``description`` / ``order``，实现 ``on_llm_request``（可选
    ``on_adapter_message`` / ``on_message_sent`` / ``on_load`` / ``on_unload``）；
-3. 在 ``_conf_schema.json`` 里加一个 ``enable_my_thing`` 开关；
+3. 在 ``xbnext/schema.json`` 里加一个 ``enable_my_thing`` 开关；
 4. 在 ``features/__init__.py`` 的 ``FEATURES`` 里加一行实例化；
 5. 在 ``tests/`` 加一个 ``test_my_thing.py``。
 
@@ -37,7 +37,7 @@ from typing import Any
 class Feature:
     """功能基类。子类覆写类属性即可，无需调用 ``super().__init__``。"""
 
-    #: 配置开关键，必须与 ``_conf_schema.json`` 里的 ``enable_*`` 对应
+    #: 配置开关键，必须与 ``xbnext/schema.json`` 里的 ``enable_*`` 对应
     key: str = ""
     #: 中文名，用于状态面板与 /xbnext status
     name: str = ""

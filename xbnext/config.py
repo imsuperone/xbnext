@@ -2,7 +2,7 @@
 """配置读取。
 
 - 运行时读 AstrBot 传进来的 ``config``（``AstrBotConfig``，行为接近 dict）；
-- 配置项缺失时回退到 ``_conf_schema.json`` 的 ``default``；
+- 配置项缺失时回退到 ``xbnext/schema.json`` 的 ``default``；
 - schema 再缺失时回退到调用方给的 ``default``。
 
 **这样即使插件配置页还没生成过、或用户用了旧版 schema，行为也不会跑飞。**
@@ -15,18 +15,16 @@ from pathlib import Path
 from typing import Any
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.json"
-_ROOT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "_conf_schema.json"
 
 
 def _load_schema() -> dict:
-    for p in (_SCHEMA_PATH, _ROOT_SCHEMA_PATH):
-        if p.exists():
-            try:
-                data = json.loads(p.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    return data
-            except Exception:  # noqa: BLE001
-                pass
+    if _SCHEMA_PATH.exists():
+        try:
+            data = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:  # noqa: BLE001
+            pass
     return {}
 
 
@@ -43,11 +41,11 @@ def schema_default(key: str) -> Any:
 
 
 class LocalAstrBotConfig:
-    """当 AstrBot 宿主未提供 AstrBotConfig（如根目录无 _conf_schema.json 时传入 None）
+    """当 AstrBot 宿主未提供 AstrBotConfig（如根目录无 xbnext/schema.json 时传入 None）
     时的独立本地持久化配置对象。
 
     完全对齐 AstrBotConfig 鸭子类型（dict 读写 + save_config / save_config_async），
-    确保即使根目录不放 _conf_schema.json（让原生面板保持『这个插件没有其他配置项』），
+    确保即使根目录不放 xbnext/schema.json（让原生面板保持『这个插件没有其他配置项』），
     WebUI 写入的配置依然能正确持久化落盘并热生效，不会因 None 报错导致开关自动回滚。
     """
 

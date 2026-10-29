@@ -26,7 +26,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+import weakref
 from typing import Any, Dict, List, Optional
 
 from ... import log
@@ -41,6 +43,19 @@ DEFAULT_MAX_LEN = {"name": 32, "facts": 480}
 #: 索引键：AstrBot 的插件 KV **没有"遍历所有键"的能力**（只有按键 get/put/delete），
 #: WebUI 要列出全部档案就必须自己维护一份成员表。
 INDEX_KEY = "profile:index"
+
+#: 索引读-改-写串行化：并发保存（同人两群 / WebUI + 指令）时避免后写覆盖前写。
+#: 锁按事件循环隔离 —— 单测会多次 ``asyncio.run``，共用一把全局锁会跨 loop 报错。
+_INDEX_LOCKS: "weakref.WeakKeyDictionary[Any, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
+def _index_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _INDEX_LOCKS.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _INDEX_LOCKS[loop] = lock
+    return lock
 
 
 def clean_gid(gid: Any) -> str:
@@ -201,25 +216,29 @@ class ProfileStore:
                 }
             )
         if stale:
-            await self._index_write([t for t in tokens if t not in stale])
+            async with _index_lock():
+                current = await self._kv.get_list(INDEX_KEY)
+                await self._index_write([t for t in current if t not in stale])
         rows.sort(key=lambda r: r["updated"], reverse=True)
         return rows
 
     # -- 索引维护 -----------------------------------------------------
     async def _index_add(self, platform: str, uid: Any, gid: Any = "") -> None:
         token = _token(platform, uid, gid)
-        tokens = await self._kv.get_list(INDEX_KEY)
-        if token in tokens:
-            return
-        tokens.append(token)
-        await self._kv.set(INDEX_KEY, tokens)
+        async with _index_lock():
+            tokens = await self._kv.get_list(INDEX_KEY)
+            if token in tokens:
+                return
+            tokens.append(token)
+            await self._kv.set(INDEX_KEY, tokens)
 
     async def _index_remove(self, platform: str, uid: Any, gid: Any = "") -> None:
         token = _token(platform, uid, gid)
-        tokens = await self._kv.get_list(INDEX_KEY)
-        if token not in tokens:
-            return
-        await self._kv.set(INDEX_KEY, [t for t in tokens if t != token])
+        async with _index_lock():
+            tokens = await self._kv.get_list(INDEX_KEY)
+            if token not in tokens:
+                return
+            await self._kv.set(INDEX_KEY, [t for t in tokens if t != token])
 
     async def _index_write(self, tokens: List[str]) -> None:
         await self._kv.set(INDEX_KEY, [t for t in tokens if isinstance(t, str)])
