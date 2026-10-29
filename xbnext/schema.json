@@ -211,7 +211,7 @@
   "debug_log": {
     "type": "bool",
     "description": "输出调试日志",
-    "hint": "在 AstrBot 日志里打印各功能的执行结果与跳过原因，排查「为什么没生效」时打开。默认关闭。",
+    "hint": "在 AstrBot 日志里打印各功能的执行结果与跳过原因，包括机器人拦截、TTS 超限等每条消息都可能触发的日常日志（这类高频日志默认只落 DEBUG，不刷屏）；排查「为什么没生效 / 为什么拦截」时打开。默认关闭。",
     "default": false
   },
   "enable_private": {

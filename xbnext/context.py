@@ -4,6 +4,9 @@
 每个 ``on_llm_request`` 造一个 :class:`RequestContext`，按固定顺序传给各
 功能。功能只跟它打交道，不直接摸全局状态 —— 这样功能可以脱离 astrbot
 单测（把 ctx 换成假对象即可）。
+
+gid / platform 在构造时取一次并缓存：``enabled`` 会被每个功能各调一次，
+不应每次都重走 eventids 的多级探测链。
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from typing import Any, List
 
 from . import injector
 from .config import Config
+from .eventids import gid_of, platform_of
 
 
 class RequestContext:
@@ -27,6 +31,8 @@ class RequestContext:
         "parts_cleaned",
         "slimmed_images",
         "text_part_cls",
+        "gid",
+        "platform",
     )
 
     def __init__(
@@ -52,24 +58,16 @@ class RequestContext:
         #: 注入用的 ``TextPart`` 实现；``None`` = 走 astrbot 真身，
         #: 单测里传假实现即可在无 astrbot 环境跑通注入链路
         self.text_part_cls = text_part_cls
+        #: 会话维度（构造时取一次并缓存，供 enabled 判定与功能复用）
+        self.gid: str = gid_of(event) if event is not None else ""
+        self.platform: str = platform_of(event) if event is not None else ""
 
     # -- 开关 ---------------------------------------------------------
     def enabled(self, key: str) -> bool:
         """某功能当前是否该跑（结合平台白名单、私聊总开关、群聊黑白名单与分群独立功能开关）。"""
-        gid = ""
-        platform = ""
-        if self.event is not None:
-            try:
-                from .eventids import gid_of, platform_of
-                gid = gid_of(self.event)
-                platform = platform_of(self.event)
-            except Exception:  # noqa: BLE001
-                gid = ""
-                platform = ""
-        checker = getattr(self.conf, "enabled_for_group", None)
-        ok = checker(key, gid, platform) if callable(checker) else self.conf.enabled(key)
+        ok = self.conf.enabled_for_group(key, self.gid, self.platform)
         if not ok:
-            self.note(f"{key} 已关闭" + (f"（群 {gid}）" if gid else ("（私聊）" if not gid else "")))
+            self.note(f"{key} 已关闭" + (f"（群 {self.gid}）" if self.gid else ("（私聊）" if not self.gid else "")))
             return False
         return True
 

@@ -9,7 +9,7 @@ desc: |
   - 回复指向索引，防止身份串台
   - 用户档案按群隔离，私聊独立
   - 撤回取消、图片瘦身、Token 用量展示，控制台独立开关
-version: 0.2.53
+version: 0.2.54
 author: Light
 repo: https://github.com/imsuperone/xbnext
 support_platforms:

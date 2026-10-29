@@ -1,4 +1,4 @@
-# XBNEXT v0.2.53
+# XBNEXT v0.2.54
 
 > AstrBot 对话质量修正插件：修正引用、表情与身份指向等对话细节，附 Web 控制台。
 
@@ -9,7 +9,7 @@
 本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一个松耦合、异步、支持多消息平台部署，具有易用的插件系统和完善的大语言模型（LLM）接入功能的聊天机器人及开发框架，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
 
 - 插件 ID：`astrbot_plugin_xbnext`
-- 当前版本：`v0.2.53`
+- 当前版本：`v0.2.54`
 - 运行要求：AstrBot `>=3.4.0`，平台 `aiocqhttp`
 - 仓库：https://github.com/imsuperone/xbnext
 
@@ -56,5 +56,6 @@
 
 - 纯表情消息经翻译补写后可正常触发回复；未被 @、未命中唤醒前缀的纯表情仍不回复，属正常行为。
 - 与 xbdoc / xbimg 同开互不干扰：三者注入通道独立，本插件排在最前先清洗；不改写 `system_prompt`，只清理 `contexts` 中混入的 `system` 项与空消息。
-- 每轮仅在有动作时打一条 INFO 汇总；逐条明细可在「行为微调」打开调试日志。
+- 每轮仅在有动作时打一条 INFO 汇总；机器人拦截、TTS 超限等**每条消息都可能触发的日常日志**只落 DEBUG，默认不刷屏，排查时打开「输出调试日志」即可全部看到。
+- 开发与测试：单测 684 项（不依赖 astrbot 环境）与接口地图 `aidoc/05-接口地图.md` 仅存于本地开发目录，**不随 GitHub 包体发布**；测试快捷脚本（`run_tests.cmd` 全量单测 / `webui_smoke.py` 真机冒烟）在本地 `aihelp/astrbot_plugin_xbnext/scripts/` 维护。
 - 致谢：设计参考 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 与 [astrbot_plugin_AstrNa](https://github.com/Sisyphbaous-DT-Project/astrbot_plugin_AstrNa)（回复指向索引），WebUI 骨架取自 [xbdoc](https://github.com/imsuperone/xbdoc) / [xbimg](https://github.com/imsuperone/xbimg)。

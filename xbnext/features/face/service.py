@@ -29,6 +29,7 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from ...seg import field, seg_type
 from .data import mface_name
 from .updater import face_name_with_overlay
 
@@ -178,29 +179,34 @@ def note_from_parts(parts: Optional[Iterable[str]]) -> str:
 # OneBot 原始载荷解析（mface 不进消息链，只能从这里捞）
 # ---------------------------------------------------------------------------
 
-def _token_from_segment(seg_type: str, data: Dict[str, Any]) -> Optional[Tuple[str, Any]]:
-    """把 ``({"type": ..., "data": ...})`` 压成一个 ``(kind, code)``。"""
-    if not isinstance(seg_type, str) or not isinstance(data, dict):
-        return None
-    t = seg_type.lower()
+#: 商城表情段的类型名变体
+MFACE_TYPES = ("mface", "market_face", "marketface")
+
+
+def token_from_segment(seg: Any) -> Optional[Tuple[str, Any]]:
+    """把一个消息段压成 ``(kind, code)``；不相关返回 ``None``。
+
+    段允许两种形态（:mod:`xbnext.seg` 统一读取）：适配器 dict
+    ``{"type": ..., "data": {...}}`` 与核心消息链里的段对象。
+    消息链遍历（FaceFeature）与 OneBot 原始载荷解析（tokens_from_raw）
+    共用这一份实现。
+    """
+    t = seg_type(seg)
     if t == "face":
-        for key in ("id", "face_id", "faceId"):
-            if data.get(key) not in (None, ""):
-                return (KIND_FACE, data.get(key))
-        return None
-    if t in ("mface", "market_face", "marketface"):
-        for key in ("summary", "name", "emoji_name", "face_name"):
-            if clean_summary(data.get(key)):
-                return (KIND_SUMMARY, data.get(key))
-        for key in ("emoji_id", "key", "id"):
-            if data.get(key) not in (None, ""):
-                return (KIND_MFACE, data.get(key))
-        return None
+        code = field(seg, "id", "face_id", "faceId")
+        return (KIND_FACE, code) if code not in (None, "") else None
+    if t in MFACE_TYPES:
+        # summary（表情中文名）优先 —— mface 没有权威 key 表
+        summary = field(seg, "summary", "name", "emoji_name", "face_name")
+        if summary and clean_summary(summary):
+            return (KIND_SUMMARY, summary)
+        key = field(seg, "emoji_id", "key", "id")
+        return (KIND_MFACE, key) if key not in (None, "") else None
     if t in ("rps", "dice"):
-        for key in ("result", "resultId", "result_id"):
-            if data.get(key) not in (None, ""):
-                return (KIND_SUMMARY, f"{t} {data.get(key)}")
-        return None
+        result = field(seg, "result", "resultId", "result_id")
+        if result in (None, ""):
+            return None
+        return (KIND_SUMMARY, f"{t} {result}")
     return None
 
 
@@ -249,9 +255,7 @@ def tokens_from_raw(raw: object) -> List[Tuple[str, Any]]:
                 nested = tokens_from_raw(raw.get("message"))
                 if nested:
                     return nested
-            tok = _token_from_segment(
-                str(raw.get("type", "")), raw.get("data") or {}
-            )
+            tok = token_from_segment(raw)
             return [tok] if tok else []
         if isinstance(raw, str):
             s = raw.strip()
@@ -264,7 +268,7 @@ def tokens_from_raw(raw: object) -> List[Tuple[str, Any]]:
                     pass
             out = []
             for seg_type, data in _parse_cq(s):
-                tok = _token_from_segment(seg_type, data)
+                tok = token_from_segment({"type": seg_type, "data": data})
                 if tok:
                     out.append(tok)
             return out
@@ -288,5 +292,6 @@ __all__ = [
     "translate_token",
     "translate_all",
     "note_from_parts",
+    "token_from_segment",
     "tokens_from_raw",
 ]

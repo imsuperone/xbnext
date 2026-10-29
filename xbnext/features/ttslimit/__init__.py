@@ -30,8 +30,6 @@ def smooth_tts_text(text: str) -> str:
     s = re.sub(r"([喵啦呀哇捏呢哦啊吖咯滴吧~～])([！!]+)", r"\1~", s)
     # 2. 连续多个感叹号结尾收敛为 ~
     s = re.sub(r"([！!]{2,})$", "~", s)
-    # 3. 句末单独的感叹号，若前面是软萌语气词，替换为 ~
-    s = re.sub(r"([喵啦呀哇捏呢哦啊吖咯滴吧])[！!]$", r"\1~", s)
     return s
 
 
@@ -93,7 +91,9 @@ class TtsLimitFeature(Feature):
     key = "enable_tts_limit"
     name = "TTS 字数上限"
     description = "回复文本超过设定字数时自动跳过 TTS 语音合成直接发文字，避免长文卡死语音接口"
-    order = 98
+    #: 94 < tokenline 的 95 —— 装饰阶段先统计字数、token 用量行后追加，
+    #: 用量行不会被算进超限判定
+    order = 94
     uses_decorating_hook = True
 
     def __init__(self) -> None:
@@ -149,7 +149,7 @@ class TtsLimitFeature(Feature):
             ctx.note(f"TTS 字数超限（{total_chars} > {max_chars}），本轮跳过语音转换")
             log.emit(
                 self._log,
-                "info",
+                "debug",
                 f"TTS 字数超限（{total_chars} 字 > 上限 {max_chars} 字），已跳过语音转换直接发送文本",
             )
 
@@ -199,7 +199,7 @@ class TtsLimitFeature(Feature):
                 if limit > 0 and clean_len > limit:
                     log.emit(
                         feat_self._log,
-                        "info",
+                        "debug",
                         f"TTS 字数超限（{clean_len} 字 > 上限 {limit} 字），已拦截 get_audio 语音合成",
                     )
                     return None

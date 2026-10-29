@@ -27,7 +27,7 @@ _MISSING = object()
 class KV:
     """带前缀与缓存的插件 KV 视图。"""
 
-    __slots__ = ("_owner", "_prefix", "_logger", "_cache", "_loaded", "_broken")
+    __slots__ = ("_owner", "_prefix", "_logger", "_cache", "_loaded", "_broken", "_bg_tasks")
 
     def __init__(self, owner: Any = None, prefix: str = KV_PREFIX, logger: Any = None):
         #: owner = Star 实例（提供 put_kv_data / get_kv_data / delete_kv_data）
@@ -38,6 +38,9 @@ class KV:
         self._loaded: Set[str] = set()
         #: 首次发现 KV 完全不可用后置位，后续直接走缓存，不再反复报错
         self._broken = False
+        #: 后台写任务强引用集 —— asyncio 对挂起中的 task 只持弱引用，
+        #: 不保存会被 GC 半路丢掉，落盘静默失败
+        self._bg_tasks: Set["asyncio.Task"] = set()
 
     # ------------------------------------------------------------------
     # 键名
@@ -111,7 +114,9 @@ class KV:
                         await putter(full, value)
                     except Exception as exc:  # noqa: BLE001
                         self._log("warning", f"后台写入 KV 失败 {full}: {exc}")
-                loop.create_task(_put_bg())
+                task = loop.create_task(_put_bg())
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
                 return True
             except RuntimeError:
                 pass

@@ -6,6 +6,10 @@
 order = 5（最前执行优先级），在 core 判定空消息与大模型管线介入前第一时间掐断。
 
 默认黑名单为空，遵循严格隐私规范，绝不硬编码任何 QQ 号。
+
+日志纪律：拦截动作对**每条消息**都会发生，一律落 DEBUG（受 ``debug_log``
+开关控制，见 :meth:`on_adapter_message`），不刷 INFO；加载 / 卸载等
+一次性事件才用 INFO。
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import re
 from typing import Any, List, Optional
 
 from ... import log, switches
+from ...eventids import message_text, self_id_of, uid_of
 from ...permissions import is_admin_event
 from ..base import Feature
 from . import service
@@ -46,6 +51,9 @@ class BotGuardFeature(Feature):
         self._runtime = None
         self._log = None
 
+    def _debug(self, message: str) -> None:
+        log.emit(self._log, "debug", message)
+
     async def on_adapter_message(self, ctx: Any) -> None:
         """适配器早期钩子：发现黑名单或机器人消息即刻拦截。
 
@@ -63,7 +71,7 @@ class BotGuardFeature(Feature):
                     # 必须读「唤醒前缀剥离前」的原文：默认 wake_prefix 是 /，
                     # WakingCheckStage 会把 /xbnext 剥成 xbnext；只看
                     # event.message_str 会漏判，导致裸 / 指令照样触发。
-                    msg_text = service.original_message_text(event)
+                    msg_text = message_text(event)
                     extra_words = ctx.conf.text("bot_guard_extra_command_words", "")
                     prefixes = ctx.conf.text("bot_guard_command_prefixes", "/")
                     is_target_cmd = service.is_command_message(
@@ -71,42 +79,38 @@ class BotGuardFeature(Feature):
                     )
 
                     if is_target_cmd:
-                        self_id = service.extract_self_id(event)
+                        sid = self_id_of(event)
                         # 严格 @ 判定：唤醒前缀 / 不算 @，只认 At/Reply 组件。
                         # self_id 取不到时放行，避免把整群指令全误杀。
                         at_self = (
-                            service.is_at_self_strict(event, self_id)
-                            if self_id
+                            service.is_at_self_strict(event, sid)
+                            if sid
                             else True
                         )
                         if not at_self:
                             self._stop_event_safely(event)
-                            log.emit(
-                                self._log,
-                                "info",
-                                f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}' 但未 @ 本机器人(self_id={self_id or '未知'})，已安全拦截防止多Bot冲突",
+                            self._debug(
+                                f"指令防冲突保护：群聊收到指令 '{msg_text.strip()}'"
+                                f" 但未 @ 本机器人(self_id={sid or '未知'})，已拦截"
                             )
-                            if ctx.conf.bool("debug_log"):
-                                ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
+                            ctx.note(f"BotGuard 拦截未@自身的指令：{msg_text.strip()}")
                             return
 
             # 2. 群文字游戏与杂音指令拦截（防大模型接话与长期记忆被群游记录污染，默认关闭）
             if ctx.conf.bool("bot_guard_filter_game_commands", False):
                 if service.is_group_event(event):
-                    msg_text = service.original_message_text(event)
+                    msg_text = message_text(event)
                     game_words = ctx.conf.text("bot_guard_game_words", "")
                     if service.is_game_or_noise_command(msg_text, game_words):
-                        self_id = service.extract_self_id(event)
+                        sid = self_id_of(event)
                         # 未艾特本机器人时拦截，彻底避免被大模型或记忆插件收录
-                        if self_id and not service.is_at_self(event, self_id):
+                        if sid and not service.is_at_self(event, sid):
                             self._stop_event_safely(event)
-                            log.emit(
-                                self._log,
-                                "info",
-                                f"游戏杂音拦截：已过滤群文字游戏指令 '{msg_text.strip()}'，防止长期记忆与上下文污染",
+                            self._debug(
+                                f"游戏杂音拦截：已过滤群文字游戏指令 '{msg_text.strip()}'，"
+                                "防止长期记忆与上下文污染"
                             )
-                            if ctx.conf.bool("debug_log"):
-                                ctx.note(f"BotGuard 拦截游戏指令：{msg_text.strip()}")
+                            ctx.note(f"BotGuard 拦截游戏指令：{msg_text.strip()}")
                             return
 
             # 3. 黑名单账号拦截
@@ -115,12 +119,12 @@ class BotGuardFeature(Feature):
             if not blacklist:
                 return  # 未配置黑名单，正常放行
 
-            sender_id = service.extract_sender_id(event)
+            sender_id = uid_of(event)
             if not sender_id:
                 return
 
-            self_id = service.extract_self_id(event)
-            if not service.is_sender_blacklisted(sender_id, blacklist, self_id=self_id):
+            sid = self_id_of(event)
+            if not service.is_sender_blacklisted(sender_id, blacklist, self_id=sid):
                 return
 
             mode = str(ctx.conf.text("bot_guard_mode", "drop") or "drop").strip().lower()
@@ -130,93 +134,65 @@ class BotGuardFeature(Feature):
                 is_wake = getattr(event, "is_at_or_wake_command", False)
                 if is_wake:
                     self._stop_event_safely(event)
-                    log.emit(
-                        self._log,
-                        "info",
-                        f"机器人拦截（防唤醒）：已拦截来自账号 {sender_id} 的唤醒尝试",
-                    )
-                    if ctx.conf.bool("debug_log"):
-                        ctx.note(f"BotGuard 拦截黑名单唤醒：sender={sender_id}")
+                    self._debug(f"机器人拦截（防唤醒）：已拦截来自账号 {sender_id} 的唤醒尝试")
+                    ctx.note(f"BotGuard 拦截黑名单唤醒：sender={sender_id}")
                 else:
                     # 普通背景消息：禁止调用大模型回复，但允许事件静默流过（如供群聊历史记录）
                     try:
                         event.call_llm = False
                     except Exception:  # noqa: BLE001
                         pass
-                    if ctx.conf.bool("debug_log"):
-                        ctx.note(f"BotGuard 禁用黑名单被动响应：sender={sender_id}")
+                    ctx.note(f"BotGuard 禁用黑名单被动响应：sender={sender_id}")
             else:
                 # drop 模式（默认推荐）：彻底静默丢弃，零消耗、绝不死循环
                 self._stop_event_safely(event)
-                log.emit(
-                    self._log,
-                    "info",
-                    f"机器人拦截：已屏蔽账号 {sender_id} 的消息，防止死循环",
-                )
-                if ctx.conf.bool("debug_log"):
-                    ctx.note(f"BotGuard 彻底静默拦截：sender={sender_id}")
+                self._debug(f"机器人拦截：已屏蔽账号 {sender_id} 的消息，防止死循环")
+                ctx.note(f"BotGuard 彻底静默拦截：sender={sender_id}")
 
         except Exception as exc:  # noqa: BLE001
             # 异常自吞保底
-            if ctx.conf.bool("debug_log"):
-                ctx.note(f"BotGuard 拦截判定异常：{exc!r}")
+            ctx.note(f"BotGuard 拦截判定异常：{exc!r}")
 
     async def on_llm_request(self, ctx: Any) -> None:
-        """LLM 请求阶段防御性兜底：拦截黑名单账号与未处理斜杠指令符号，阻止大模型接话与回复。"""
+        """LLM 请求阶段拦截未被消费的斜杠指令，阻止大模型接话与回复。
+
+        只保留这一件事 —— 黑名单在适配器早期钩子已彻底拦截（drop 模式
+        ``stop_event()`` 后不会再进 LLM 管线），这里不再重复兜底。
+        斜杠指令必须留在本阶段：适配器阶段拦掉会连已注册指令一起掐死
+        （core 还没做指令匹配），只有「指令未被任何插件消费」之后才能拦。
+        """
         event = getattr(ctx, "event", None)
         if event is None:
             return
 
-        # 1. 拦截未被任何插件处理的指令前缀消息，防止大模型胡乱接话或回答其他机器人的指令
-        if ctx.conf.bool("bot_guard_block_slash_commands", True):
-            try:
-                # 优先用唤醒前缀剥离前的原文：默认 wake_prefix 是 /，
-                # 若只看 event.message_str，/help 会变成 help 而漏拦。
-                msg_str = service.original_message_text(event) or ctx.prompt().strip()
-                prefixes = ctx.conf.text("bot_guard_command_prefixes", "/")
-                if msg_str:
-                    stripped_msg = re.sub(
-                        r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", msg_str, flags=re.I
-                    ).strip()
-                    # 本插件自己的指令入口永远放行：即使指令注册退化/用户拼错，
-                    # 也交给 /xbnext 的「未知子指令」提示，绝不静默吞掉。
-                    is_own_command = bool(
-                        re.match(r"^[/／]?xbnext(?:\s|$)", stripped_msg, re.I)
-                    )
-                    if not is_own_command and service.is_prefixed_command(
-                        stripped_msg, prefixes
-                    ):
-                        self._stop_event_safely(event)
-                        req = getattr(ctx, "req", None)
-                        if req is not None and hasattr(req, "prompt"):
-                            req.prompt = ""
-                        log.emit(
-                            self._log,
-                            "info",
-                            f"指令防接话拦截：检测到未被插件消费的指令符号消息 '{stripped_msg[:30]}'，已阻止大模型接话与回复",
-                        )
-                        if ctx.conf.bool("debug_log"):
-                            ctx.note(f"BotGuard 拦截斜杠指令防大模型回复：{stripped_msg[:30]}")
-                        return
-            except Exception:  # noqa: BLE001
-                pass
-
-        # 2. 黑名单账号防御性兜底
+        if not ctx.conf.bool("bot_guard_block_slash_commands", True):
+            return
         try:
-            blacklist_raw = ctx.conf.text("bot_guard_blacklist", "")
-            blacklist = service.parse_blacklist(blacklist_raw)
-            if not blacklist:
-                return
-
-            sender_id = service.extract_sender_id(event)
-            self_id = service.extract_self_id(event)
-            if service.is_sender_blacklisted(sender_id, blacklist, self_id=self_id):
-                # 命中黑名单，截断请求
-                self._stop_event_safely(event)
-                req = getattr(ctx, "req", None)
-                if req is not None and hasattr(req, "prompt"):
-                    req.prompt = ""
-                ctx.note(f"BotGuard LLM兜底拦截：sender={sender_id}")
+            # 优先用唤醒前缀剥离前的原文：默认 wake_prefix 是 /，
+            # 若只看 event.message_str，/help 会变成 help 而漏拦。
+            msg_str = message_text(event) or ctx.prompt().strip()
+            prefixes = ctx.conf.text("bot_guard_command_prefixes", "/")
+            if msg_str:
+                stripped_msg = re.sub(
+                    r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", msg_str, flags=re.I
+                ).strip()
+                # 本插件自己的指令入口永远放行：即使指令注册退化/用户拼错，
+                # 也交给 /xbnext 的「未知子指令」提示，绝不静默吞掉。
+                is_own_command = bool(
+                    re.match(r"^[/／]?xbnext(?:\s|$)", stripped_msg, re.I)
+                )
+                if not is_own_command and service.is_prefixed_command(
+                    stripped_msg, prefixes
+                ):
+                    self._stop_event_safely(event)
+                    req = getattr(ctx, "req", None)
+                    if req is not None and hasattr(req, "prompt"):
+                        req.prompt = ""
+                    self._debug(
+                        f"指令防接话拦截：检测到未被插件消费的指令符号消息"
+                        f" '{stripped_msg[:30]}'，已阻止大模型接话与回复"
+                    )
+                    ctx.note(f"BotGuard 拦截斜杠指令防大模型回复：{stripped_msg[:30]}")
         except Exception:  # noqa: BLE001
             pass
 
@@ -293,9 +269,9 @@ class BotGuardFeature(Feature):
                 return "未解析到有效的账号 ID。"
 
             # 守卫：不可添加 bot 自身
-            self_id = service.extract_self_id(event)
-            if self_id and self_id in new_ids:
-                new_ids.remove(self_id)
+            sid = self_id_of(event)
+            if sid and sid in new_ids:
+                new_ids.remove(sid)
                 if not new_ids:
                     return "不可将机器人自身账号加入拦截黑名单。"
 
@@ -312,7 +288,7 @@ class BotGuardFeature(Feature):
 
             return (
                 f"✅ 已成功添加 {len(added)} 个拦截账号："
-                f"{', '.join(service.mask_id(x) for x in sorted(added))}。\n"
+                f"{', '.join(service.mask_id(x) for x in sorted(added))}.\n"
                 f"当前拦截黑名单共 {len(updated_set)} 个账号。"
             )
 
@@ -338,7 +314,7 @@ class BotGuardFeature(Feature):
 
             return (
                 f"✅ 已从拦截名单中移除 {len(removed)} 个账号："
-                f"{', '.join(service.mask_id(x) for x in sorted(removed))}。\n"
+                f"{', '.join(service.mask_id(x) for x in sorted(removed))}.\n"
                 f"当前拦截名单剩余 {len(updated_set)} 个账号。"
             )
 

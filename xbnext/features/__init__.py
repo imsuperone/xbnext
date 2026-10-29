@@ -74,13 +74,8 @@ def get_feature_by_command(name: str) -> Optional[Feature]:
     """
     if not name:
         return None
-    name_lower = name.lower()
-    if name_lower in ("botguard", "防互怼", "防大乱斗", "机器人拦截", "bot_guard"):
-        for feat in FEATURES:
-            if getattr(feat, "command", "") == "botguard":
-                return feat
     for feat in FEATURES:
-        if feat.command and feat.command == name:
+        if feat.command and feat.command == name.lower():
             return feat
     return None
 

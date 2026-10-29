@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from ... import PLUGIN_NAME
 from ...commands import UPDATER_ACTIONS
 from ...permissions import is_admin_event
+from ...schedule import next_run_delay
 from ..base import Feature
 from .service import (
     DEFAULT_TARGET_PLUGINS,
@@ -20,33 +20,6 @@ from .service import (
     format_version,
     no_update_message,
 )
-
-
-def next_schedule_delay(now_or_hhmm: Any = None, hhmm: Optional[str] = None) -> float:
-    """计算距离下一个 HH:MM 的秒数，默认 04:30。
-    支持两种调用风格：
-      - next_schedule_delay(now, "04:30")
-      - next_schedule_delay("04:30")
-    """
-    if isinstance(now_or_hhmm, str):
-        target_str = now_or_hhmm
-        now = datetime.now()
-    elif isinstance(now_or_hhmm, datetime):
-        now = now_or_hhmm
-        target_str = str(hhmm or "04:30")
-    else:
-        now = datetime.now()
-        target_str = str(hhmm or "04:30")
-
-    text = str(target_str or "").strip()
-    m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", text)
-    if not m:
-        m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", "04:30")
-    hour, minute = int(m.group(1)), int(m.group(2))
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return max(1.0, (target - now).total_seconds())
 
 
 async def send_private_notification(context: Any, qq: Any, message: str) -> Tuple[bool, str]:
@@ -124,6 +97,7 @@ class UpdaterFeature(Feature):
     def __init__(self) -> None:
         self._task: Optional[asyncio.Task] = None
         self._runtime: Optional[Any] = None
+        self._bg_tasks: set = set()
 
     async def on_load(self, runtime: Any) -> None:
         """插件加载时启动定时自动检测循环。"""
@@ -207,7 +181,7 @@ class UpdaterFeature(Feature):
                 sched_time = updater.schedule_time
 
                 # 计算到下一次 schedule_time（默认 04:30）的剩余秒数
-                total_delay = next_schedule_delay(sched_time)
+                total_delay = next_run_delay(datetime.now(), sched_time)
 
                 # 分段休眠，以支持热改配置即时生效
                 while total_delay > 0:
@@ -218,7 +192,7 @@ class UpdaterFeature(Feature):
                     cur_updater = UpdaterService(cur_conf, context=ctx)
                     if cur_updater.schedule_time != sched_time:
                         sched_time = cur_updater.schedule_time
-                        total_delay = next_schedule_delay(sched_time)
+                        total_delay = next_run_delay(datetime.now(), sched_time)
 
                 conf = getattr(self._runtime, "conf", None)
                 updater = UpdaterService(conf, context=ctx)

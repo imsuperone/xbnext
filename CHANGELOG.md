@@ -1,3 +1,29 @@
+## v0.2.54
+
+### 新增 / 行为
+- 日志纪律：机器人拦截（已屏蔽账号 / 防唤醒 / 指令防冲突 / 游戏杂音 / 斜杠拦截）、TTS 字数超限、纯表情补写等**每条消息都可能触发的日常日志统一降为 DEBUG**，受「输出调试日志」开关控制，不再刷 INFO；重要事件（加载 / 更新 / 撤回联动 / 表情表更新）保持 INFO。
+
+### 修复
+- KV `async_flush`、撤回补删、延迟热重载等后台 asyncio 任务未保存强引用，可能被 GC 半路丢弃导致落盘 / 补删 / 重载静默失败。
+- TTS 字数统计不再把 Token 用量行算进去（ttslimit order 98→94，先统计后追加）。
+- 测试隔离：`test_missing_api_key` / 自适应端点用例此前会对**真实插件仓库执行 git pull**，把未提交改动全部冲掉；`test_local_version_newer...` 受真实磁盘插件版本影响；`test_missing_textpart` 受 pip 安装的 astrbot 影响。全部钉死为全链路 mock。
+
+### 收口（一接口一实现）
+- 事件取数统一到 `xbnext/eventids.py`：新增 `self_id_of` / `message_id_of` / `message_text`；`uid_of` 并入原 `permissions.extract_sender_id` 的全部兜底。botguard / attribution / recall / permissions 各自的重复实现删除。
+- 消息链 / 原始载荷扫描统一到 `xbnext/seg.py`：`chain_sources` / `raw_sources`；face、attribution、recall 各自的扫描删除。
+- 表情段解析合并为 `face.service.token_from_segment` 一份（消息链与 OneBot 原始载荷共用）。
+- 「每天 HH:MM 跑一次」的调度计算统一到 `xbnext/schedule.py`（face 表更新与插件定时更新共用）。
+- WebUI 13 个路由的 try/except 样板统一为 `_route` / `_post_route` 包装器；web 层改经 `runtime.note_groups` 回填群列表，不再摸 runtime 私有结构。
+
+### 精简
+- updater 重载端点从 12 个探测收敛为 2 个稳定端点（进程内 star_manager 仍是主路径）。
+- 删除死代码：`quote.dead_image_urls`（无人调用）、`smooth_tts_text` 规则 3（被规则 1 覆盖）、`get_feature_by_command` 的 botguard 中文别名死分支、botguard LLM 阶段黑名单兜底（adapter 阶段已彻底拦截）。
+- `RequestContext` 构造时缓存 gid / platform（此前每个功能判定开关都重走多级探测）；`Config.is_platform_allowed` 平台别名常量化；`runtime._remember_group` 的函数内 import 提升到模块级。
+
+### 文档
+- 新增 `aidoc/05-接口地图.md`：全部公共接口 → 唯一实现 → 调用方的映射表。
+- `aidoc/02` 分层图补全 10 个功能与新增模块。
+
 ## v0.2.53 (2026-10-29)
 - **修复 `/xbnext 诊断` 被当成未知子指令**：`runtime.dispatch` 之前只特判 check / update / force，菜单里写了「诊断」、发出去却回「未知子指令」。现在插件升级类子指令统一按 `commands.UPDATER_WORDS` 路由。
 - **子指令别名表只留一份**：新增 `commands.UPDATER_ACTIONS`（别名 → 规范动作），`runtime.dispatch` 与 `UpdaterFeature.handle_command` 共用；`features.get_feature_by_command` 删掉重复的 updater 别名表，避免两处词表再次漂移。

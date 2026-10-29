@@ -354,17 +354,6 @@ def split_image_urls(
     return alive, dead
 
 
-def dead_image_urls(
-    image_urls: Any, exists: Optional[Callable[[str], bool]] = None
-) -> List[str]:
-    """筛出 ``req.image_urls`` 里**可证实已失效**的项。
-
-    core 的死路径残留在这里会让模型以为还有一张图 —— 见
-    :func:`is_dead_image_url` 的判定表。
-    """
-    return split_image_urls(image_urls, exists=exists)[1]
-
-
 __all__ = [
     "NOISE_RE",
     "DEGRADED_RE",
@@ -380,5 +369,4 @@ __all__ = [
     "report",
     "is_dead_image_url",
     "split_image_urls",
-    "dead_image_urls",
 ]

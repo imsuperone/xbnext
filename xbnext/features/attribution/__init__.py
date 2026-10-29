@@ -23,112 +23,14 @@ import hashlib
 import time
 from typing import Any, List, Optional, Tuple
 
-from ...eventids import umo_of
-from ...seg import field as _field, seg_type as _seg_type
+from ...eventids import message_id_of, message_text, name_of, self_id_of, uid_of, umo_of
+from ...seg import chain_sources, field as _field, seg_type as _seg_type
 from ..base import Feature
 from . import service
 from .store import DEFAULT_LIMIT, ReplyTargetStore
 
 #: 回溯轮数上限（配置越界时收敛到这里）
 MAX_DEPTH = 10
-
-
-def chain_of(event: Any) -> List[Any]:
-    """列出事件里的消息段（多个可能的来源，顺序即优先级，可能重复）。"""
-    out: List[Any] = []
-    for attr in ("message", "message_obj"):
-        v = getattr(event, attr, None)
-        if v is None:
-            continue
-        if attr == "message_obj":
-            v = getattr(v, "message", None)
-            if v is None:
-                continue
-        out.append(v)
-    getter = getattr(event, "get_messages", None)
-    if callable(getter):
-        try:
-            v = getter()
-        except Exception:  # noqa: BLE001
-            v = None
-        if v is not None:
-            out.append(v)
-    return out
-
-
-def sender_of(event: Any) -> Tuple[str, str]:
-    """当前发言人 ``(id, 昵称)``；取不到的位置留空串，**不猜**。"""
-    uid = ""
-    name = ""
-    try:
-        sender = getattr(getattr(event, "message_obj", None), "sender", None)
-        uid = str(getattr(sender, "user_id", "") or "")
-        name = str(getattr(sender, "nickname", "") or "")
-    except Exception:  # noqa: BLE001
-        uid, name = "", ""
-    if not uid:
-        fn = getattr(event, "get_sender_id", None)
-        if callable(fn):
-            try:
-                uid = str(fn() or "")
-            except Exception:  # noqa: BLE001
-                uid = ""
-    if not name:
-        fn = getattr(event, "get_sender_name", None)
-        if callable(fn):
-            try:
-                name = str(fn() or "")
-            except Exception:  # noqa: BLE001
-                name = ""
-    return uid, name
-
-
-def self_id_of(event: Any) -> str:
-    """bot 自己的 ID；取不到返回 ``""``（后续就不做自我过滤）。"""
-    for owner in (getattr(event, "message_obj", None), event):
-        if owner is None:
-            continue
-        for attr in ("self_id", "bot_id"):
-            v = getattr(owner, attr, None)
-            if v not in (None, ""):
-                return str(v)
-    fn = getattr(event, "get_self_id", None) or getattr(event, "get_bot_id", None)
-    if callable(fn):
-        try:
-            v = fn()
-            if v not in (None, ""):
-                return str(v)
-        except Exception:  # noqa: BLE001
-            pass
-    return ""
-
-
-def message_id_of(event: Any) -> str:
-    """触发消息的 ``message_id``（Reply 段匹配的主键）；没有就空串。"""
-    for owner in (getattr(event, "message_obj", None), event):
-        if owner is None:
-            continue
-        for attr in ("message_id", "msg_id", "id"):
-            v = getattr(owner, attr, None)
-            if isinstance(v, (str, int)) and str(v) != "":
-                return str(v)
-    return ""
-
-
-def message_text(event: Any) -> str:
-    """触发消息的纯文本（用于 hash 兜底）。"""
-    for attr in ("message_str", "raw_message"):
-        v = getattr(event, attr, None)
-        if isinstance(v, str) and v.strip():
-            return v
-    try:
-        obj = getattr(event, "message_obj", None)
-        v = getattr(obj, "message_str", None)
-        if isinstance(v, str) and v.strip():
-            return v
-    except Exception:  # noqa: BLE001
-        pass
-    return ""
 
 
 def session_scope(event: Any) -> str:
@@ -166,7 +68,7 @@ def quoted_sender(event: Any) -> Tuple[str, str]:
     QQ 官方 Bot 的引用**缺被引用者信息**（aidoc/01 §R1），此时返回空对 ——
     **绝不猜**，猜错正是本需求要修的 bug。
     """
-    for container in chain_of(event):
+    for container in chain_sources(event):
         try:
             iterator = container if hasattr(container, "__iter__") else [container]
             for seg in iterator:
@@ -184,7 +86,7 @@ def quoted_sender(event: Any) -> Tuple[str, str]:
 
 def quoted_message_id(event: Any) -> str:
     """本轮被引用消息的 ``message_id``（用于精确命中 store）。"""
-    for container in chain_of(event):
+    for container in chain_sources(event):
         try:
             iterator = container if hasattr(container, "__iter__") else [container]
             for seg in iterator:
@@ -201,7 +103,7 @@ def at_targets(event: Any, self_id: str = "") -> List[Tuple[str, str]]:
     """本轮 @ 到的对象（排除 bot 自己与 ``@全体成员``）。"""
     out: List[Tuple[str, str]] = []
     seen = set()
-    for container in chain_of(event):
+    for container in chain_sources(event):
         try:
             iterator = container if hasattr(container, "__iter__") else [container]
             for seg in iterator:
@@ -296,7 +198,7 @@ class AttributionFeature(Feature):
 
         sid = self_id_of(event)
         note = service.build_hint(
-            current=sender_of(event),
+            current=(uid_of(event), name_of(event)),
             quoted=quoted_sender(event),
             ats=at_targets(event, sid),
             history=history,
@@ -327,7 +229,7 @@ class AttributionFeature(Feature):
         event = ctx.event
         if event is None:
             return None
-        uid, name = sender_of(event)
+        uid, name = uid_of(event), name_of(event)
         self_id = self_id_of(event)
         if self_id and uid and str(uid) == str(self_id):
             return None  # bot 自己的消息不入库
@@ -353,13 +255,8 @@ class AttributionFeature(Feature):
 
 __all__ = [
     "AttributionFeature",
-    "sender_of",
-    "self_id_of",
-    "message_id_of",
-    "message_text",
     "session_scope",
     "quoted_sender",
     "quoted_message_id",
     "at_targets",
-    "chain_of",
 ]

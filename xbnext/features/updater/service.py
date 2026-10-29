@@ -750,6 +750,8 @@ class UpdaterService:
     def __init__(self, conf: Any = None, context: Any = None, loop: Any = None):
         self.conf = conf
         self.context = context
+        #: 后台任务的强引用集（asyncio 对挂起中的 task 只持弱引用）
+        self._bg_tasks: set = set()
         try:
             self._loop = loop or asyncio.get_running_loop()
         except Exception:
@@ -1251,7 +1253,7 @@ class UpdaterService:
         return await asyncio.to_thread(self.check_updates_sync, selected_names)
 
     def _request_reload(self, target_name: str) -> Tuple[int, Any]:
-        """自适应热重载单个插件，兼容进程内 StarManager 与不同 AstrBot 版本的 OpenAPI 端点规范。"""
+        """自适应热重载单个插件：进程内 star_manager 优先，远程才走两个稳定 HTTP 端点。"""
         name_clean = str(target_name).strip()
 
         # 1. 优先尝试进程内 context / star_manager 直接重载（最快且零网络依赖、零 422 风险）
@@ -1286,37 +1288,22 @@ class UpdaterService:
             except Exception:
                 pass
 
-        # 2. HTTP OpenAPI 多端点自适应重载
-        payload_name = json.dumps({"name": name_clean}).encode("utf-8")
-        payload_both = json.dumps({"name": name_clean, "plugin_name": name_clean}).encode("utf-8")
+        # 2. HTTP OpenAPI 只保留两个已知稳定端点（远程部署才走到）：
+        #    Dashboard 根级 + v1 全局重载，均带 JSON body。不做多端点穷举
+        #    —— 试错越多，越容易把真正的失败原因（鉴权 / 未收录）盖成 404 噪音。
+        payload = json.dumps({"name": name_clean}).encode("utf-8")
         attempts = [
-            # Dashboard 插件重载核心端点（带 JSON body，最稳合规）
-            (f"{self.api_url}/api/plugin/reload", payload_name, True),
-            (f"{self.api_url}/api/plugin/reload", payload_both, True),
-            # 专有插件重载端点 /api/v1/plugins/{name}/reload
-            (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", None, False),
-            (f"{self.api_url}/api/v1/plugins/{name_clean}/reload", b"{}", True),
-            # 标准全局重载端点 /api/v1/plugins/reload
-            (f"{self.api_url}/api/v1/plugins/reload", payload_name, True),
-            (f"{self.api_url}/api/v1/plugins/reload", payload_both, True),
-            (f"{self.api_url}/api/v1/plugins/reload", None, False),
-            (f"{self.api_url}/api/v1/plugins/reload", b"{}", True),
-            # Query 传参 /api/v1/plugins/reload?name={name}
-            (f"{self.api_url}/api/v1/plugins/reload?name={name_clean}", None, False),
-            (f"{self.api_url}/api/v1/plugins/reload?plugin_name={name_clean}", None, False),
-            # Dashboard 根级端点无参兜底
-            (f"{self.api_url}/api/plugin/reload", None, False),
-            # 失败插件重载端点
-            (f"{self.api_url}/api/v1/plugins/failed/{name_clean}/reload", None, False),
+            f"{self.api_url}/api/plugin/reload",
+            f"{self.api_url}/api/v1/plugins/reload",
         ]
         last_status = 0
         last_resp = None
-        for url, post_data, is_json in attempts:
+        for url in attempts:
             status, resp = _http_request(
                 url,
                 method="POST",
-                headers=self._auth_headers(json_body=is_json),
-                data=post_data,
+                headers=self._auth_headers(json_body=True),
+                data=payload,
                 timeout=30,
             )
             if status == 200:
@@ -1652,7 +1639,9 @@ class UpdaterService:
         # 自身更新是延迟重载的：给回复留出时间，再真正热重载。
         try:
             if any(r.get("deferred_reload") for r in (res.get("results") or [])):
-                asyncio.create_task(self._delayed_self_reload())
+                task = asyncio.create_task(self._delayed_self_reload())
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
         except Exception:
             pass
         return res

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""事件权限判定 —— 全仓唯一实现。
+"""事件权限判定（管理员 / 超管）。
 
 `botguard` 与 `updater` 都需要判断「这条消息是不是管理员发的」，以前各写一份
-（逻辑完全相同、兜底却会漂移）。本模块放在功能层之上、只依赖事件对象，
-两边共用同一份实现。
+（逻辑完全相同、兜底却会漂移）。本模块只管权限；发言人 ID 取数统一走
+:func:`xbnext.eventids.uid_of`（全仓唯一实现）。
 """
 
 from __future__ import annotations
@@ -11,51 +11,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-__all__ = ["extract_sender_id", "is_admin_event"]
+from .eventids import uid_of
 
-
-def extract_sender_id(event: Any) -> str:
-    """从事件对象中安全提取发送者 ID（数字 QQ 或平台唯一标识）。"""
-    if event is None:
-        return ""
-    # 1. 优先调用 get_sender_id()
-    getter = getattr(event, "get_sender_id", None)
-    if callable(getter):
-        try:
-            res = getter()
-            if res not in (None, ""):
-                return str(res).strip()
-        except Exception:  # noqa: BLE001
-            pass
-
-    # 2. 从属性取
-    for attr in ("sender_id", "user_id", "author_id"):
-        val = getattr(event, attr, None)
-        if val not in (None, ""):
-            return str(val).strip()
-
-    # 3. 从 message_obj.sender / message_obj 取
-    msg_obj = getattr(event, "message_obj", None)
-    if msg_obj is not None:
-        sender = getattr(msg_obj, "sender", None)
-        if sender is not None:
-            for attr in ("user_id", "id", "sender_id"):
-                val = getattr(sender, attr, None)
-                if val not in (None, ""):
-                    return str(val).strip()
-        for attr in ("user_id", "sender_id"):
-            val = getattr(msg_obj, attr, None)
-            if val not in (None, ""):
-                return str(val).strip()
-
-    # 4. 从 raw_message / dict payload 兜底
-    raw = getattr(event, "raw_message", None)
-    if isinstance(raw, dict):
-        user_id = raw.get("user_id") or raw.get("sender", {}).get("user_id")
-        if user_id not in (None, ""):
-            return str(user_id).strip()
-
-    return ""
+__all__ = ["is_admin_event"]
 
 
 async def is_admin_event(event: Any) -> bool:
@@ -106,7 +64,7 @@ async def is_admin_event(event: Any) -> bool:
 
     # 4. 检查 sender ID 是否在 AstrBot 全局 admins_id 白名单中
     try:
-        user_id = extract_sender_id(event)
+        user_id = uid_of(event)
         if user_id:
             ctx = getattr(event, "context", None)
             if ctx and hasattr(ctx, "get_config"):

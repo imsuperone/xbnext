@@ -43,6 +43,7 @@ from typing import Any, Dict, List
 from . import commands, features, inject_log, injector, log
 from .config import Config
 from .context import RequestContext
+from .eventids import gid_of, name_of, platform_of, uid_of, umo_of
 from .storage import KV
 
 
@@ -111,11 +112,12 @@ class XbnextRuntime:
         #: 按 ``order`` 升序排列的功能实例（来源：features 注册表）
         self.features: List[Any] = features.all_features()
         self._loaded = False
-        self.seen_path = self.data_dir / "seen_groups.json"
+        self._seen_path = self.data_dir / "seen_groups.json"
         self._seen_groups: Dict[str, Dict[str, Any]] = {}
         self._seen_users: Dict[str, Dict[str, str]] = {}
         self._seen_last_save_ts = 0.0
         self._seen_save_task: Any = None
+        self._groups_cache: Any = None  # (monotonic, rows) —— WebUI 群列表 60s 缓存
         self._load_seen_groups()
 
     # ==================================================================
@@ -356,7 +358,7 @@ class XbnextRuntime:
                 self._warn(f"{feat.key} 早期钩子失败：{exc!r}")
         after = str(getattr(event, "message_str", "") or "")
         if after and after != before:
-            self._info(f"纯表情补写正文：{after}")
+            self._debug(f"纯表情补写正文：{after}")
         if self.conf.bool("debug_log"):
             ctx.flush_notes(self.log)
 
@@ -546,9 +548,9 @@ class XbnextRuntime:
         - 新版：``{"groups": {...}, "users": {...}}``（群列表 + 发言人）
         """
         try:
-            if not self.seen_path.is_file():
+            if not self._seen_path.is_file():
                 return
-            with open(self.seen_path, "r", encoding="utf-8") as fp:
+            with open(self._seen_path, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
             if not isinstance(data, dict):
                 return
@@ -568,11 +570,11 @@ class XbnextRuntime:
     def _save_seen_groups(self) -> None:
         """同步落盘（只在线程池里调用，绝不直接在事件循环里跑）。"""
         try:
-            temp = self.seen_path.with_suffix(".tmp")
+            temp = self._seen_path.with_suffix(".tmp")
             payload = {"groups": self._seen_groups, "users": self._seen_users}
             with open(temp, "w", encoding="utf-8") as fp:
                 json.dump(payload, fp, ensure_ascii=False, indent=2)
-            temp.replace(self.seen_path)
+            temp.replace(self._seen_path)
         except Exception as exc:  # noqa: BLE001
             self._warn(f"写入 seen_groups.json 异常：{exc!r}")
 
@@ -601,7 +603,6 @@ class XbnextRuntime:
     def _remember_group(self, event: Any) -> None:
         """从消息事件被动记录群号、群名称、UMO 及最近发言人，自动落盘 seen_groups.json。"""
         try:
-            from .eventids import gid_of, name_of, platform_of, uid_of, umo_of
             gid = gid_of(event)
             platform = platform_of(event) or "aiocqhttp"
             uid = uid_of(event)
@@ -681,6 +682,29 @@ class XbnextRuntime:
                     self._schedule_seen_save()
         except Exception:  # noqa: BLE001
             pass
+
+    # ==================================================================
+    # 供 WebUI 层调用的公开方法
+    # ==================================================================
+    def note_groups(self, rows: Any) -> None:
+        """批量登记群到 seen_groups（WebUI 群列表回填用），一次性落盘。
+
+        web 层通过它写群列表，不直接摸 ``_seen_groups`` 内部结构；
+        ``rows`` 是 ``(gid, group_name, umo)`` 三元组序列。
+        """
+        changed = False
+        for gid, group_name, umo in rows or ():
+            gid = str(gid or "").strip()
+            if not gid:
+                continue
+            self._seen_groups[gid] = {
+                "group_id": gid,
+                "group_name": str(group_name or "") or gid,
+                "umo": str(umo or "") or f"GroupMessage:{gid}",
+            }
+            changed = True
+        if changed:
+            self._save_seen_groups()
 
     # ==================================================================
     # 内部

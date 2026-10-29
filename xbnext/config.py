@@ -126,6 +126,13 @@ class LocalAstrBotConfig:
         return len(self._data)
 
 
+#: OneBot 系平台的别名（is_platform_allowed 共用，不再写三遍）
+_ONEBOT_ALIASES = ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11")
+
+#: OneBot 系 + Matrix 的别名
+_ONEBOT_MATRIX_ALIASES = _ONEBOT_ALIASES + ("matrix",)
+
+
 class Config:
     """插件配置的只读视图（直接包在 AstrBot 传入的配置对象上，热改即生效）。"""
 
@@ -211,29 +218,21 @@ class Config:
         if preset == "all":
             return True
         if preset in ("onebot", "qq"):
-            if not p:
-                return True
-            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11")
+            return not p or p in _ONEBOT_ALIASES
         if preset in ("onebot_matrix", "onebot,matrix", "matrix_onebot"):
-            if not p:
-                return True
-            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11", "matrix")
+            return not p or p in _ONEBOT_MATRIX_ALIASES
 
         allowed = self.text("allowed_platforms", "onebot, aiocqhttp").strip()
         if not allowed or allowed.lower() in ("all", "*", "any"):
             return True
         tokens = [t.lower() for t in split_tokens(allowed)]
-        if not p:
-            return True
-        if "all" in tokens or "*" in tokens:
+        if not p or "all" in tokens or "*" in tokens:
             return True
         if p in tokens:
             return True
-        if p in ("aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11") and ("onebot" in tokens or "aiocqhttp" in tokens):
+        if p in _ONEBOT_ALIASES and ("onebot" in tokens or "aiocqhttp" in tokens):
             return True
-        if p == "onebot" and "aiocqhttp" in tokens:
-            return True
-        return False
+        return p == "onebot" and "aiocqhttp" in tokens
 
     def is_group_allowed(self, gid: str) -> bool:
         """检查指定群号/房间是否启用本插件（综合 group_mode / group_list 与 group_features[gid].enabled）。"""

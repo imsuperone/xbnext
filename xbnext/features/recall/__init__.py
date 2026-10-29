@@ -74,13 +74,28 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ... import log
-from ...eventids import gid_of, umo_of, uid_of
+from ...eventids import gid_of, message_id_of, umo_of, uid_of
+from ...seg import raw_sources
 from . import replies, service
 from ..base import Feature
 
 #: ``_active_runner`` 的「核心拿不到」哨兵：有别于「没有活跃 run」，
 #: 看门狗见到它就整段跳过（宁不动不误杀）
 _RUNNER_UNKNOWN = object()
+
+#: 后台补删任务的强引用集 —— asyncio 对挂起中的 task 只持弱引用，
+#: 不保存会被 GC 半路丢掉，补删静默失败
+_BG_TASKS: set = set()
+
+
+def _spawn(coro: Any) -> None:
+    """创建后台任务并持有引用，结束后自动释放。"""
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except Exception:  # noqa: BLE001  无事件循环（单测 / 已关闭 loop）
+        return
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 
 def _msg_id_of(ret: Any) -> str:
@@ -213,7 +228,7 @@ class RecallFeature(Feature):
         event = getattr(ctx, "event", None)
         if event is None:
             return
-        mid = service.trigger_id(event)
+        mid = message_id_of(event)
         if not mid or not self._is_cancelled(mid):
             return
         try:
@@ -239,7 +254,7 @@ class RecallFeature(Feature):
         self._sweep_stuck(umo)
 
         # ① 撤回 notice？确认开关开着 ⇒ 先问不急着动；否则照老规矩立刻取消
-        for raw in service.raw_sources(event):
+        for raw in raw_sources(event):
             mid = service.parse_recall(raw)
             if mid is None:
                 continue
@@ -259,7 +274,7 @@ class RecallFeature(Feature):
             return
 
         # ③ 普通消息：登记 message_id → 本管线任务 + 接管本条 send
-        mid = service.trigger_id(event)
+        mid = message_id_of(event)
         task = asyncio.current_task()
         if mid and task is not None:
             self._track(mid, task, umo)
@@ -389,7 +404,7 @@ class RecallFeature(Feature):
                 "event",
                 None,
             )
-            if service.trigger_id(runner_event) != str(mid):
+            if message_id_of(runner_event) != str(mid):
                 return  # 撤的是排队消息 / 别的消息，主 run 的票不动
             pending = getattr(runner, "_pending_follow_ups", None)
             count = len(pending) if isinstance(pending, list) else 0
@@ -817,19 +832,11 @@ class RecallFeature(Feature):
             if ids:
                 await self._delete_replies(event, ids, trigger_id)
 
-        try:
-            asyncio.get_running_loop().create_task(_wait_and_del())
-        except Exception:  # noqa: BLE001
-            pass
+        _spawn(_wait_and_del())
 
     def _spawn_delete(self, event: Any, ids: List[str], trigger_id: str) -> None:
         """取消语境下不能 await —— 另起任务补删（失败只记日志）。"""
-        try:
-            asyncio.get_running_loop().create_task(
-                self._delete_replies(event, ids, trigger_id)
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        _spawn(self._delete_replies(event, ids, trigger_id))
 
     async def _parse_segments(self, chain: Any) -> Optional[List[Any]]:
         """复用核心的 OneBot 段解析（lazy import，单测环境没有 astrbot）。"""

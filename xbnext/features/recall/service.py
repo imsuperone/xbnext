@@ -20,7 +20,7 @@ OneBot v11 的撤回是 notice 事件，aiocqhttp 适配器把整个事件 dict 
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 __all__ = [
     "CONFIRM_TIMEOUT",
@@ -28,9 +28,7 @@ __all__ = [
     "ask_text",
     "match_answer",
     "parse_recall",
-    "raw_sources",
     "recall_meta",
-    "trigger_id",
 ]
 
 #: 认得的撤回 notice 类型（群 + 好友）
@@ -116,36 +114,5 @@ def ask_text() -> str:
     )
 
 
-def raw_sources(event: Any) -> List[Any]:
-    """列出可能装着 OneBot 原始载荷的字段（照抄 face 的多字段扫描）。"""
-    out: List[Any] = []
-    for owner in (getattr(event, "message_obj", None), event):
-        if owner is None:
-            continue
-        for attr in ("raw_message", "raw_msg", "origin_message"):
-            try:
-                v = getattr(owner, attr, None)
-            except Exception:  # noqa: BLE001
-                v = None
-            if v not in (None, ""):
-                out.append(v)
-    return out
-
-
-def trigger_id(event: Any) -> str:
-    """触发消息的 ``message_id``（登记在飞任务的键）；取不到空串。
-
-    扫描顺序与 attribution 的 ``message_id_of`` 一致（``message_obj``
-    优先），两边独立实现、互不依赖。
-    """
-    for owner in (getattr(event, "message_obj", None), event):
-        if owner is None:
-            continue
-        for attr in ("message_id", "msg_id", "id"):
-            try:
-                v = getattr(owner, attr, None)
-            except Exception:  # noqa: BLE001
-                v = None
-            if isinstance(v, (str, int)) and str(v) != "":
-                return str(v)
-    return ""
+# 触发消息 id 取 :func:`xbnext.eventids.message_id_of`、原始载荷扫描取
+# :func:`xbnext.seg.raw_sources`（全仓唯一实现，本模块不再各留一份）。

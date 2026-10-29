@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """机器人拦截与黑名单服务（纯函数，不依赖 astrbot 符号）。
 
-本模块仅包含纯逻辑函数，便于独立单测与安全降级。
+本模块只放黑名单解析与指令/游戏词判定；「发言人 / 自身 / 消息原文」
+取数统一走 :mod:`xbnext.eventids`（全仓唯一实现）。
 默认黑名单为空，严格保护隐私，绝不硬编码任何 QQ 号。
 """
 
@@ -11,14 +12,11 @@ import re
 from typing import Any, Iterable, List, Set
 
 from ...config import split_tokens
-from ...permissions import extract_sender_id
+from ...eventids import message_text
 
 __all__ = [
     "parse_blacklist",
     "format_blacklist",
-    "extract_sender_id",
-    "extract_self_id",
-    "original_message_text",
     "is_sender_blacklisted",
     "mask_id",
     "parse_command_prefixes",
@@ -80,82 +78,6 @@ def format_blacklist(ids: Iterable[str]) -> str:
     """格式化黑名单集合为以逗号分隔的标准字符串。"""
     cleaned = sorted({str(x).strip() for x in ids if str(x).strip()})
     return ", ".join(cleaned)
-
-
-def extract_self_id(event: Any) -> str:
-    """从事件对象中全面提取机器人自身的 ID。"""
-    if event is None:
-        return ""
-    # 1. 尝试 get_self_id()
-    getter = getattr(event, "get_self_id", None)
-    if callable(getter):
-        try:
-            res = getter()
-            if res not in (None, ""):
-                return str(res).strip()
-        except Exception:  # noqa: BLE001
-            pass
-
-    # 2. 从 event 顶层属性
-    for attr in ("self_id", "bot_id"):
-        val = getattr(event, attr, None)
-        if val not in (None, ""):
-            return str(val).strip()
-
-    # 3. 从 event.bot (OneBot/aiocqhttp 适配器实例)
-    bot = getattr(event, "bot", None)
-    if bot is not None:
-        for attr in ("self_id", "uin", "bot_uin", "user_id"):
-            val = getattr(bot, attr, None)
-            if val not in (None, ""):
-                return str(val).strip()
-
-    # 4. 从 message_obj
-    msg_obj = getattr(event, "message_obj", None)
-    if msg_obj is not None:
-        for attr in ("self_id", "bot_id"):
-            val = getattr(msg_obj, attr, None)
-            if val not in (None, ""):
-                return str(val).strip()
-
-    # 5. 从 unified_msg_origin 提取 (如 bot_id:group:gid)
-    umo = getattr(event, "unified_msg_origin", None)
-    if umo:
-        parts = str(umo).split(":")
-        if parts and parts[0].isdigit():
-            return parts[0].strip()
-
-    return ""
-
-
-def original_message_text(event: Any) -> str:
-    """取「唤醒前缀剥离前」的用户原文。
-
-    AstrBot 的 ``WakingCheckStage`` 会在插件钩子之前把 ``event.message_str``
-    的唤醒前缀（默认 ``/``）剥掉，``/help`` 会变成 ``help``、``/xbnext``
-    会变成 ``xbnext``。如果只读 ``event.message_str``，BotGuard 的指令识别
-    和斜杠拦截都会漏判。``message_obj.message_str`` 由适配器在剥前缀前写入，
-    因此优先读它；取不到时再退回 ``event.message_str``。
-    """
-    if event is None:
-        return ""
-
-    msg_obj = getattr(event, "message_obj", None)
-    if msg_obj is not None:
-        for attr in ("message_str", "raw_message"):
-            val = getattr(msg_obj, attr, None)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-
-    val = getattr(event, "message_str", None)
-    if isinstance(val, str) and val.strip():
-        return val.strip()
-
-    raw = getattr(event, "raw_message", None)
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-
-    return ""
 
 
 def is_sender_blacklisted(sender_id: str, blacklist: Set[str], self_id: str = "") -> bool:
@@ -323,7 +245,7 @@ def is_at_self_strict(event: Any, self_id: str = "") -> bool:
                 return True
 
     # 2. 文本兜底：CQ 码 / [At:xxx] / @xxx（优先用剥前缀前的原文）
-    val = original_message_text(event)
+    val = message_text(event)
     if val:
         if (
             f"qq={self_clean}" in val
