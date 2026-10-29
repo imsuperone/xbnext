@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.42" />
+  <link rel="stylesheet" href="./style.css?v=0.2.43" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.42">0.2.42</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.43">0.2.43</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -477,12 +477,17 @@
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
               <label class="form-label" style="margin-bottom: 2px;">拦截斜杠/指令符号 (防大模型胡乱接话)</label>
-              <span class="field-hint">开启后，当群聊收到以 <code>/</code>、<code>／</code>、<code>!</code>、<code>#</code> 开头的指令但未被任何指令插件处理时，自动掐断并阻止大模型接话与回复，防止机器人对未知指令或其他机器人的指令胡乱应答。默认开启。</span>
+              <span class="field-hint">开启后，以指令前缀开头的消息只作为指令处理、绝不进入聊天/大模型：已注册的指令正常执行，未注册的静默拦截，防止机器人对未知指令或其他机器人的指令胡乱应答。默认开启。</span>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_bot_guard_block_slash_commands" data-key="bot_guard_block_slash_commands" />
               <span class="switch-slider"></span>
             </label>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="inp_bot_guard_command_prefixes">需拦截的指令前缀</label>
+            <input type="text" class="m3-input" id="inp_bot_guard_command_prefixes" data-key="bot_guard_command_prefixes" placeholder="/" />
+            <span class="field-hint">以这些前缀开头的消息只触发指令、不触发聊天。默认只有 <code>/</code>（与 AstrBot 默认 wake_prefix 一致）；多个前缀用逗号或空格分隔，可自定义如 <code>.</code>、<code>。</code>、<code>;</code>；留空 = 不拦截任何前缀。仅在开启上方拦截时生效。</span>
           </div>
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
@@ -491,16 +496,6 @@
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_bot_guard_require_at_for_commands" data-key="bot_guard_require_at_for_commands" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-          <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
-            <div>
-              <label class="form-label" style="margin-bottom: 2px;">破坏性重置指令需 @ 触发 (防多Bot同时清空)</label>
-              <span class="field-hint">开启后，群聊中 <code>/new</code>、<code>/reset</code>、<code>/clear</code>、<code>/清空</code> 等重置/清空指令必须 @ 本机器人才生效，避免同群多个机器人同时清空会话；唤醒前缀 <code>/</code> 不算 @。默认关闭。</span>
-            </div>
-            <label class="m3-switch">
-              <input type="checkbox" id="sw_bot_guard_require_at_for_reset" data-key="bot_guard_require_at_for_reset" />
               <span class="switch-slider"></span>
             </label>
           </div>
@@ -815,7 +810,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.42"></script>
-  <script src="./app.js?v=0.2.42"></script>
+  <script src="./api.js?v=0.2.43"></script>
+  <script src="./app.js?v=0.2.43"></script>
 </body>
 </html>

@@ -114,19 +114,17 @@ class BotGuardFeature(Feature):
         try:
             # 1. 群聊全部指令需 @ 触发保护（防同群多 Bot 冲突串台，默认关闭）
             req_all_cmds = ctx.conf.bool("bot_guard_require_at_for_commands", False)
-            req_reset_cmds = ctx.conf.bool("bot_guard_require_at_for_reset", False)
-            if req_all_cmds or req_reset_cmds:
+            if req_all_cmds:
                 if service.is_group_event(event):
                     # 必须读「唤醒前缀剥离前」的原文：默认 wake_prefix 是 /，
                     # WakingCheckStage 会把 /xbnext 剥成 xbnext；只看
                     # event.message_str 会漏判，导致裸 / 指令照样触发。
                     msg_text = service.original_message_text(event)
-                    is_target_cmd = False
                     extra_words = ctx.conf.text("bot_guard_extra_command_words", "")
-                    if req_all_cmds and service.is_command_message(msg_text, extra_keywords=extra_words):
-                        is_target_cmd = True
-                    elif req_reset_cmds and service.is_destructive_reset_command(msg_text):
-                        is_target_cmd = True
+                    prefixes = ctx.conf.text("bot_guard_command_prefixes", "/")
+                    is_target_cmd = service.is_command_message(
+                        msg_text, extra_keywords=extra_words, prefixes=prefixes
+                    )
 
                     if is_target_cmd:
                         self_id = service.extract_self_id(event)
@@ -225,12 +223,13 @@ class BotGuardFeature(Feature):
         if event is None:
             return
 
-        # 1. 拦截未被任何插件处理的斜杠/指令符号，防止大模型胡乱接话或回答其他机器人的指令
+        # 1. 拦截未被任何插件处理的指令前缀消息，防止大模型胡乱接话或回答其他机器人的指令
         if ctx.conf.bool("bot_guard_block_slash_commands", True):
             try:
                 # 优先用唤醒前缀剥离前的原文：默认 wake_prefix 是 /，
                 # 若只看 event.message_str，/help 会变成 help 而漏拦。
                 msg_str = service.original_message_text(event) or ctx.prompt().strip()
+                prefixes = ctx.conf.text("bot_guard_command_prefixes", "/")
                 if msg_str:
                     stripped_msg = re.sub(
                         r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", msg_str, flags=re.I
@@ -240,7 +239,9 @@ class BotGuardFeature(Feature):
                     is_own_command = bool(
                         re.match(r"^[/／]?xbnext(?:\s|$)", stripped_msg, re.I)
                     )
-                    if not is_own_command and re.match(r"^[!/#/！#／＃]\s*\S+", stripped_msg):
+                    if not is_own_command and service.is_prefixed_command(
+                        stripped_msg, prefixes
+                    ):
                         self._stop_event_safely(event)
                         req = getattr(ctx, "req", None)
                         if req is not None and hasattr(req, "prompt"):

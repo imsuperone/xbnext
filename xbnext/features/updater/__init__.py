@@ -434,22 +434,22 @@ class UpdaterFeature(Feature):
             if not plugins:
                 return "ℹ️ 当前未匹配到任何已安装的目标插件。"
 
+            # 没有更新的插件不占聊天版面：只展示真正有更新的，
+            # 全部最新时只回一行结论，避免刷屏。
+            updatable = [p for p in plugins if p.get("has_update")]
+            if not updatable:
+                return "✨ 全部选定插件均已是最新版本，无需更新。"
+
             lines = [
                 "🔍【插件更新检查】",
                 "━━━━━━━━━━━━━━",
             ]
-            for p in plugins:
+            for p in updatable:
                 nick = p.get("nickname", p.get("name"))
-                if p.get("has_update"):
-                    lines.append(f"• {nick}: 🚀 {p.get('status_text')}")
-                else:
-                    lines.append(f"• {nick}: 🟢 {p.get('status_text')}")
+                lines.append(f"• {nick}: 🚀 {p.get('status_text')}")
 
             lines.append("━━━━━━━━━━━━━━")
-            if res.get("has_new_version"):
-                lines.append("💡 发送【/xbnext 一键更新】即可升级重载。")
-            else:
-                lines.append("✨ 选定插件均已处于最新状态！")
+            lines.append("💡 发送【/xbnext 一键更新】即可升级重载。")
             return "\n".join(lines)
 
         # 一键更新分支

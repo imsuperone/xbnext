@@ -19,6 +19,8 @@ __all__ = [
     "is_sender_blacklisted",
     "mask_id",
     "is_destructive_reset_command",
+    "parse_command_prefixes",
+    "is_prefixed_command",
     "is_command_message",
     "is_game_or_noise_command",
     "is_group_event",
@@ -397,15 +399,58 @@ KNOWN_PLUGIN_COMMAND_PREFIXES = (
 )
 
 
-def is_command_message(msg_str: str, extra_keywords: Any = None) -> bool:
-    """判定消息是否为机器人指令（以 /、!、# 开头，或匹配系统/插件指令词）。"""
+DEFAULT_COMMAND_PREFIXES = ("/",)
+
+
+def parse_command_prefixes(raw: Any = None) -> List[str]:
+    """解析「指令前缀」配置。
+
+    默认只有 ``/``（与 AstrBot 默认 wake_prefix 对齐）；支持逗号 / 空格
+    分隔的自定义前缀。**显式留空返回空列表 = 不拦截任何前缀**，
+    只有配置项完全缺失（``None``）时才回退默认值。
+    """
+    if raw is None:
+        return list(DEFAULT_COMMAND_PREFIXES)
+    if isinstance(raw, (list, tuple, set)):
+        parts = [str(x) for x in raw]
+    else:
+        parts = re.split(r"[,，、\s]+", str(raw))
+    out: List[str] = []
+    for part in parts:
+        prefix = part.strip()
+        if prefix and prefix not in out:
+            out.append(prefix)
+    return sorted(out, key=len, reverse=True)
+
+
+def is_prefixed_command(msg_str: str, prefixes: Any = None) -> bool:
+    """判定消息是否以「指令前缀」开头且前缀后有实际内容。
+
+    这是「只当指令处理、绝不进入聊天」的闸门：At 组件会先被剔除，
+    因此 ``@机器人 /help`` 同样判定为前缀指令。
+    """
+    if not msg_str:
+        return False
+    stripped = re.sub(
+        r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I
+    ).strip()
+    if not stripped:
+        return False
+    for prefix in parse_command_prefixes(prefixes):
+        if stripped.startswith(prefix) and stripped[len(prefix):].strip():
+            return True
+    return False
+
+
+def is_command_message(msg_str: str, extra_keywords: Any = None, prefixes: Any = None) -> bool:
+    """判定消息是否为机器人指令（以指令前缀开头，或匹配系统/插件指令词）。"""
     if not msg_str:
         return False
     stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
     if not stripped:
         return False
-    # 1. 任意以常见指令符号开头（支持全角半角斜杠、叹号、井号）
-    if re.match(r"^[!/#/！#／＃]\s*\S+", stripped):
+    # 1. 任意以指令前缀开头（默认 / ／ ! ！ # ＃，可由配置扩展）
+    if is_prefixed_command(msg_str, prefixes):
         return True
     if is_destructive_reset_command(msg_str):
         return True
