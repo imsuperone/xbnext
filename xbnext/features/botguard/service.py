@@ -18,7 +18,6 @@ __all__ = [
     "original_message_text",
     "is_sender_blacklisted",
     "mask_id",
-    "is_destructive_reset_command",
     "parse_command_prefixes",
     "is_prefixed_command",
     "is_command_message",
@@ -227,16 +226,6 @@ def mask_id(uid: str) -> str:
     return uid_str[:3] + "***" + uid_str[-2:]
 
 
-def is_destructive_reset_command(msg_str: str) -> bool:
-    """判定消息是否包含清空会话的破坏性指令（如 /new, /reset, /clear, /重置, /清空）。"""
-    if not msg_str:
-        return False
-    # 移除首尾与常见 At CQ 码后再进行匹配
-    stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
-    pattern = r"^[!/#/]?\s*(?:new|reset|clear|重置|清空)(?:\s|$|@)"
-    return bool(re.search(pattern, stripped, re.I))
-
-
 def is_group_event(event: Any) -> bool:
     """判定当前事件是否发生在群聊场景中。"""
     if event is None:
@@ -389,16 +378,6 @@ def is_at_self_strict(event: Any, self_id: str = "") -> bool:
     return False
 
 
-KNOWN_PLUGIN_COMMAND_PREFIXES = (
-    "xbnext", "xbimg", "xb2img", "xbdoc", "xbbot", "xbtest", "测试xbtest", "测试testxb",
-    "超管列表", "签到", "打卡", "打劫", "银行", "存款", "取款", "奴隶",
-    "打工", "搬砖", "收工", "进监狱", "探监", "精灵", "抓精灵", "冒险",
-    "钓鱼", "帮派", "坐骑", "回收欢迎坐骑", "设置欢迎坐骑", "pokepro",
-    "戳一戳", "stealer", "偷表情", "表情包小偷", "meting", "点歌",
-    "b站", "biliread", "大肥鱼", "说说", "空间"
-)
-
-
 DEFAULT_COMMAND_PREFIXES = ("/",)
 
 
@@ -443,29 +422,28 @@ def is_prefixed_command(msg_str: str, prefixes: Any = None) -> bool:
 
 
 def is_command_message(msg_str: str, extra_keywords: Any = None, prefixes: Any = None) -> bool:
-    """判定消息是否为机器人指令（以指令前缀开头，或匹配系统/插件指令词）。"""
+    """判定消息是否为机器人指令。
+
+    只认两类，避免把群友闲聊 / 其他机器人的纯文字游戏指令误判为指令：
+    1. 以配置的指令前缀开头（默认只有 ``/``）；
+    2. 命中管理员显式配置的「额外需 @ 触发的自定义指令词」。
+    """
     if not msg_str:
         return False
     stripped = re.sub(r"(?:\[CQ:at,qq=\d+[^\]]*\]|\[At:\s*\d+\])", " ", str(msg_str), flags=re.I).strip()
     if not stripped:
         return False
-    # 1. 任意以指令前缀开头（默认 / ／ ! ！ # ＃，可由配置扩展）
+    # 1. 以指令前缀开头
     if is_prefixed_command(msg_str, prefixes):
         return True
-    if is_destructive_reset_command(msg_str):
-        return True
-    # 2. 匹配内置已知插件/系统指令词
-    first_token = stripped.split()[0].lower()
-    for cmd in KNOWN_PLUGIN_COMMAND_PREFIXES:
-        if first_token == cmd or stripped.startswith(cmd):
-            return True
-    # 3. 匹配额外自定义指令词
+    # 2. 匹配额外自定义指令词（显式配置才生效）
     if extra_keywords:
         words = []
         if isinstance(extra_keywords, (list, tuple, set)):
             words = [str(x).strip().lower() for x in extra_keywords if str(x).strip()]
         elif isinstance(extra_keywords, str):
             words = [x.strip().lower() for x in re.split(r"[,，;\s\n]+", extra_keywords) if x.strip()]
+        first_token = stripped.split()[0].lower()
         for w in words:
             if first_token == w or stripped.startswith(w):
                 return True

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>XBNEXT 控制台</title>
-  <link rel="stylesheet" href="./style.css?v=0.2.43" />
+  <link rel="stylesheet" href="./style.css?v=0.2.44" />
   <!-- 深浅色与主题色优先读取本地缓存实现首帧零阻塞渲染，未缓存时最多挂起 150ms -->
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
@@ -34,7 +34,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>XBNEXT <span class="version-tag" data-ver="0.2.43">0.2.43</span></h1>
+          <h1>XBNEXT <span class="version-tag" data-ver="0.2.44">0.2.44</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -492,7 +492,7 @@
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
               <label class="form-label" style="margin-bottom: 2px;">群聊全部指令需 @ 触发 (防多Bot冲突)</label>
-              <span class="field-hint">开启后，群聊中所有指令（包括 <code>/xbnext</code> 系列，以 <code>/</code>、<code>!</code>、<code>#</code> 开头或系统/插件指令）必须 @ 机器人才生效；唤醒前缀 <code>/</code> 不算 @。需要更新时请发 <code>@机器人 /xbnext 强制更新</code>。默认关闭。</span>
+              <span class="field-hint">开启后，群聊中以「指令前缀」（默认 <code>/</code>，见上方配置）开头的消息、以及下方「额外指令词」开头的消息，必须 @ 机器人才生效；唤醒前缀 <code>/</code> 不算 @。纯文字游戏指令（如 <code>搬砖</code>、<code>签到</code>）不受影响。需要更新时请发 <code>@机器人 /xbnext 强制更新</code>。默认关闭。</span>
             </div>
             <label class="m3-switch">
               <input type="checkbox" id="sw_bot_guard_require_at_for_commands" data-key="bot_guard_require_at_for_commands" />
@@ -502,7 +502,7 @@
           <div class="form-group" style="margin-top: 10px;">
             <label class="form-label" for="inp_bot_guard_extra_command_words">额外需 @ 触发的自定义指令词</label>
             <input type="text" class="m3-input" id="inp_bot_guard_extra_command_words" data-key="bot_guard_extra_command_words" placeholder="点歌,偷表情,戳一戳,自定义词" />
-            <span class="field-hint">选填。多个关键词以逗号或空格分隔。配置后这些指令在群聊中未 @ 机器人时也会被拦截。</span>
+            <span class="field-hint">选填。多个关键词以逗号或空格分隔。只按这里显式列出的指令词要求 @；默认不内置任何插件/游戏指令词，<code>搬砖</code>、<code>签到</code> 等纯文字游戏指令不会被误拦。</span>
           </div>
           <div class="card-row-split" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--m3-sys-color-divider);">
             <div>
@@ -810,7 +810,7 @@
     <!-- 截图大图预览 Modal -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="./api.js?v=0.2.43"></script>
-  <script src="./app.js?v=0.2.43"></script>
+  <script src="./api.js?v=0.2.44"></script>
+  <script src="./app.js?v=0.2.44"></script>
 </body>
 </html>
